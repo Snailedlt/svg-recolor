@@ -1,0 +1,6 @@
+[submodule "submodules/svgray"]
+	path = submodules/svgray
+	url = https://github.com/snailedlt/svgray
+[submodule "submodules/svgshift"]
+	path = submodules/svgshift
+	url = https://github.com/snailedlt/svgshift
