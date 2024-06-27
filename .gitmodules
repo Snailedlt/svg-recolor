@@ -4,3 +4,6 @@
 [submodule "submodules/svgshift"]
 	path = submodules/svgshift
 	url = https://github.com/snailedlt/svgshift
+[submodule "submodules/argparse-bash"]
+	path = submodules/argparse-bash
+	url = https://github.com/snailedlt/argparse-bash
