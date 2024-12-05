@@ -1,0 +1,29 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+PIPENV_VENV_IN_PROJECT = 1
+
+[scripts]
+dev = "fastapi dev main.py"
+colorize = "python colorize_svg.py" # make sure to run this in a sh, bash or zsh shell
+# dev = "uvicorn main:app --reload"
+# start = "uvicorn main:app"
+# test = "pytest"
+lint = "ruff check"
+
+[packages]
+requests = "==2.32.3"
+uvicorn = {extras = ["standard"], version = "*"}
+# pytest = "==8.3.3"
+httpx = "==0.28.0"
+ruff = "==0.8.1"
+# fastapi-analytics = "==1.2.2"
+python-dotenv = "==1.0.1"
+pydantic-settings = "==2.6.1"
+fastapi = {extras = ["standard"], version = "*"}
+
+[dev-packages]
+
+[requires]
+python_version = "3.10"
