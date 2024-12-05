@@ -1,61 +1,265 @@
 <html>
     <head>
-        <title>SVG Colorizer</title>
+        <title>SVG Recolor</title>
         <style>
+            body {
+                font-family: 'Roboto', sans-serif;
+                background: linear-gradient(135deg, #1e1e1e 0%, #2c2c2c 100%);
+                color: #d4d4d4;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                animation: fadeIn 1s ease-in-out;
+            }
+            .top-links {
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                background-color: #252526;
+                padding: 10px;
+                border-radius: 8px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            }
+
+            .links-title {
+                color: #d4d4d4;
+                font-size: 1.2em;
+                margin: 0;
+                padding-bottom: 5px;
+                border-bottom: 1px solid #3c3c3c;
+            }
+
+            .top-links a {
+                color: #569cd6;
+                text-decoration: none;
+                transition: color 0.3s ease;
+                display: flex;
+                align-items: center;
+                padding: 5px;
+                border-radius: 4px;
+            }
+
+            .top-links a:hover {
+                color: #4a8bb1;
+                background-color: #1e1e1e;
+            }
+
+            .top-links img {
+                width: 20px;
+                height: 20px;
+                margin-right: 5px;
+            }
+            main {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                max-width: 800px;
+                padding: 20px;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+            h1 {
+                color: #569cd6;
+                margin-bottom: 20px;
+                font-size: 2.5em;
+                animation: slideIn 1s ease-in-out;
+            }
+            @keyframes slideIn {
+                from { transform: translateY(-50px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+            }
+            form {
+                background-color: #252526;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                width: 100%;
+                max-width: 400px;
+                animation: popIn 0.5s ease-in-out;
+            }
+            @keyframes popIn {
+                from { transform: scale(0.8); opacity: 0; }
+                to { transform: scale(1); opacity: 1; }
+            }
+            input[type="file"],
+            input[type="text"],
+            button {
+                width: 100%;
+                padding: 10px;
+                margin: 10px 0;
+                border-radius: 4px;
+                border: 1px solid #3c3c3c;
+                font-size: 16px;
+                transition: all 0.3s ease;
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+            }
+            input[type="file"]:focus,
+            input[type="text"]:focus {
+                border-color: #569cd6;
+                box-shadow: 0 0 5px rgba(86, 156, 214, 0.5);
+                outline: none;
+            }
+            button {
+                background-color: #569cd6;
+                color: #fff;
+                border: none;
+                cursor: pointer;
+                transition: background-color 0.3s ease, transform 0.3s ease;
+            }
+            button:hover {
+                background-color: #4a8bb1;
+                transform: translateY(-2px);
+            }
             .preview {
                 display: flex;
                 flex-direction: column;
                 align-items: center;
                 margin-top: 20px;
+                width: 100%;
+                max-width: 400px;
             }
-            .preview img {
-                max-width: 300px;
-                margin-top: 10px;
+            .preview h2 {
+                margin: 10px 0;
+                font-size: 1.5em;
+                animation: fadeIn 1s ease-in-out;
             }
             .container {
-                border: 1px solid #ccc;
+                border: 1px solid #3c3c3c;
                 padding: 10px;
-                margin-top: 20px;
+                margin-top: 10px;
                 width: 100%;
                 max-width: 300px;
+                background-color: #252526;
+                border-radius: 8px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+                animation: popIn 0.5s ease-in-out;
+            }
+            .error {
+                color: #f00;
+                margin: 10px 0;
+                animation: shake 0.5s ease-in-out;
+            }
+            @keyframes shake {
+                0%, 100% { transform: translateX(0); }
+                25% { transform: translateX(-5px); }
+                50% { transform: translateX(5px); }
+                75% { transform: translateX(-5px); }
+            }
+            .glorious-label {
+                font-size: 1.2em;
+                font-weight: bold;
+                color: #569cd6;
+                margin-bottom: 5px;
+                display: block;
+                text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+                transition: color 0.3s ease;
+            }
+
+            .glorious-label:hover {
+                color: #4a8bb1;
             }
         </style>
     </head>
     <body>
-        <h1>SVG Colorizer</h1>
-        <form id="colorize-form" action="/colorize" method="post" enctype="multipart/form-data">
-            <input id="files" type="file" name="icon" accept="image/*" onchange="openFile(event)">
-            <input type="text" name="color" placeholder="Color (e.g., #FF0066)">
-            <button type="submit">Colorize</button>
-        </form>
-        <div class="preview">
-            <h2>Input Image Preview</h2>
-            <div id="preview-container" class="container"></div>
-            <h2>Output Image Preview</h2>
-            <div id="result-container" class="container"></div>
+        <div class="top-links">
+            <h2 class="links-title">Resources</h2>
+            <a href="/docs" target="_blank">
+                <img src="https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/swagger/swagger-original.svg" alt="Swagger">
+                API Docs (Swagger)
+            </a>
+            <a href="/redoc" target="_blank">
+                <img src="static/redoc.svg" alt="Redoc">
+                API Docs (Redoc)
+            </a>
+            <a href="https://github.com/Snailedlt/svg-recolor" target="_blank">
+                <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub">
+                GitHub Repo
+            </a>
         </div>
+        <main>
+            <h1>SVG Recolor</h1>
+            <form id="colorize-form" action="/colorize" method="post" enctype="multipart/form-data">
+
+                <label for="files" class="glorious-label">Upload SVG Icon:</label>
+                <input id="files" type="file" name="icon" accept="image/*" onchange="openFile(event)">
+
+                <label for="color-input" class="glorious-label">Choose Color:</label>
+                <input id="color-input" type="color" name="color" value="#FF0066">
+
+                <button type="submit">Colorize</button>
+                <div id="error-message" class="error"></div>
+            </form>
+            <div class="preview">
+                <h2>Input Image Preview</h2>
+                <div id="preview-container" class="container"></div>
+                <h2>Output Image Preview</h2>
+                <div id="result-container" class="container"></div>
+            </div>
+        </main>
         <script>
+            const previewIconStyles = `
+                <style>
+                    svg {
+                        max-width: 100%;
+                        max-height: 400px;
+                        width: auto;
+                        height: auto;
+                    }
+                </style>
+            `;
+            function validateColor(color) {
+                const hexColorPattern = /^#[a-fA-F0-9]{6}$/;
+                const rgbColorPattern = /^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9]),(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9]),(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$/;
+                return hexColorPattern.test(color) || rgbColorPattern.test(color);
+            }
+
+            function validateSVG(file) {
+                const fileTypes = ['svg'];
+                const extension = file.name.split('.').pop().toLowerCase();
+                const mimetype = file.type;
+                return fileTypes.indexOf(extension) > -1 && mimetype === 'image/svg+xml';
+            }
+
             function openFile(event) {
                 read(event.target);
             }
 
             function read(input) {
-                const fileTypes = ['svg'];
-
                 if (input.files && input.files[0]) {
-                    const extension = input.files[0].name.split('.').pop().toLowerCase();
-                    const mimetype = input.files[0].type;
-                    const isSuccess = fileTypes.indexOf(extension) > -1 && mimetype === 'image/svg+xml';
-                    if (isSuccess) {
+                    const file = input.files[0];
+                    if (validateSVG(file)) {
                         const reader = new FileReader();
-                        if (extension == "svg") {
-                            reader.onload = () => {
-                                const previewContainer = document.getElementById('preview-container');
+                        reader.onload = () => {
+                            const previewContainer = document.getElementById('preview-container');
+                            if (!previewContainer.shadowRoot) {
                                 const shadow = previewContainer.attachShadow({ mode: 'open' });
-                                shadow.innerHTML = reader.result;
-                            };
-                            reader.readAsText(input.files[0]);
-                        }
+                                shadow.innerHTML = `
+                                    ${previewIconStyles}
+                                    ${reader.result}
+                                `;
+                            } else {
+                                previewContainer.shadowRoot.innerHTML = `
+                                    ${previewIconStyles}
+                                    ${reader.result}
+                                `;
+                            }
+                        };
+                        reader.readAsText(file);
                     } else {
                         console.log('Wrong image type. Please upload an SVG file.');
                     }
@@ -64,18 +268,55 @@
 
             document.getElementById('colorize-form').addEventListener('submit', function(event) {
                 event.preventDefault();
+                const colorInput = document.getElementById('color-input');
+                const color = colorInput.value;
+                const errorMessage = document.getElementById('error-message');
+                const fileInput = document.getElementById('files');
+                const file = fileInput.files[0];
+
+                if (!file || !validateSVG(file)) {
+                    errorMessage.textContent = 'Invalid file format. Please upload a valid SVG file.';
+                    return;
+                }
+
+                if (!validateColor(color)) {
+                    errorMessage.textContent = 'Invalid color format. Please use a hex color (e.g., #FF0066) or an RGB color (e.g., 255,0,102).';
+                    return;
+                }
+
+                errorMessage.textContent = '';
                 const formData = new FormData(this);
-                fetch('/colorize', {
+                fetch(`/colorize?color=${encodeURIComponent(color)}`, {
                     method: 'POST',
                     body: formData
                 })
-                .then(response => response.text())
+                .then(async response => {
+                    if (!response.ok) {
+                        const res = await response.text();
+                        const json = JSON.parse(res);
+                        throw new Error(`${response.status} - ${response.statusText} - ${json.detail}`);
+                    }
+                    return response.text();
+                })
                 .then(data => {
                     const resultContainer = document.getElementById('result-container');
-                    const shadow = resultContainer.attachShadow({ mode: 'open' });
-                    shadow.innerHTML = data;
+                    if (!resultContainer.shadowRoot) {
+                        const shadow = resultContainer.attachShadow({ mode: 'open' });
+                        shadow.innerHTML = `
+                            ${previewIconStyles}
+                            ${data}
+                        `;
+                    } else {
+                        resultContainer.shadowRoot.innerHTML = `
+                            ${previewIconStyles}
+                            ${data}
+                        `;
+                    }
                 })
-                .catch(error => console.error('Error:', error));
+                .catch(error => {
+                    console.error('Error:', error);
+                    errorMessage.textContent = `Error: ${error.message}`;
+                });
             });
         </script>
     </body>

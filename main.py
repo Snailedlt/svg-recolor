@@ -5,8 +5,10 @@ import tempfile
 import os
 import re
 from pathlib import Path
+from starlette.staticfiles import StaticFiles
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 
 
 # Create a front page with a simple form for uploading an SVG file and selecting a color to apply to the icon
