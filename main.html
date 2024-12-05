@@ -1,0 +1,82 @@
+<html>
+    <head>
+        <title>SVG Colorizer</title>
+        <style>
+            .preview {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                margin-top: 20px;
+            }
+            .preview img {
+                max-width: 300px;
+                margin-top: 10px;
+            }
+            .container {
+                border: 1px solid #ccc;
+                padding: 10px;
+                margin-top: 20px;
+                width: 100%;
+                max-width: 300px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>SVG Colorizer</h1>
+        <form id="colorize-form" action="/colorize" method="post" enctype="multipart/form-data">
+            <input id="files" type="file" name="icon" accept="image/*" onchange="openFile(event)">
+            <input type="text" name="color" placeholder="Color (e.g., #FF0066)">
+            <button type="submit">Colorize</button>
+        </form>
+        <div class="preview">
+            <h2>Input Image Preview</h2>
+            <div id="preview-container" class="container"></div>
+            <h2>Output Image Preview</h2>
+            <div id="result-container" class="container"></div>
+        </div>
+        <script>
+            function openFile(event) {
+                read(event.target);
+            }
+
+            function read(input) {
+                const fileTypes = ['svg'];
+
+                if (input.files && input.files[0]) {
+                    const extension = input.files[0].name.split('.').pop().toLowerCase();
+                    const mimetype = input.files[0].type;
+                    const isSuccess = fileTypes.indexOf(extension) > -1 && mimetype === 'image/svg+xml';
+                    if (isSuccess) {
+                        const reader = new FileReader();
+                        if (extension == "svg") {
+                            reader.onload = () => {
+                                const previewContainer = document.getElementById('preview-container');
+                                const shadow = previewContainer.attachShadow({ mode: 'open' });
+                                shadow.innerHTML = reader.result;
+                            };
+                            reader.readAsText(input.files[0]);
+                        }
+                    } else {
+                        console.log('Wrong image type. Please upload an SVG file.');
+                    }
+                }
+            }
+
+            document.getElementById('colorize-form').addEventListener('submit', function(event) {
+                event.preventDefault();
+                const formData = new FormData(this);
+                fetch('/colorize', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.text())
+                .then(data => {
+                    const resultContainer = document.getElementById('result-container');
+                    const shadow = resultContainer.attachShadow({ mode: 'open' });
+                    shadow.innerHTML = data;
+                })
+                .catch(error => console.error('Error:', error));
+            });
+        </script>
+    </body>
+</html>

@@ -1,11 +1,20 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 import subprocess
 import tempfile
 import os
 import re
+from pathlib import Path
 
 app = FastAPI()
+
+
+# Create a front page with a simple form for uploading an SVG file and selecting a color to apply to the icon
+@app.get("/")
+async def landing_page():
+    with open("main.html", "r", encoding="utf-8") as file:
+        html_content = file.read()
+    return HTMLResponse(content=html_content)
 
 
 @app.post("/colorize")
@@ -41,7 +50,8 @@ async def colorize(icon: UploadFile = File(...), color: str = "#FF0066"):
             return FileResponse(
                 path=output_svg_temp.name,
                 media_type="image/svg+xml",
-                filename=icon.filename,
+                # original filename minus the extension + recolored + the color code + .svg
+                filename=Path(icon.filename).stem + "_recolored_" + color + ".svg",
             )
         except subprocess.CalledProcessError as e:
             raise HTTPException(
