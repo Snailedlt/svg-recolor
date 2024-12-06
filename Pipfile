@@ -6,6 +6,7 @@ PIPENV_VENV_IN_PROJECT = 1
 
 [scripts]
 dev = "fastapi dev main.py"
+start = "fastapi run main.py"
 colorize = "python colorize_svg.py" # make sure to run this in a sh, bash or zsh shell
 # dev = "uvicorn main:app --reload"
 # start = "uvicorn main:app"
