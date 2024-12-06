@@ -225,12 +225,11 @@
             <script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script><script type='text/javascript'>kofiwidget2.init('Support me on Ko-fi', '#252526', 'H2H0GY0OU');kofiwidget2.draw();</script> 
         </div>
         <main>
-            <!--Logo-->
             <h1>SVG Recolor</h1>
             <form id="colorize-form" action="/colorize" method="post" enctype="multipart/form-data">
 
                 <label for="files" class="glorious-label">Upload SVG Icon:</label>
-                <input id="files" type="file" name="icon" accept="image/*" onchange="openFile(event)">
+                <input id="files" type="file" name="icon" accept="image/svg+xml" onchange="openFile(event)">
 
                 <label for="color-input" class="glorious-label">Choose Color:</label>
                 <input id="color-input" type="color" name="color" value="#FF0066">
@@ -262,13 +261,6 @@
                 return hexColorPattern.test(color) || rgbColorPattern.test(color);
             }
 
-            function validateSVG(file) {
-                const fileTypes = ['svg'];
-                const extension = file.name.split('.').pop().toLowerCase();
-                const mimetype = file.type;
-                return fileTypes.indexOf(extension) > -1 && mimetype === 'image/svg+xml';
-            }
-
             function openFile(event) {
                 read(event.target);
             }
@@ -276,27 +268,23 @@
             function read(input) {
                 if (input.files && input.files[0]) {
                     const file = input.files[0];
-                    if (validateSVG(file)) {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                            const previewContainer = document.getElementById('preview-container');
-                            if (!previewContainer.shadowRoot) {
-                                const shadow = previewContainer.attachShadow({ mode: 'open' });
-                                shadow.innerHTML = `
-                                    ${previewIconStyles}
-                                    ${reader.result}
-                                `;
-                            } else {
-                                previewContainer.shadowRoot.innerHTML = `
-                                    ${previewIconStyles}
-                                    ${reader.result}
-                                `;
-                            }
-                        };
-                        reader.readAsText(file);
-                    } else {
-                        console.log('Wrong image type. Please upload an SVG file.');
-                    }
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const previewContainer = document.getElementById('preview-container');
+                        if (!previewContainer.shadowRoot) {
+                            const shadow = previewContainer.attachShadow({ mode: 'open' });
+                            shadow.innerHTML = `
+                                ${previewIconStyles}
+                                ${reader.result}
+                            `;
+                        } else {
+                            previewContainer.shadowRoot.innerHTML = `
+                                ${previewIconStyles}
+                                ${reader.result}
+                            `;
+                        }
+                    };
+                    reader.readAsText(file);
                 }
             }
 
@@ -308,8 +296,8 @@
                 const fileInput = document.getElementById('files');
                 const file = fileInput.files[0];
 
-                if (!file || !validateSVG(file)) {
-                    errorMessage.textContent = 'Invalid file format. Please upload a valid SVG file.';
+                if (!file) {
+                    errorMessage.textContent = 'Please upload a valid SVG file.';
                     return;
                 }
 
