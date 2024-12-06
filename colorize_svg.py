@@ -57,6 +57,8 @@ def main():
             print(f"Error: Input file '{input_svg}' does not exist.")
             sys.exit(1)
 
+        # TODO: Convert SVG styles to attributes with SVGO (or similar)
+
         # Convert to grayscale using svgray
         print("Converting to grayscale...")
         with open(temp_grayscale_svg_path, "w") as f:
