@@ -1,6 +1,34 @@
 <html>
     <head>
         <title>SVG Recolor</title>
+        <meta name="description" content="Easily recolor SVG icons! Pick a color, select an icon, and edit effortlessly. Perfect for mono- or multi-colored icons, logos, illustrations, and much more!">
+        <meta name="keywords" content="svg, recolor, colorize, icons, images, graphics, tint, rgb, hex, color edit, python, fastapi, soloproject, svg editing">
+        <meta name="author" content="Snailedlt">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+        <!-- Favicon -->
+        <link rel="icon" type="image/png" href="/static/favicon/favicon-96x96.png" sizes="96x96" />
+        <link rel="icon" type="image/svg+xml" href="/static/favicon/favicon.svg" />
+        <link rel="shortcut icon" href="/static/favicon/favicon.ico" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/static/favicon/apple-touch-icon.png" />
+        <meta name="apple-mobile-web-app-title" content="SVG Recolor" />
+        <link rel="manifest" href="/static/favicon/site.webmanifest" />
+
+        <!-- Facebook Meta Tags -->
+        <meta property="og:url" content="https://svg-recolor.jorgenkh.no/">
+        <meta property="og:type" content="website">
+        <meta property="og:title" content="SVG Recolor">
+        <meta property="og:description" content="Easily recolor SVG icons! Pick a color, select an icon, and edit effortlessly. Perfect for mono- or multi-colored icons, logos, illustrations, and much more!">
+        <meta property="og:image" content="https://svg-recolor.jorgenkh.no/static/thumbnail.jpg">
+
+        <!-- Twitter Meta Tags -->
+        <meta name="twitter:card" content="summary_large_image">
+        <meta property="twitter:domain" content="svg-recolor.jorgenkh.no">
+        <meta property="twitter:url" content="https://svg-recolor.jorgenkh.no/">
+        <meta name="twitter:title" content="SVG Recolor">
+        <meta name="twitter:description" content="Easily recolor SVG icons! Pick a color, select an icon, and edit effortlessly. Perfect for mono- or multi-colored icons, logos, illustrations, and much more!">
+        <meta name="twitter:image" content="https://svg-recolor.jorgenkh.no/static/thumbnail.jpg">
+
         <style>
             body {
                 font-family: 'Roboto', sans-serif;
@@ -187,11 +215,17 @@
                 API Docs (Redoc)
             </a>
             <a href="https://github.com/Snailedlt/svg-recolor" target="_blank">
-                <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub">
+                <img src="https://deviconapi.vercel.app/github?theme=dark&size=128" alt="GitHub">
                 GitHub Repo
             </a>
+            <a href="https://jorgenkh.no" target="_blank" >
+                <img src="/static/avatar.png" alt="JorgenKH">
+                My Portfolio
+            </a>
+            <script type='text/javascript' src='https://storage.ko-fi.com/cdn/widget/Widget_2.js'></script><script type='text/javascript'>kofiwidget2.init('Support me on Ko-fi', '#252526', 'H2H0GY0OU');kofiwidget2.draw();</script> 
         </div>
         <main>
+            <!--Logo-->
             <h1>SVG Recolor</h1>
             <form id="colorize-form" action="/colorize" method="post" enctype="multipart/form-data">
 
