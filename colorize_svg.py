@@ -61,6 +61,7 @@ def colorize_svg(input_svg, output_svg, color):
 
         # Add color using svgshift
         print("Adding color...")
+        raise Exception(os.listdir(os.path.abspath("./submodules/svgshift/")))
         with open(output_svg, "w") as f:
             subprocess.run(
                 [
