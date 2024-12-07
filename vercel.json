@@ -6,7 +6,7 @@
             "use": "@vercel/python"
         }
     ],
-    "buildCommand": "gcc submodules/svgshift/svgshift.c -o submodules/svgshift/svgshift",
+    "buildCommand": "ls & gcc submodules/svgshift/svgshift.c -o submodules/svgshift/svgshift",
     "installCommand": "pipenv install",
     "routes": [
         {
