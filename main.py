@@ -74,7 +74,7 @@ async def colorize(icon: UploadFile = File(...), color: str = "#FF0066"):
 
             # Copy the output file to a more permanent location
             permanent_output_path = (
-                f"tmp/{Path(icon.filename).stem}_recolored_{color}.svg"
+                f"/tmp/{Path(icon.filename).stem}_recolored_{color}.svg"
             )
             shutil.copyfile(output_svg_temp.name, permanent_output_path)
 
