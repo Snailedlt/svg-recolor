@@ -6,6 +6,7 @@
             "use": "@vercel/python"
         }
     ],
+    "installCommand": "pip3 install --user pipenv && pipenv install",
     "routes": [
         {
             "src": "/(.*)",
