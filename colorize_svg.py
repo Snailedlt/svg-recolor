@@ -22,21 +22,7 @@ def hex_to_rgb(hexcolor):
     return tuple(int(hexcolor[i : i + 2], 16) for i in (0, 2, 4))
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Colorize SVG script")
-    parser.add_argument("input_svg", help="Input SVG file")
-    parser.add_argument("output_svg", help="Output SVG file")
-    parser.add_argument(
-        "--color",
-        required=True,
-        help="Color in hex (e.g., #FF5733) or RGB (e.g., 255,125,0) format",
-    )
-    args = parser.parse_args()
-
-    input_svg = args.input_svg
-    output_svg = args.output_svg
-    color = args.color
-
+def colorize_svg(input_svg, output_svg, color):
     print(f"Input SVG: {input_svg}")
     print(f"Color: {color}")
     print(f"Output SVG: {output_svg}")
@@ -89,6 +75,19 @@ def main():
     finally:
         print("Cleaning up...")
         os.remove(temp_grayscale_svg_path)
+
+
+def main(args=None):
+    parser = argparse.ArgumentParser(description="Colorize SVG script")
+    parser.add_argument("input_svg", help="Input SVG file")
+    parser.add_argument("output_svg", help="Output SVG file")
+    parser.add_argument(
+        "--color",
+        required=True,
+        help="Color in hex (e.g., #FF5733) or RGB (e.g., 255,125,0) format",
+    )
+    args = parser.parse_args(args)
+    colorize_svg(args.input_svg, args.output_svg, args.color)
 
 
 if __name__ == "__main__":

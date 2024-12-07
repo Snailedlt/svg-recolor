@@ -8,6 +8,7 @@ from pathlib import Path
 from starlette.staticfiles import StaticFiles
 import sentry_sdk
 import sys
+from colorize_svg import colorize_svg
 
 sentry_sdk.init(
     dsn="https://98b39a4523a365e1bbc2639fbb075633@o4508424099856384.ingest.de.sentry.io/4508424101363792",
@@ -50,17 +51,12 @@ async def colorize(icon: UploadFile = File(...), color: str = "#FF0066"):
                 buffer.write(icon.file.read())
 
             # Run the colorize_svg.py script using bash
-            subprocess.run(
-                [
-                    sys.executable,
-                    "colorize_svg.py",
-                    input_svg_temp.name,
-                    output_svg_temp.name,
-                    "--color",
-                    color,
-                ],
-                check=True,
-            )
+            try:
+                colorize_svg(input_svg_temp.name, output_svg_temp.name, color)
+            except Exception as e:
+                # Log the error output
+                print(f"Error processing the SVG file. Error: {str(e)}")
+                raise RuntimeError(f"Error processing the SVG file. Error: {str(e)}")
 
             # Return the colorized SVG from the temporary output file
             return FileResponse(
