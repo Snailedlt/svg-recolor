@@ -23,6 +23,7 @@ ruff = "==0.8.1"
 python-dotenv = "==1.0.1"
 pydantic-settings = "==2.6.1"
 fastapi = {extras = ["standard"], version = "*"}
+sentry-sdk = {extras = ["fastapi"], version = "*"}
 
 [dev-packages]
 
