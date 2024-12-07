@@ -317,8 +317,9 @@
                 .then(async response => {
                     if (!response.ok) {
                         const res = await response.text();
+                        let json;
                         try {
-                            const json = JSON.parse(res);
+                            json = JSON.parse(res);
                         } catch (error) {
                             throw new Error(`${response.status} - ${response.statusText} - ${res}`);
                         }
