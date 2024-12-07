@@ -1,3 +1,4 @@
+import shutil
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 import subprocess
@@ -22,7 +23,6 @@ sentry_sdk.init(
     },
 )
 
-
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 
@@ -33,6 +33,19 @@ async def landing_page():
     with open("main.html", "r", encoding="utf-8") as file:
         html_content = file.read()
     return HTMLResponse(content=html_content)
+
+
+class FileResponseWithCleanup(FileResponse):
+    def __init__(self, *args, **kwargs):
+        self.cleanup_path = kwargs.pop("cleanup_path", None)
+        super().__init__(*args, **kwargs)
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            if self.cleanup_path and os.path.exists(self.cleanup_path):
+                os.remove(self.cleanup_path)
 
 
 @app.post("/colorize")
@@ -59,11 +72,18 @@ async def colorize(icon: UploadFile = File(...), color: str = "#FF0066"):
                 print(f"Error processing the SVG file. Error: {str(e)}")
                 raise RuntimeError(f"Error processing the SVG file. Error: {str(e)}")
 
+            # Copy the output file to a more permanent location
+            permanent_output_path = (
+                f"static/{Path(icon.filename).stem}_recolored_{color}.svg"
+            )
+            shutil.copyfile(output_svg_temp.name, permanent_output_path)
+
             # Return the colorized SVG from the temporary output file
-            return FileResponse(
-                path=output_svg_temp.name,
+            return FileResponseWithCleanup(
+                path=permanent_output_path,
                 media_type="image/svg+xml",
                 filename=Path(icon.filename).stem + "_recolored_" + color + ".svg",
+                cleanup_path=permanent_output_path,
             )
         except subprocess.CalledProcessError as e:
             raise HTTPException(
