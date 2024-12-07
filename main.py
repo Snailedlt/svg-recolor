@@ -52,7 +52,7 @@ async def colorize(icon: UploadFile = File(...), color: str = "#FF0066"):
             # Run the colorize_svg.py script using bash
             subprocess.run(
                 [
-                    sys.executable,
+                    "python3",
                     "colorize_svg.py",
                     input_svg_temp.name,
                     output_svg_temp.name,
