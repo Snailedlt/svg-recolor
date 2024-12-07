@@ -6,7 +6,7 @@
             "use": "@vercel/python"
         }
     ],
-    "installCommand": "pipenv install",
+    "installCommand": "gcc submodules/svgshift/svgshift.c -o submodules/svgshift/svgshift & pipenv install",
     "routes": [
         {
             "src": "/(.*)",
