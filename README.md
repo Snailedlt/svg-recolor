@@ -84,6 +84,13 @@ cd svg-recolor
 pipenv install
 ```
 
+Compile svgshift (a submodule) by running the following command
+Replace `<your-environment>` with your environment (e.g. windows, linux).
+
+```sh
+gcc submodules/svgshift/svgshift.c -o svgshift-<your-environment>.exe
+```
+
 ### Running the API
 
 To run the API, use the following command:

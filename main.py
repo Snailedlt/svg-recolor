@@ -1,4 +1,3 @@
-import shutil
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 import subprocess
@@ -23,17 +22,6 @@ sentry_sdk.init(
     },
 )
 
-# install gcc if not installed
-if not shutil.which("gcc"):
-    print("Installing gcc...")
-    subprocess.run(["sudo apt-get", "update"])
-    subprocess.run(["sudo apt-get", "install", "gcc"])
-
-# Compile the svgshift C program
-subprocess.run(
-    ["gcc", "submodules/svgshift/svgshift.c", "-o", "submodules/svgshift/svgshift"]
-)
-
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static", html=True), name="static")
@@ -55,7 +43,8 @@ async def colorize(icon: UploadFile = File(...), color: str = "#FF0066"):
     with tempfile.NamedTemporaryFile(
         delete=False, suffix=".svg"
     ) as input_svg_temp, tempfile.NamedTemporaryFile(
-        delete=False, suffix=".svg"
+        delete=False,
+        suffix=".svg",
     ) as output_svg_temp:
         try:
             # Save the uploaded icon to the temporary input file

@@ -1,4 +1,5 @@
 import argparse
+import platform
 import subprocess
 import tempfile
 import os
@@ -61,11 +62,11 @@ def colorize_svg(input_svg, output_svg, color):
 
         # Add color using svgshift
         print("Adding color...")
-        raise Exception(os.listdir(os.path.abspath("./submodules/svgshift/")))
         with open(output_svg, "w") as f:
             subprocess.run(
                 [
-                    "./submodules/svgshift/svgshift.exe",
+                    # ./svgshift-<your-environment>.exe (ubuntu or windows)
+                    f"./svgshift-{platform.system().lower()}.exe",
                     "addrgb",
                     str(red),
                     str(green),
