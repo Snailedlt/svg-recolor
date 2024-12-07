@@ -23,6 +23,12 @@ sentry_sdk.init(
     },
 )
 
+# compile sgshift using gcc
+subprocess.run(
+    ["gcc", "-o", "submodules/svgshift/svgshift.exe", "submodules/svgshift/svgshift.c"]
+)
+
+
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 
