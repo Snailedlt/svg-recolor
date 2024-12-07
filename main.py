@@ -7,7 +7,6 @@ import re
 from pathlib import Path
 from starlette.staticfiles import StaticFiles
 import sentry_sdk
-import sys
 from colorize_svg import colorize_svg
 
 sentry_sdk.init(
@@ -23,9 +22,11 @@ sentry_sdk.init(
     },
 )
 
-# compile sgshift using gcc
+# compile sgshift.c using gcc
+subprocess.run(["sudo", "apt", "update"])
+subprocess.run(["sudo", "apt", "install", "build-essential"])
 subprocess.run(
-    ["gcc", "-o", "submodules/svgshift/svgshift.exe", "submodules/svgshift/svgshift.c"]
+    ["gcc", "submodules/svgshift/svgshift.c", "-o", "submodules/svgshift/svgshift"]
 )
 
 
