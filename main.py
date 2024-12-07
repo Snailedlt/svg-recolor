@@ -1,3 +1,4 @@
+import shutil
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 import subprocess
@@ -22,9 +23,13 @@ sentry_sdk.init(
     },
 )
 
-# compile sgshift.c using gcc
-subprocess.run(["sudo", "apt", "update"])
-subprocess.run(["sudo", "apt", "install", "build-essential"])
+# install gcc if not installed
+if not shutil.which("gcc"):
+    print("Installing gcc...")
+    subprocess.run(["sudo apt-get", "update"])
+    subprocess.run(["sudo apt-get", "install", "gcc"])
+
+# Compile the svgshift C program
 subprocess.run(
     ["gcc", "submodules/svgshift/svgshift.c", "-o", "submodules/svgshift/svgshift"]
 )
