@@ -47,7 +47,7 @@ def colorize_svg(input_svg, output_svg, color):
 
         # Convert to grayscale using svgray
         print("Converting to grayscale...")
-        print(os.listdir(os.path.abspath("./submodules/svgray/")))
+        raise Exception(os.listdir(os.path.abspath("./submodules/svgray/")))
 
         with open(temp_grayscale_svg_path, "w") as f:
             subprocess.run(
