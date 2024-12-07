@@ -52,7 +52,7 @@ def colorize_svg(input_svg, output_svg, color):
             subprocess.run(
                 [
                     sys.executable,
-                    os.path.abspath("./submodules/svgray/.svgray.py"),
+                    "./submodules/svgray/.svgray.py",
                     input_svg,
                 ],
                 check=True,
@@ -64,7 +64,7 @@ def colorize_svg(input_svg, output_svg, color):
         with open(output_svg, "w") as f:
             subprocess.run(
                 [
-                    os.path.abspath("./submodules/svgshift/svgshift.exe"),
+                    "./submodules/svgshift/svgshift.exe",
                     "addrgb",
                     str(red),
                     str(green),
