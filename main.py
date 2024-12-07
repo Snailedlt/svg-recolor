@@ -33,11 +33,6 @@ async def landing_page():
     return HTMLResponse(content=html_content)
 
 
-@app.get("/sentry-debug")
-async def trigger_error():
-    division_by_zero = 1 / 0
-
-
 @app.post("/colorize")
 async def colorize(icon: UploadFile = File(...), color: str = "#FF0066"):
     validate_icon(icon, color)
