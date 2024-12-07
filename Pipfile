@@ -15,7 +15,7 @@ lint = "ruff check"
 
 [packages]
 requests = "==2.32.3"
-uvicorn = {extras = ["standard"], version = "*"}
+uvicorn = {extras = ["standard"], version = "0.115.6"}
 # pytest = "==8.3.3"
 httpx = "==0.28.0"
 ruff = "==0.8.1"
