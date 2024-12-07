@@ -49,7 +49,11 @@ def colorize_svg(input_svg, output_svg, color):
         print("Converting to grayscale...")
         with open(temp_grayscale_svg_path, "w") as f:
             subprocess.run(
-                ["python3", "./submodules/svgray/.svgray.py", input_svg],
+                [
+                    sys.executable,
+                    os.path.abspath("./submodules/svgray/.svgray.py"),
+                    input_svg,
+                ],
                 check=True,
                 stdout=f,
             )
@@ -59,7 +63,7 @@ def colorize_svg(input_svg, output_svg, color):
         with open(output_svg, "w") as f:
             subprocess.run(
                 [
-                    "./submodules/svgshift/svgshift.exe",
+                    os.path.abspath("./submodules/svgshift/svgshift.exe"),
                     "addrgb",
                     str(red),
                     str(green),

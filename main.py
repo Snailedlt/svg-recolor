@@ -50,7 +50,7 @@ async def colorize(icon: UploadFile = File(...), color: str = "#FF0066"):
             with open(input_svg_temp.name, "wb") as buffer:
                 buffer.write(icon.file.read())
 
-            # Run the colorize_svg.py script using bash
+            # Run the colorize_svg function to colorize the SVG
             try:
                 colorize_svg(input_svg_temp.name, output_svg_temp.name, color)
             except Exception as e:
@@ -62,7 +62,6 @@ async def colorize(icon: UploadFile = File(...), color: str = "#FF0066"):
             return FileResponse(
                 path=output_svg_temp.name,
                 media_type="image/svg+xml",
-                # original filename minus the extension + recolored + the color code + .svg
                 filename=Path(icon.filename).stem + "_recolored_" + color + ".svg",
             )
         except subprocess.CalledProcessError as e:
