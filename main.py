@@ -49,19 +49,10 @@ async def colorize(icon: UploadFile = File(...), color: str = "#FF0066"):
             with open(input_svg_temp.name, "wb") as buffer:
                 buffer.write(icon.file.read())
 
-            # Define the path to the Python interpreter in Vercel
-            VERCEL_PYTHON_PATH = "/usr/local/bin/python3"
-
-            # Determine the Python interpreter to use
-            python_interpreter = (
-                VERCEL_PYTHON_PATH if os.path.exists(VERCEL_PYTHON_PATH) else "python3"
-            )
-
             # Run the colorize_svg.py script using bash
             subprocess.run(
                 [
-                    python_interpreter,
-                    # sys.executable,
+                    sys.executable,
                     "colorize_svg.py",
                     input_svg_temp.name,
                     output_svg_temp.name,
