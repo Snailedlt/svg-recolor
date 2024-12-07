@@ -316,9 +316,12 @@
                 .then(async response => {
                     if (!response.ok) {
                         const res = await response.text();
-                        console.log(res);
-                        const json = JSON.parse(res);
-                        throw new Error(`${response.status} - ${response.statusText} - ${json.detail}`);
+                        try {
+                            const json = JSON.parse(res);
+                            throw new Error(`${response.status} - ${response.statusText} - ${json.detail}`);
+                        } catch (error) {
+                            throw new Error(`${response.status} - ${response.statusText} - ${res}`);
+                        }
                     }
                     return response.text();
                 })
