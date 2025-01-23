@@ -26,11 +26,11 @@ SVG Recolor is a simple CLI tool, API and website to recolor SVG files. It is wr
 
 ### Website
 
-The website is hosted at [svg-recolor.vercel.app](https://svg-recolor.vercel.app) and requires no installation.
+The website is hosted at [svg-recolor.jorgenkh.no](https://svg-recolor.jorgenkh.no) and requires no installation.
 
 ### API
 
-The API is hosted at the same url as the website. You can find the swagger documentation on [svg-recolor.vercel.app/docs](https://svg-recolor.vercel.app/api) or [svg-recolor.vercel.app/redoc](https://svg-recolor.vercel.app/redoc) if you prefer the redoc style.
+The API is hosted at the same url as the website. You can find the swagger documentation on [svg-recolor.jorgenkh.no/docs](https://svg-recolor.jorgenkh.no/api) or [svg-recolor.jorgenkh.no/redoc](https://svg-recolor.jorgenkh.no/redoc) if you prefer the redoc style.
 
 ### CLI Tool
 
