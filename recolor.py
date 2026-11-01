@@ -159,7 +159,7 @@ def _clamp(v, lo, hi):
 
 
 def _to_hex(r: float, g: float, b: float) -> str:
-    return "%02x%02x%02x" % tuple(int(round(_clamp(c, 0, 255))) for c in (r, g, b))
+    return "".join(f"{round(_clamp(c, 0, 255)):02x}" for c in (r, g, b))
 
 
 def _parse_func(kind: str, args: str) -> tuple[str, float | None] | None:
@@ -351,7 +351,7 @@ def normalize_svg(svg: str) -> str:
         hex6, alpha = parsed
         if alpha is None or alpha >= 1:
             return "#" + hex6
-        return "#" + hex6 + "%02x" % round(alpha * 255)
+        return f"#{hex6}{round(alpha * 255):02x}"
 
     svg = _FUNC_RE.sub(func, svg)
 

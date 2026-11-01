@@ -1,7 +1,9 @@
 import io
 import ipaddress
+import json
 import re
 import socket
+import subprocess
 import zipfile
 from pathlib import Path
 from typing import Annotated, Literal
@@ -11,7 +13,7 @@ import httpx
 import sentry_sdk
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from starlette.staticfiles import StaticFiles
 
 import recolor as engine
@@ -53,6 +55,13 @@ curl "https://svg-recolor.jorgenkh.no/api/recolor?url=https://example.com/icon.s
 **Modes**: `tint` (default), `colorize`, `hue`, `solid`, `grayscale`, `adjust`. See `GET /api/modes`.
 
 **Fine-tuning**: `hue` (-360..360 degrees), `saturation` and `lightness` (-100..100) are applied after the mode.
+
+**JSON in, JSON out**: `POST /api/recolor` also accepts `application/json` like
+`{"svg": "<svg ...>", "color": "tomato", "mode": "solid"}` (or `"url"` instead of `"svg"`).
+Add `format=json` to get the SVG plus the old-to-new color mapping back.
+
+**AI agents**: a plain-text guide is at [`/llms.txt`](/llms.txt) and an MCP server
+(streamable HTTP) is at `/mcp`.
 """
 
 app = FastAPI(
@@ -111,6 +120,13 @@ async def landing_page():
 # --------------------------------------------------------------------------
 
 
+def _base_url(request: Request) -> str:
+    """Public base URL, honoring the proxy headers set by the hosting platform."""
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto}://{host.split(',')[0].strip()}"
+
+
 def _bad_request(e: Exception, status: int = 400):
     raise HTTPException(status_code=status, detail=str(e))
 
@@ -141,7 +157,7 @@ async def _run(svg_text: str, opts: engine.Options) -> engine.Result:
         return await run_in_threadpool(engine.recolor, svg_text, opts)
     except engine.RecolorError as e:
         _bad_request(e)
-    except Exception as e:  # tool failure
+    except (RuntimeError, OSError, subprocess.SubprocessError) as e:  # svgray/svgshift failed
         sentry_sdk.capture_exception(e)
         raise HTTPException(status_code=500, detail=f"Error processing the SVG file: {e}")
 
@@ -198,6 +214,12 @@ def _check_public_host(host: str, port: int):
             raise HTTPException(400, "Links to private or local network addresses are not allowed.")
 
 
+FETCH_HEADERS = {
+    "User-Agent": "svg-recolor (+https://svg-recolor.jorgenkh.no)",
+    "Accept": "image/svg+xml,*/*;q=0.8",
+}
+
+
 async def fetch_svg(url: str) -> tuple[str, str]:
     """Download an SVG from a public http(s) URL. Returns (svg_text, filename)."""
     url = _github_raw(url.strip())
@@ -208,20 +230,20 @@ async def fetch_svg(url: str) -> tuple[str, str]:
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         await run_in_threadpool(_check_public_host, parsed.hostname, port)
         try:
-            async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
-                async with client.stream(
-                    "GET", url, headers={"User-Agent": "svg-recolor (+https://svg-recolor.jorgenkh.no)", "Accept": "image/svg+xml,*/*;q=0.8"}
-                ) as resp:
-                    if resp.is_redirect and "location" in resp.headers:
-                        url = str(resp.url.join(resp.headers["location"]))
-                        continue
-                    if resp.status_code >= 400:
-                        raise HTTPException(400, f"The link returned HTTP {resp.status_code}.")
-                    data = b""
-                    async for chunk in resp.aiter_bytes():
-                        data += chunk
-                        if len(data) > engine.MAX_SVG_BYTES:
-                            raise HTTPException(413, "The linked file is larger than 2 MB.")
+            async with (
+                httpx.AsyncClient(timeout=10, follow_redirects=False) as client,
+                client.stream("GET", url, headers=FETCH_HEADERS) as resp,
+            ):
+                if resp.is_redirect and "location" in resp.headers:
+                    url = str(resp.url.join(resp.headers["location"]))
+                    continue
+                if resp.status_code >= 400:
+                    raise HTTPException(400, f"The link returned HTTP {resp.status_code}.")
+                data = b""
+                async for chunk in resp.aiter_bytes():
+                    data += chunk
+                    if len(data) > engine.MAX_SVG_BYTES:
+                        raise HTTPException(413, "The linked file is larger than 2 MB.")
         except httpx.HTTPError as e:
             raise HTTPException(400, f"Could not download the link: {e.__class__.__name__}.")
         name = Path(urlparse(url).path).name or "image.svg"
@@ -233,9 +255,70 @@ async def fetch_svg(url: str) -> tuple[str, str]:
 # API
 # --------------------------------------------------------------------------
 
+OPTION_FIELDS = ("color", "mode", "hue", "saturation", "lightness", "format", "download")
+
+
+async def _read_source(request: Request) -> tuple[str, str, dict]:
+    """Read the SVG from a multipart form, a JSON body or a raw SVG body.
+
+    Returns (svg_text, filename, options). Options found in a form or JSON body
+    (color, mode, ...) override the query string."""
+    content_type = request.headers.get("content-type", "").lower()
+    name = "image.svg"
+    if content_type.startswith(("multipart/form-data", "application/x-www-form-urlencoded")):
+        form = await request.form()
+        options = {k: form[k] for k in OPTION_FIELDS if form.get(k) not in (None, "")}
+        upload = form.get("file") or form.get("icon")
+        if upload is not None and hasattr(upload, "read"):
+            return _decode(await upload.read()), upload.filename or name, options
+        if form.get("svg"):
+            return _decode(str(form["svg"]).encode()), str(form.get("filename") or name), options
+        if form.get("url"):
+            svg_text, name = await fetch_svg(str(form["url"]))
+            return svg_text, name, options
+        raise HTTPException(400, "Send the SVG as a 'file' field, its markup as an 'svg' field, or a link as a 'url' field.")
+    body = await request.body()
+    if content_type.startswith("application/json"):
+        try:
+            data = json.loads(body or b"{}")
+        except ValueError:
+            raise HTTPException(400, "The JSON body could not be parsed.")
+        if not isinstance(data, dict):
+            raise HTTPException(400, "The JSON body must be an object.")
+        options = {k: data[k] for k in OPTION_FIELDS if data.get(k) is not None}
+        if isinstance(data.get("svg"), str) and data["svg"].strip():
+            return _decode(data["svg"].encode()), str(data.get("filename") or name), options
+        if isinstance(data.get("url"), str) and data["url"].strip():
+            svg_text, name = await fetch_svg(data["url"])
+            return svg_text, name, options
+        raise HTTPException(400, 'The JSON body needs an "svg" string with the SVG markup, or a "url" string.')
+    if not body:
+        raise HTTPException(400, "The request body is empty. Send an SVG file, JSON, or a multipart form.")
+    return _decode(body), name, {}
+
+
+JSON_BODY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "svg": {"type": "string", "description": "The SVG markup."},
+        "url": {"type": "string", "description": "Alternatively, a public link to an SVG."},
+        "filename": {"type": "string", "description": "Used to name the output file."},
+        "color": {"type": "string", "example": "ff0066"},
+        "mode": {"type": "string", "enum": list(engine.MODES)},
+        "hue": {"type": "integer", "minimum": -360, "maximum": 360},
+        "saturation": {"type": "integer", "minimum": -100, "maximum": 100},
+        "lightness": {"type": "integer", "minimum": -100, "maximum": 100},
+        "format": {"type": "string", "enum": ["svg", "json"]},
+    },
+}
+
 RECOLOR_BODY = {
     "requestBody": {
         "content": {
+            "application/json": {
+                "schema": JSON_BODY_SCHEMA,
+                "example": {"svg": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>', "color": "tomato", "mode": "solid", "format": "json"},
+            },
             "multipart/form-data": {
                 "schema": {
                     "type": "object",
@@ -256,6 +339,7 @@ RECOLOR_BODY = {
     "/api/recolor",
     tags=["Recolor"],
     summary="Recolor an SVG from a link",
+    operation_id="recolorFromUrl",
     response_class=Response,
     responses={200: {"content": {"image/svg+xml": {}}}},
 )
@@ -284,6 +368,7 @@ async def recolor_from_url(
     "/api/recolor",
     tags=["Recolor"],
     summary="Recolor an uploaded SVG",
+    operation_id="recolorSvg",
     response_class=Response,
     responses={200: {"content": {"image/svg+xml": {}}}},
     openapi_extra=RECOLOR_BODY,
@@ -298,33 +383,28 @@ async def recolor_upload(
     format: FormatParam = "svg",
     download: DownloadParam = False,
 ):
-    """Send the SVG as a multipart `file` field, as a multipart `url` field, or as the raw
-    request body (`Content-Type: image/svg+xml`)."""
-    opts = _options(mode, color, hue, saturation, lightness)
-    content_type = request.headers.get("content-type", "")
-    name = "image.svg"
-    if content_type.startswith("multipart/form-data") or content_type.startswith("application/x-www-form-urlencoded"):
-        form = await request.form()
-        upload = form.get("file") or form.get("icon")
-        if upload is not None and hasattr(upload, "read"):
-            svg_text = _decode(await upload.read())
-            name = upload.filename or name
-        elif form.get("url"):
-            svg_text, name = await fetch_svg(str(form.get("url")))
-        else:
-            raise HTTPException(400, "Send the SVG as a 'file' field or a link as a 'url' field.")
-    else:
-        body = await request.body()
-        if not body:
-            raise HTTPException(400, "The request body is empty. Send an SVG file.")
-        svg_text = _decode(body)
+    """Send the SVG in any of these ways:
+
+    - multipart form: a `file` field, an `svg` field with the markup, or a `url` field
+    - JSON: `{"svg": "<svg ...>", "color": "tomato", "mode": "solid"}` (or `"url"`)
+    - raw body with `Content-Type: image/svg+xml`
+
+    Options in a form or JSON body override the query string."""
+    svg_text, name, body_opts = await _read_source(request)
+    params = {"color": color, "mode": mode, "hue": hue, "saturation": saturation,
+              "lightness": lightness, "format": format, "download": download} | body_opts
+    if params["format"] not in ("svg", "json"):
+        raise HTTPException(400, "'format' must be 'svg' or 'json'.")
+    opts = _options(params["mode"], params["color"], params["hue"], params["saturation"], params["lightness"])
     result = await _run(svg_text, opts)
-    return _respond(result, opts, _output_name(_safe_stem(name), opts), format, download)
+    download_flag = str(params["download"]).lower() in ("1", "true", "yes")
+    return _respond(result, opts, _output_name(_safe_stem(name), opts), params["format"], download_flag)
 
 
 @app.post(
     "/api/recolor/batch",
     tags=["Recolor"],
+    operation_id="recolorBatch",
     summary="Recolor several SVGs at once",
     response_class=Response,
     responses={200: {"content": {"application/zip": {}}}},
@@ -365,32 +445,21 @@ async def recolor_batch(
     )
 
 
-@app.post("/api/palette", tags=["Inspect"], summary="List the colors in an uploaded SVG", openapi_extra=RECOLOR_BODY)
+@app.post("/api/palette", tags=["Inspect"], operation_id="listColors", summary="List the colors in an uploaded SVG", openapi_extra=RECOLOR_BODY)
 async def palette_upload(request: Request):
     """Returns every distinct color in the SVG (after normalizing named colors, rgb()/hsl()
     and short hex) with how often it occurs."""
-    content_type = request.headers.get("content-type", "")
-    if content_type.startswith("multipart/form-data"):
-        form = await request.form()
-        upload = form.get("file") or form.get("icon")
-        if upload is not None and hasattr(upload, "read"):
-            svg_text = _decode(await upload.read())
-        elif form.get("url"):
-            svg_text, _ = await fetch_svg(str(form.get("url")))
-        else:
-            raise HTTPException(400, "Send the SVG as a 'file' field or a link as a 'url' field.")
-    else:
-        svg_text = _decode(await request.body())
+    svg_text, _, _ = await _read_source(request)
     return JSONResponse({"colors": engine.palette(svg_text)}, headers={"Access-Control-Allow-Origin": "*"})
 
 
-@app.get("/api/palette", tags=["Inspect"], summary="List the colors in an SVG from a link")
+@app.get("/api/palette", tags=["Inspect"], operation_id="listColorsFromUrl", summary="List the colors in an SVG from a link")
 async def palette_url(url: Annotated[str, Query(description="Public http(s) link to an SVG.")]):
     svg_text, _ = await fetch_svg(url)
     return JSONResponse({"colors": engine.palette(svg_text)}, headers={"Access-Control-Allow-Origin": "*"})
 
 
-@app.get("/api/fetch", tags=["Inspect"], summary="Download an SVG from a link without changing it", response_class=Response)
+@app.get("/api/fetch", tags=["Inspect"], operation_id="fetchSvg", summary="Download an SVG from a link without changing it", response_class=Response)
 async def fetch_original(url: Annotated[str, Query(description="Public http(s) link to an SVG.")]):
     """Used by the website to preview linked SVGs. Applies the same safety checks as
     `GET /api/recolor`."""
@@ -400,8 +469,7 @@ async def fetch_original(url: Annotated[str, Query(description="Public http(s) l
     return Response(svg_text, media_type="image/svg+xml", headers=headers)
 
 
-@app.get("/api/modes", tags=["Inspect"], summary="List the recolor modes")
-async def list_modes():
+def _modes_info() -> dict:
     return {
         "default": engine.DEFAULT_MODE,
         "modes": [{"id": k, **v} for k, v in engine.MODES.items()],
@@ -413,12 +481,233 @@ async def list_modes():
     }
 
 
+@app.get("/api/modes", tags=["Inspect"], operation_id="listModes", summary="List the recolor modes")
+async def list_modes():
+    return _modes_info()
+
+
+@app.get("/api", tags=["Inspect"], operation_id="apiIndex", summary="List the API endpoints")
+async def api_index(request: Request):
+    """A machine-readable starting point: every endpoint with a one-line description."""
+    base = _base_url(request)
+    return {
+        "name": "SVG Recolor API",
+        "docs": {"openapi": f"{base}/openapi.json", "swagger": f"{base}/docs", "redoc": f"{base}/redoc", "llms_txt": f"{base}/llms.txt"},
+        "mcp": f"{base}/mcp",
+        "endpoints": [
+            {"method": "GET", "path": "/api/recolor", "description": "Recolor an SVG from a link (?url=). Cacheable; works as <img src>."},
+            {"method": "POST", "path": "/api/recolor", "description": "Recolor an SVG sent as multipart, JSON {svg|url, ...} or a raw image/svg+xml body."},
+            {"method": "POST", "path": "/api/recolor/batch", "description": "Recolor many files (multipart 'files'), get a ZIP."},
+            {"method": "GET", "path": "/api/palette", "description": "List the colors in an SVG from a link (?url=)."},
+            {"method": "POST", "path": "/api/palette", "description": "List the colors in an uploaded SVG."},
+            {"method": "GET", "path": "/api/modes", "description": "List recolor modes and option ranges."},
+        ],
+        **_modes_info(),
+    }
+
+
+# --------------------------------------------------------------------------
+# AI agents: llms.txt and an MCP server
+# --------------------------------------------------------------------------
+
+
+def _llms_txt(base: str) -> str:
+    modes = "\n".join(f"- `{k}`: {v['description']}" for k, v in engine.MODES.items())
+    return f"""# SVG Recolor
+
+> Recolor SVG files (icons, logos, illustrations) over HTTP. No API key. Powered by svgray
+> (grayscale) and svgshift (RGB/HSL color operations).
+
+Base URL: {base}
+
+## Quick reference
+
+- Recolor from a link: `GET {base}/api/recolor?url=<svg-url>&color=<color>&mode=<mode>` → `image/svg+xml`
+- Recolor markup: `POST {base}/api/recolor` with `Content-Type: application/json` and
+  `{{"svg": "<svg ...>", "color": "tomato", "mode": "solid", "format": "json"}}`
+  → `{{"svg": "...", "palette": [{{"from": "#5a9fd4", "to": "#ff6347", "count": 3}}], "filename": "..."}}`
+- Recolor a file: `POST {base}/api/recolor?color=ff0066` with multipart field `file`
+- Many files: `POST {base}/api/recolor/batch` with multipart fields `files` → ZIP
+- List colors: `GET {base}/api/palette?url=<svg-url>` or `POST {base}/api/palette` (same bodies as above)
+- Modes and limits: `GET {base}/api/modes`
+- OpenAPI: {base}/openapi.json
+- MCP server (streamable HTTP, no auth): {base}/mcp
+  Tools: `recolor_svg`, `list_svg_colors`, `list_recolor_modes`.
+  Claude Code: `claude mcp add --transport http svg-recolor {base}/mcp`
+
+## Parameters
+
+- `color`: `ff0066`, `#ff0066` (encode `#` as `%23` in URLs), `f06`, `255,0,102`,
+  `rgb(255 0 102)`, `hsl(330 100% 50%)`, or a CSS name like `tomato`. Default `ff0066`.
+- `mode`: one of {", ".join(f"`{k}`" for k in engine.MODES)}. Default `{engine.DEFAULT_MODE}`.
+- `hue`: rotate hue, -360..360 degrees. `saturation`, `lightness`: -100..100 points. Applied after the mode.
+- `format`: `svg` (default) or `json`. `download`: `true` to get an attachment.
+
+## Modes
+
+{modes}
+
+Pick `solid` for single-color icons, `colorize` to keep shading in multi-color art,
+`hue` to change hue only, `adjust` (with `hue`/`saturation`/`lightness`) to tweak.
+
+## Limits and errors
+
+- SVGs up to 2 MB. Links must be public http(s); private and local addresses are refused.
+- GitHub file links (github.com/.../blob/...) are converted to raw links.
+- Errors are JSON: `{{"detail": "human-readable message"}}` with status 400 (bad input),
+  413 (too large), 415 (not an SVG), 422 (invalid parameter) or 500.
+"""
+
+
+@app.get("/llms.txt", tags=["Inspect"], operation_id="llmsTxt", summary="Plain-text guide for AI agents", response_class=PlainTextResponse)
+async def llms_txt(request: Request):
+    return PlainTextResponse(_llms_txt(_base_url(request)), headers={"Access-Control-Allow-Origin": "*"})
+
+
+MCP_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+_COLOR_SCHEMA = {"type": "string", "description": "Target color: hex (ff0066, #f06), '255,0,102', rgb()/hsl() or a CSS name. Ignored by grayscale/adjust.", "default": "ff0066"}
+_SOURCE_PROPS = {
+    "svg": {"type": "string", "description": "SVG markup. Give this or `url`."},
+    "url": {"type": "string", "description": "Public http(s) link to an SVG. Give this or `svg`."},
+}
+MCP_TOOLS = [
+    {
+        "name": "recolor_svg",
+        "title": "Recolor SVG",
+        "description": "Recolor an SVG (from markup or a link) and return the new SVG markup plus the old-to-new color mapping. "
+        "Modes: " + "; ".join(f"{k}: {v['description']}" for k, v in engine.MODES.items()),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                **_SOURCE_PROPS,
+                "color": _COLOR_SCHEMA,
+                "mode": {"type": "string", "enum": list(engine.MODES), "default": engine.DEFAULT_MODE},
+                "hue": {"type": "integer", "minimum": -360, "maximum": 360, "default": 0, "description": "Rotate hue (degrees), applied after the mode."},
+                "saturation": {"type": "integer", "minimum": -100, "maximum": 100, "default": 0},
+                "lightness": {"type": "integer", "minimum": -100, "maximum": 100, "default": 0},
+            },
+        },
+        "annotations": {"readOnlyHint": True, "openWorldHint": True},
+    },
+    {
+        "name": "list_svg_colors",
+        "title": "List SVG colors",
+        "description": "List the distinct colors in an SVG (from markup or a link) with how often each occurs.",
+        "inputSchema": {"type": "object", "properties": dict(_SOURCE_PROPS)},
+        "annotations": {"readOnlyHint": True, "openWorldHint": True},
+    },
+    {
+        "name": "list_recolor_modes",
+        "title": "List recolor modes",
+        "description": "Describe the available recolor modes and the ranges of the hue/saturation/lightness options.",
+        "inputSchema": {"type": "object", "properties": {}},
+        "annotations": {"readOnlyHint": True},
+    },
+]
+
+
+async def _mcp_source(args: dict) -> tuple[str, str]:
+    if isinstance(args.get("svg"), str) and args["svg"].strip():
+        return _decode(args["svg"].encode()), "image.svg"
+    if isinstance(args.get("url"), str) and args["url"].strip():
+        return await fetch_svg(args["url"])
+    raise HTTPException(400, "Provide either `svg` (SVG markup) or `url` (a link to an SVG).")
+
+
+async def _mcp_call(name: str, args: dict) -> dict:
+    try:
+        if name == "list_recolor_modes":
+            info = _modes_info()
+            return {"content": [{"type": "text", "text": json.dumps(info, indent=2)}], "structuredContent": info}
+        if name == "list_svg_colors":
+            svg_text, _ = await _mcp_source(args)
+            data = {"colors": engine.palette(svg_text)}
+            return {"content": [{"type": "text", "text": json.dumps(data)}], "structuredContent": data}
+        if name == "recolor_svg":
+            opts = _options(args.get("mode") or engine.DEFAULT_MODE, args.get("color") or "ff0066",
+                            args.get("hue", 0), args.get("saturation", 0), args.get("lightness", 0))
+            svg_text, src_name = await _mcp_source(args)
+            result = await _run(svg_text, opts)
+            data = {"filename": _output_name(_safe_stem(src_name), opts), "palette": result.palette(), "svg": result.svg}
+            summary = ", ".join(f"{p['from']}→{p['to']}" for p in data["palette"][:20])
+            return {
+                "content": [
+                    {"type": "text", "text": result.svg},
+                    {"type": "text", "text": f"Mode {opts.mode}. Color mapping: {summary or 'no colors found'}."},
+                ],
+                "structuredContent": data,
+            }
+    except HTTPException as e:
+        return {"content": [{"type": "text", "text": f"Error: {e.detail}"}], "isError": True}
+    raise KeyError(name)
+
+
+async def _mcp_handle(msg) -> dict | None:
+    if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0" or not isinstance(msg.get("method"), str):
+        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid request"}}
+    method, mid, params = msg["method"], msg.get("id"), msg.get("params") or {}
+    if "id" not in msg:  # notification, e.g. notifications/initialized
+        return None
+
+    def ok(result):
+        return {"jsonrpc": "2.0", "id": mid, "result": result}
+
+    def err(code, message):
+        return {"jsonrpc": "2.0", "id": mid, "error": {"code": code, "message": message}}
+
+    if method == "initialize":
+        requested = params.get("protocolVersion")
+        version = requested if requested in MCP_PROTOCOL_VERSIONS else MCP_PROTOCOL_VERSIONS[0]
+        return ok({
+            "protocolVersion": version,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": "svg-recolor", "title": "SVG Recolor", "version": app.version},
+            "instructions": "Recolor SVG icons and illustrations. Call recolor_svg with `svg` markup or a `url`, "
+            "a `color` and a `mode` (solid for one-color icons, colorize to keep shading). "
+            "The first text block of the result is the recolored SVG.",
+        })
+    if method == "ping":
+        return ok({})
+    if method == "tools/list":
+        return ok({"tools": MCP_TOOLS})
+    if method == "tools/call":
+        name, args = params.get("name"), params.get("arguments") or {}
+        if not isinstance(args, dict):
+            return err(-32602, "arguments must be an object")
+        try:
+            return ok(await _mcp_call(name, args))
+        except KeyError:
+            return err(-32602, f"Unknown tool: {name}")
+    return err(-32601, f"Method not found: {method}")
+
+
+@app.post("/mcp", tags=["Inspect"], operation_id="mcp", summary="MCP server (streamable HTTP, JSON responses)")
+async def mcp_endpoint(request: Request):
+    """Model Context Protocol endpoint for AI agents. Stateless; send JSON-RPC 2.0 messages.
+    Tools: `recolor_svg`, `list_svg_colors`, `list_recolor_modes`."""
+    try:
+        payload = json.loads(await request.body())
+    except ValueError:
+        return JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}, status_code=400)
+    if isinstance(payload, list):
+        replies = [r for r in [await _mcp_handle(m) for m in payload] if r is not None]
+        return JSONResponse(replies) if replies else Response(status_code=202)
+    reply = await _mcp_handle(payload)
+    return JSONResponse(reply) if reply is not None else Response(status_code=202)
+
+
+@app.get("/mcp", include_in_schema=False)
+async def mcp_get():
+    # No server-initiated stream; clients fall back to plain POST requests.
+    return Response(status_code=405, headers={"Allow": "POST"})
+
+
 # --------------------------------------------------------------------------
 # Legacy endpoint (used by older clients)
 # --------------------------------------------------------------------------
 
 
-@app.post("/colorize", tags=["Legacy"], summary="Recolor an uploaded SVG (legacy)", response_class=Response)
+@app.post("/colorize", tags=["Legacy"], operation_id="colorizeLegacy", deprecated=True, summary="Recolor an uploaded SVG (legacy)", response_class=Response)
 async def colorize(
     icon: Annotated[UploadFile, File(description="The SVG file.")],
     color: str = "#FF0066",

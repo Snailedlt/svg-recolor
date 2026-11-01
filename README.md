@@ -85,6 +85,32 @@ curl -X POST "https://svg-recolor.jorgenkh.no/api/recolor/batch?mode=grayscale" 
 <img src="https://svg-recolor.jorgenkh.no/api/recolor?url=https://example.com/icon.svg&color=ff0066&mode=solid" alt="">
 ```
 
+The `POST` endpoints also accept JSON, which is the easiest format for scripts and agents:
+
+```sh
+curl -X POST "https://svg-recolor.jorgenkh.no/api/recolor?format=json" \
+  -H "Content-Type: application/json" \
+  -d '{"svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"4\"/></svg>", "color": "tomato", "mode": "solid"}'
+```
+
+### AI agents
+
+- **MCP server** (streamable HTTP, no auth) at `/mcp` with the tools `recolor_svg`, `list_svg_colors` and `list_recolor_modes`:
+
+  ```sh
+  claude mcp add --transport http svg-recolor https://svg-recolor.jorgenkh.no/mcp
+  ```
+
+- **[`/llms.txt`](https://svg-recolor.jorgenkh.no/llms.txt)**: a plain-text guide to the endpoints, parameters and modes.
+- **[`/api`](https://svg-recolor.jorgenkh.no/api)**: a JSON index of the endpoints. The [OpenAPI spec](https://svg-recolor.jorgenkh.no/openapi.json) has stable operation IDs (`recolorSvg`, `recolorFromUrl`, ...).
+
+### Website tips
+
+- The page URL keeps your settings (`?mode=colorize&color=ff0066&url=...`), so you can bookmark or share a setup. Opening a link with `url=` loads that SVG.
+- **Copy as…** gives the result as SVG code, a data URI, a CSS background, a React component or Base64.
+- Compare before and after side by side or with a slider.
+- Press <kbd>?</kbd> for keyboard shortcuts: <kbd>1</kbd>-<kbd>6</kbd> pick a mode, <kbd>Ctrl</kbd>+<kbd>S</kbd> downloads, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> copies the SVG.
+
 ### CLI Tool
 
 Clone the repository (with submodules) and run `colorize_svg.py` with Python.

@@ -471,6 +471,80 @@
             .snippet-wrap pre.code { white-space: pre-wrap; word-break: break-all; padding-right: 56px; min-height: 120px; }
             .snippet-wrap .copy-snippet { position: absolute; top: 10px; right: 10px; padding: 6px 10px; font-size: 0.78rem; background: #1b1f2c; border-color: #2a2f3e; color: #d4d8e2; }
 
+            /* Compare slider */
+            .stage { position: relative; }
+            .stage[data-view="slider"] { grid-template-columns: 1fr; }
+            .stage[data-view="slider"] .pane + .pane { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--split, 50%)); }
+            .stage[data-view="slider"] .pane + .pane .pane-label { left: auto; right: 12px; }
+            .compare-range { display: none; }
+            .stage[data-view="slider"] .compare-range {
+                display: block; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
+                opacity: 0; cursor: ew-resize; z-index: 3;
+            }
+            .split-line { display: none; }
+            .stage[data-view="slider"] .split-line {
+                display: block; position: absolute; top: 0; bottom: 0; left: var(--split, 50%); width: 2px; margin-left: -1px;
+                background: var(--pick); z-index: 2; pointer-events: none;
+            }
+            .split-line::after {
+                content: "⇆"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+                background: var(--pick); color: #fff; font-size: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.35);
+            }
+            .stage[data-view="slider"] .compare-range:focus-visible ~ .split-line::after { outline: 2px solid var(--text); outline-offset: 2px; }
+            .toolbar-groups { display: flex; gap: 8px; flex-wrap: wrap; }
+
+            /* Copy menu */
+            details.menu { position: relative; }
+            details.menu > summary { list-style: none; }
+            details.menu > summary::-webkit-details-marker { display: none; }
+            details.menu.disabled > summary { opacity: .5; pointer-events: none; }
+            .menu-list {
+                position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 30; min-width: 230px;
+                display: flex; flex-direction: column; padding: 6px; border-radius: var(--radius-sm);
+                background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow);
+            }
+            .menu-list button {
+                display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+                text-align: left; border: 0; background: none; cursor: pointer; padding: 8px 10px; border-radius: 7px; font-size: 0.88rem;
+            }
+            .menu-list button:hover, .menu-list button:focus-visible { background: var(--surface-2); }
+            .menu-list button small { color: var(--text-faint); font-size: 0.75rem; }
+
+            .controls-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: -12px; font-size: 0.82rem; color: var(--text-faint); }
+            kbd {
+                font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; padding: 1px 6px; border-radius: 5px;
+                border: 1px solid var(--border-strong); border-bottom-width: 2px; background: var(--surface-2); color: var(--text-muted);
+            }
+            .eyedropper { width: 46px; flex: none; display: grid; place-items: center; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-muted); cursor: pointer; }
+            .eyedropper:hover { color: var(--text); border-color: var(--pick); }
+
+            /* Shortcuts dialog */
+            dialog.shortcuts {
+                border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0; width: min(440px, calc(100vw - 32px));
+                background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+            }
+            dialog.shortcuts::backdrop { background: rgba(0,0,0,.5); }
+            dialog.shortcuts header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+            dialog.shortcuts h2 { margin: 0; font-size: 1rem; }
+            dialog.shortcuts dl { margin: 0; padding: 12px 18px 18px; display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; font-size: 0.88rem; align-items: center; }
+            dialog.shortcuts dt { white-space: nowrap; }
+            dialog.shortcuts dd { margin: 0; color: var(--text-muted); }
+
+            /* Agents */
+            .agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+            @media (max-width: 860px) { .agents { grid-template-columns: 1fr; } }
+            .agent-card { padding: 22px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+            .agent-card h3 { margin: 0; font-size: 1rem; }
+            .agent-card p { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
+            .agent-card pre.code { padding: 12px 14px; font-size: 0.76rem; white-space: pre-wrap; word-break: break-all; }
+            .agent-card .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+
+            .brand { white-space: nowrap; }
+            @media (max-width: 640px), (hover: none) {
+                #shortcuts-btn, .shortcut-hint { display: none; }
+            }
+
             /* ---------- Footer ---------- */
             footer.site { margin-top: auto; border-top: 1px solid var(--border); padding: 28px 0; color: var(--text-faint); font-size: 0.88rem; }
             footer.site .wrap { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -514,6 +588,10 @@
                     SVG Recolor
                 </a>
                 <nav class="links" aria-label="Main">
+                    <a href="#agents">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 14h.01M16 14h.01M9 18h6"/></svg>
+                        <span class="label">Agents</span>
+                    </a>
                     <a href="#api">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
                         <span class="label">API</span>
@@ -526,6 +604,9 @@
                         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg>
                         <span class="label">GitHub</span>
                     </a>
+                    <button class="icon-btn" id="shortcuts-btn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+                    </button>
                     <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle light/dark theme">
                         <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
                         <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -607,6 +688,9 @@
                                     <span class="sr-only">Hex color</span>
                                     <input id="hex-input" type="text" value="FF0066" maxlength="7" spellcheck="false" autocomplete="off" inputmode="text" aria-describedby="error-message">
                                 </label>
+                                <button type="button" class="eyedropper" id="eyedropper" title="Pick a color from your screen" aria-label="Pick a color from your screen" hidden>
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
+                                </button>
                             </div>
                             <div class="presets" id="presets" role="group" aria-label="Preset colors"></div>
                         </div>
@@ -647,6 +731,11 @@
                             <span class="btn-text">Recolor SVG</span>
                         </button>
 
+                        <div class="controls-footer">
+                            <button type="button" class="link-btn" id="reset-all">Reset settings</button>
+                            <span class="shortcut-hint">Press <kbd>?</kbd> for shortcuts</span>
+                        </div>
+
                         <div id="error-message" class="alert" role="alert">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                             <span id="error-text"></span>
@@ -657,13 +746,19 @@
                     <section class="card preview-card" aria-labelledby="preview-title">
                         <div class="preview-toolbar">
                             <h2 id="preview-title">Preview</h2>
-                            <div class="segmented" role="group" aria-label="Preview background">
-                                <button type="button" data-bg="checker" aria-pressed="true"><span class="sw sw-checker"></span>Transparent</button>
-                                <button type="button" data-bg="light" aria-pressed="false"><span class="sw sw-light"></span>Light</button>
-                                <button type="button" data-bg="dark" aria-pressed="false"><span class="sw sw-dark"></span>Dark</button>
+                            <div class="toolbar-groups">
+                                <div class="segmented" role="group" aria-label="Comparison view" id="view-tabs">
+                                    <button type="button" data-view="side" aria-pressed="true" title="Side by side (V)">Side by side</button>
+                                    <button type="button" data-view="slider" aria-pressed="false" title="Before/after slider (V)">Slider</button>
+                                </div>
+                                <div class="segmented" role="group" aria-label="Preview background" id="bg-tabs">
+                                    <button type="button" data-bg="checker" aria-pressed="true" title="Transparent (B)"><span class="sw sw-checker"></span>Transparent</button>
+                                    <button type="button" data-bg="light" aria-pressed="false" title="Light (B)"><span class="sw sw-light"></span>Light</button>
+                                    <button type="button" data-bg="dark" aria-pressed="false" title="Dark (B)"><span class="sw sw-dark"></span>Dark</button>
+                                </div>
                             </div>
                         </div>
-                        <div class="stage" id="stage" data-bg="checker">
+                        <div class="stage" id="stage" data-bg="checker" data-view="side">
                             <div class="pane">
                                 <span class="pane-label">Original</span>
                                 <div class="canvas" id="preview-container">
@@ -682,6 +777,8 @@
                                     </div>
                                 </div>
                             </div>
+                            <input class="compare-range" id="compare-range" type="range" min="0" max="100" value="50" aria-label="Before/after split position">
+                            <span class="split-line" aria-hidden="true"></span>
                         </div>
                         <div class="palette" id="palette" hidden>
                             <span>Colors</span>
@@ -689,11 +786,24 @@
                         </div>
                         <div class="preview-actions">
                             <span class="status" id="status"><span class="live-dot"></span><span id="status-text">Waiting for an SVG</span></span>
-                            <button type="button" class="btn btn-ghost" id="copy-btn" disabled>
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                                Copy code
+                            <button type="button" class="btn btn-ghost btn-sm" id="share-btn" title="Copy a link to this page with your settings">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                                Share
                             </button>
-                            <a class="btn btn-ghost" id="download-btn" aria-disabled="true" role="button" tabindex="-1" style="pointer-events:none;opacity:.5">
+                            <details class="menu disabled" id="copy-menu">
+                                <summary class="btn btn-ghost btn-sm" id="copy-btn" aria-label="Copy the result">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    Copy as…
+                                </summary>
+                                <div class="menu-list" role="menu">
+                                    <button type="button" role="menuitem" data-copy="svg">SVG code <small>Ctrl+Shift+C</small></button>
+                                    <button type="button" role="menuitem" data-copy="datauri">Data URI <small>for src=""</small></button>
+                                    <button type="button" role="menuitem" data-copy="css">CSS background <small>url(…)</small></button>
+                                    <button type="button" role="menuitem" data-copy="jsx">React component <small>JSX</small></button>
+                                    <button type="button" role="menuitem" data-copy="base64">Base64 <small>raw</small></button>
+                                </div>
+                            </details>
+                            <a class="btn btn-ghost btn-sm" id="download-btn" aria-disabled="true" role="button" tabindex="-1" style="pointer-events:none;opacity:.5">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                                 Download SVG
                             </a>
@@ -726,6 +836,34 @@
                 </div>
             </section>
 
+            <section class="block" id="agents">
+                <div class="wrap">
+                    <h2>Built for AI agents too</h2>
+                    <p class="lead">Let your coding agent recolor icons for you. No API key, no sign-up.</p>
+                    <div class="agents">
+                        <div class="card agent-card">
+                            <h3>MCP server</h3>
+                            <p>Add it to Claude Code, Cursor or any MCP client. Tools: <code>recolor_svg</code>, <code>list_svg_colors</code>, <code>list_recolor_modes</code>.</p>
+                            <pre class="code" id="mcp-cmd"></pre>
+                            <div class="row"><button type="button" class="btn btn-ghost btn-sm" data-copy-from="mcp-cmd">Copy command</button></div>
+                        </div>
+                        <div class="card agent-card">
+                            <h3>llms.txt</h3>
+                            <p>A short plain-text guide to every endpoint, parameter and mode. Point an agent at it and it can use the API right away.</p>
+                            <pre class="code" id="llms-url"></pre>
+                            <div class="row"><a class="btn btn-ghost btn-sm" href="/llms.txt" target="_blank" rel="noopener">Open llms.txt</a></div>
+                        </div>
+                        <div class="card agent-card">
+                            <h3>JSON in, JSON out</h3>
+                            <p>Send SVG markup as JSON and get the result plus a color mapping back. The OpenAPI spec has stable operation IDs for tool generation.</p>
+                            <pre class="code">POST /api/recolor?format=json
+{"svg": "&lt;svg …&gt;", "color": "tomato", "mode": "solid"}</pre>
+                            <div class="row"><a class="btn btn-ghost btn-sm" href="/openapi.json" target="_blank" rel="noopener">OpenAPI spec</a><a class="btn btn-ghost btn-sm" href="/api" target="_blank" rel="noopener">API index</a></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <section class="block" id="api">
                 <div class="wrap">
                     <div class="card api-grid">
@@ -751,6 +889,7 @@
                                     <button type="button" data-snippet="link" aria-pressed="false">Link</button>
                                     <button type="button" data-snippet="html" aria-pressed="false">HTML</button>
                                     <button type="button" data-snippet="js" aria-pressed="false">JavaScript</button>
+                                    <button type="button" data-snippet="python" aria-pressed="false">Python</button>
                                 </div>
                                 <span class="note">Matches your current settings</span>
                             </div>
@@ -776,6 +915,23 @@
                 </div>
             </div>
         </footer>
+
+        <dialog class="shortcuts" id="shortcuts" aria-labelledby="shortcuts-title">
+            <header><h2 id="shortcuts-title">Keyboard shortcuts</h2><button type="button" class="icon-btn" id="shortcuts-close" aria-label="Close">✕</button></header>
+            <dl>
+                <dt><kbd>1</kbd>–<kbd>6</kbd></dt><dd>Choose a mode (Tint, Colorize, Hue, Solid, Grayscale, Adjust)</dd>
+                <dt><kbd>O</kbd></dt><dd>Open a file</dd>
+                <dt><kbd>L</kbd></dt><dd>Load from a link</dd>
+                <dt><kbd>Ctrl</kbd> <kbd>V</kbd></dt><dd>Paste an SVG file or SVG code</dd>
+                <dt><kbd>C</kbd></dt><dd>Edit the color</dd>
+                <dt><kbd>V</kbd></dt><dd>Switch between side by side and slider</dd>
+                <dt><kbd>B</kbd></dt><dd>Cycle the preview background</dd>
+                <dt><kbd>Ctrl</kbd> <kbd>Enter</kbd></dt><dd>Recolor now</dd>
+                <dt><kbd>Ctrl</kbd> <kbd>S</kbd></dt><dd>Download the result</dd>
+                <dt><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>C</kbd></dt><dd>Copy the SVG code</dd>
+                <dt><kbd>?</kbd></dt><dd>Show this list</dd>
+            </dl>
+        </dialog>
 
         <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -817,6 +973,7 @@
                 let currentMode = 'tint';
                 let sourceUrl = null;
                 let snippetKind = 'curl';
+                let urlTimer = null;
                 let currentFile = null;
                 let currentColor = '#FF0066';
                 let resultText = '';
@@ -876,7 +1033,7 @@
                     if (img) img.classList.toggle('busy', on);
                 }
                 function setResultActions(enabled) {
-                    copyBtn.disabled = !enabled;
+                    $('copy-menu').classList.toggle('disabled', !enabled);
                     downloadBtn.setAttribute('aria-disabled', String(!enabled));
                     downloadBtn.tabIndex = enabled ? 0 : -1;
                     downloadBtn.style.pointerEvents = enabled ? '' : 'none';
@@ -1044,10 +1201,36 @@
                         curl: '# Upload a file\ncurl -X POST "' + origin + '/api/recolor?' + q.toString() + '" \\\n  -F "file=@' + fname + '" \\\n  -o ' + out,
                         link: '# Recolor a linked SVG\n' + getUrl,
                         html: '<!-- Use the API directly as an image -->\n<img src="' + getUrl.replace(/&/g, '&amp;') + '" alt="">',
+                        python: 'import requests\n\nwith open("' + fname + '", "rb") as f:\n    res = requests.post(\n        "' + origin + '/api/recolor",\n        params=' + JSON.stringify(Object.fromEntries(q)).replace(/":/g, '": ').replace(/,"/g, ', "') + ',\n        files={"file": f},\n    )\nres.raise_for_status()\n\nwith open("' + out + '", "wb") as f:\n    f.write(res.content)',
                         js: "const form = new FormData();\nform.append('file', file); // a File or Blob\n\nconst res = await fetch('" + origin + '/api/recolor?' + q.toString() + "', {\n  method: 'POST',\n  body: form,\n});\nconst svg = await res.text();",
                     };
                     el.textContent = snippets[snippetKind];
+                    $('mcp-cmd').textContent = 'claude mcp add --transport http svg-recolor ' + origin + '/mcp';
+                    $('llms-url').textContent = origin + '/llms.txt';
+                    syncPageUrl();
                 }
+
+                // ---------- Page URL holds the settings (shareable) ----------
+                function shareParams() {
+                    const q = apiParams();
+                    if (sourceUrl) q.set('url', sourceUrl);
+                    return q;
+                }
+                function syncPageUrl() {
+                    clearTimeout(urlTimer);
+                    urlTimer = setTimeout(() => {
+                        try { history.replaceState(null, '', location.pathname + '?' + shareParams().toString() + location.hash); } catch (e) {}
+                    }, 300);
+                }
+                $('share-btn').addEventListener('click', async () => {
+                    const link = location.origin + location.pathname + '?' + shareParams().toString();
+                    try {
+                        await navigator.clipboard.writeText(link);
+                        toast(sourceUrl ? 'Link copied. It opens with this SVG and these settings.' : 'Link copied. It opens with these settings; uploaded files are not included.');
+                    } catch (e) {
+                        showError('Could not access the clipboard. Copy the address bar instead.');
+                    }
+                });
                 document.querySelectorAll('#snippet-tabs button').forEach((b) => b.addEventListener('click', () => {
                     snippetKind = b.dataset.snippet;
                     document.querySelectorAll('#snippet-tabs button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
@@ -1113,7 +1296,7 @@
                     }
                 });
 
-                $('try-example').addEventListener('click', async () => {
+                async function loadExample() {
                     try {
                         const res = await fetch('/static/examples/python.svg');
                         if (!res.ok) throw new Error();
@@ -1122,7 +1305,8 @@
                     } catch (e) {
                         showError('Could not load the example file.');
                     }
-                });
+                }
+                $('try-example').addEventListener('click', loadExample);
 
                 // ---------- Recolor ----------
                 function scheduleLive() {
@@ -1169,7 +1353,7 @@
                         setResultActions(true);
                         const n = (data.palette || []).length;
                         const label = currentMode.charAt(0).toUpperCase() + currentMode.slice(1);
-                        setStatus('ok', label + (MODES[currentMode].color ? ' ' + color : '') + ' · ' + n + ' color' + (n === 1 ? '' : 's'));
+                        setStatus('ok', label + (MODES[currentMode].color ? ' ' + color : '') + ' · ' + n + ' color' + (n === 1 ? '' : 's') + ' · ' + formatBytes(new Blob([data.svg]).size));
                     } catch (err) {
                         if (id !== requestId) return;
                         console.error(err);
@@ -1181,26 +1365,141 @@
                 }
 
                 form.addEventListener('submit', (e) => { e.preventDefault(); recolor(); });
+
+                // ---------- Start: apply settings from the page URL ----------
+                const startParams = new URLSearchParams(location.search);
+                if (MODES[startParams.get('mode')]) currentMode = startParams.get('mode');
+                if (startParams.get('color')) {
+                    const hex = normalizeHex(startParams.get('color'));
+                    if (hex) setColor(hex, false);
+                }
+                [['hue', 180], ['saturation', 100], ['lightness', 100]].forEach(([k, lim]) => {
+                    const v = parseInt(startParams.get(k), 10);
+                    if (!Number.isNaN(v)) $('adj-' + k).value = Math.max(-lim, Math.min(lim, v));
+                });
                 setMode(currentMode, false);
                 syncAdjust(false);
+                if (startParams.get('url')) {
+                    showSource('link');
+                    $('url-input').value = startParams.get('url');
+                    loadFromLink();
+                } else {
+                    loadExample();
+                }
 
                 // ---------- Result actions ----------
-                copyBtn.addEventListener('click', async () => {
+                function toJsx(svg) {
+                    let out = svg.replace(/<\?xml[\s\S]*?\?>/g, '').replace(/<!DOCTYPE[\s\S]*?>/gi, '').replace(/<!--[\s\S]*?-->/g, '').trim();
+                    const camel = (n) => n.replace(/[-:]([a-z])/g, (m, c) => c.toUpperCase());
+                    out = out.replace(/<([a-zA-Z][\w:-]*)((?:\s+[\w:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/g, (tag, name, attrs, selfClose) => {
+                        const fixed = attrs.replace(/([\w:-]+)\s*=\s*("[^"]*"|'[^']*')/g, (a, key, val) => {
+                            if (key === 'class') return 'className=' + val;
+                            if (key === 'style') {
+                                const obj = val.slice(1, -1).split(';').map((d) => d.trim()).filter(Boolean).map((d) => {
+                                    const i = d.indexOf(':');
+                                    return i < 0 ? '' : JSON.stringify(camel(d.slice(0, i).trim())) + ': ' + JSON.stringify(d.slice(i + 1).trim());
+                                }).filter(Boolean).join(', ');
+                                return 'style={{ ' + obj + ' }}';
+                            }
+                            if (/^(data|aria)-/.test(key) || key === 'xmlns' || key.startsWith('xmlns:')) return key + '=' + val;
+                            return camel(key) + '=' + val;
+                        });
+                        return '<' + name + fixed + (selfClose ? ' />' : '>');
+                    });
+                    out = out.replace(/<svg\b/, '<svg {...props}');
+                    return 'export default function RecoloredIcon(props) {\n  return (\n' + out.split('\n').map((l) => '    ' + l).join('\n') + '\n  );\n}\n';
+                }
+                function formatResult(kind) {
+                    const uri = 'data:image/svg+xml,' + encodeURIComponent(resultText.replace(/\s*\n\s*/g, ' ').trim());
+                    if (kind === 'datauri') return uri;
+                    if (kind === 'css') return 'background-image: url("' + uri + '");';
+                    if (kind === 'base64') return btoa(unescape(encodeURIComponent(resultText)));
+                    if (kind === 'jsx') return toJsx(resultText);
+                    return resultText;
+                }
+                const COPY_LABELS = { svg: 'SVG code', datauri: 'Data URI', css: 'CSS background', jsx: 'React component', base64: 'Base64' };
+                async function copyResult(kind) {
+                    if (!resultText) return;
+                    $('copy-menu').open = false;
                     try {
-                        await navigator.clipboard.writeText(resultText);
-                        toast('SVG code copied to clipboard');
+                        await navigator.clipboard.writeText(formatResult(kind));
+                        toast(COPY_LABELS[kind] + ' copied to clipboard');
                     } catch (e) {
                         showError('Could not access the clipboard.');
                     }
-                });
+                }
+                document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', () => copyResult(b.dataset.copy)));
+                document.addEventListener('click', (e) => { if (!$('copy-menu').contains(e.target)) $('copy-menu').open = false; });
+                document.querySelectorAll('[data-copy-from]').forEach((b) => b.addEventListener('click', async () => {
+                    try { await navigator.clipboard.writeText($(b.dataset.copyFrom).textContent); toast('Copied to clipboard'); }
+                    catch (e) { showError('Could not access the clipboard.'); }
+                }));
                 downloadBtn.addEventListener('click', () => toast('Download started'));
 
-                // ---------- Preview background ----------
-                document.querySelectorAll('.segmented button').forEach((b) => {
-                    b.addEventListener('click', () => {
-                        stage.dataset.bg = b.dataset.bg;
-                        document.querySelectorAll('.segmented button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+                // ---------- Preview background and view ----------
+                function setBg(bg) {
+                    stage.dataset.bg = bg;
+                    document.querySelectorAll('#bg-tabs button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.bg === bg)));
+                }
+                document.querySelectorAll('#bg-tabs button').forEach((b) => b.addEventListener('click', () => setBg(b.dataset.bg)));
+                function setView(view) {
+                    stage.dataset.view = view;
+                    document.querySelectorAll('#view-tabs button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.view === view)));
+                }
+                document.querySelectorAll('#view-tabs button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+                $('compare-range').addEventListener('input', (e) => stage.style.setProperty('--split', e.target.value + '%'));
+
+                // ---------- Eyedropper ----------
+                if ('EyeDropper' in window) {
+                    $('eyedropper').hidden = false;
+                    $('eyedropper').addEventListener('click', async () => {
+                        try {
+                            const { sRGBHex } = await new window.EyeDropper().open();
+                            const hex = normalizeHex(sRGBHex);
+                            if (hex) setColor(hex, true);
+                        } catch (e) { /* cancelled */ }
                     });
+                }
+
+                // ---------- Reset ----------
+                $('reset-all').addEventListener('click', () => {
+                    ['hue', 'saturation', 'lightness'].forEach((k) => { $('adj-' + k).value = 0; });
+                    syncAdjust(false);
+                    setColor('#FF0066', false);
+                    setMode('tint', false);
+                    setView('side');
+                    setBg('checker');
+                    scheduleLive();
+                    toast('Settings reset');
+                });
+
+                // ---------- Keyboard shortcuts ----------
+                const dialog = $('shortcuts');
+                const openShortcuts = () => { if (dialog.showModal) dialog.showModal(); };
+                $('shortcuts-btn').addEventListener('click', openShortcuts);
+                $('shortcuts-close').addEventListener('click', () => dialog.close());
+                const MODE_KEYS = ['tint', 'colorize', 'hue', 'solid', 'grayscale', 'adjust'];
+                document.addEventListener('keydown', (e) => {
+                    const mod = e.ctrlKey || e.metaKey;
+                    if (mod && e.key.toLowerCase() === 's') {
+                        e.preventDefault();
+                        if (resultText) downloadBtn.click();
+                        return;
+                    }
+                    if (mod && e.shiftKey && e.key.toLowerCase() === 'c') { e.preventDefault(); copyResult('svg'); return; }
+                    if (mod && e.key === 'Enter') { e.preventDefault(); recolor(); return; }
+                    const t = e.target;
+                    if (mod || e.altKey || (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) || dialog.open) return;
+                    const k = e.key.toLowerCase();
+                    if (/^[1-6]$/.test(k)) setMode(MODE_KEYS[+k - 1], true);
+                    else if (k === 'o') { showSource('file'); fileInput.click(); }
+                    else if (k === 'l') { fileChip.classList.remove('show'); document.querySelector('.source-tabs').hidden = false; showSource('link'); $('url-input').focus(); }
+                    else if (k === 'c') { hexInput.focus(); hexInput.select(); }
+                    else if (k === 'v') setView(stage.dataset.view === 'slider' ? 'side' : 'slider');
+                    else if (k === 'b') { const order = ['checker', 'light', 'dark']; setBg(order[(order.indexOf(stage.dataset.bg) + 1) % 3]); }
+                    else if (e.key === '?') openShortcuts();
+                    else return;
+                    e.preventDefault();
                 });
             })();
         </script>
