@@ -28,18 +28,72 @@ SVG Recolor is a simple CLI tool, API and website to recolor SVG files. It is wr
 
 The website is hosted at [svg-recolor.jorgenkh.no](https://svg-recolor.jorgenkh.no) and requires no installation.
 
+### Modes
+
+| Mode | What it does | Powered by |
+| --- | --- | --- |
+| `tint` (default) | Grayscale, then add the color. Dark areas take the color, highlights stay light. | svgray + `svgshift addrgb` |
+| `colorize` | Set hue and saturation to the color, keep each shade's lightness. | `svgshift sethsl H S x` |
+| `hue` | Set only the hue. | `svgshift sethsl H x x` |
+| `solid` | Replace every color with the target color. | `svgshift setrgb R G B` |
+| `grayscale` | Convert to grayscale. | svgray |
+| `adjust` | Keep the colors, only apply the fine-tuning below. | `svgshift addhsl/subhsl` |
+
+Every mode can be fine-tuned with `hue` (rotate, -360..360 degrees), `saturation` and `lightness` (-100..100).
+
+Before recoloring, colors are normalized so the tools can handle them: CSS color names, `rgb()`/`hsl()`
+(with alpha), and 3/4-digit hex are converted to hex, and icons that rely on the default black fill
+(or `currentColor`) get an explicit black so they recolor too. `url(#id)` and `href="#id"` references are left alone.
+
+Colors can be given as `ff0066`, `#ff0066`, `f06`, `255,0,102`, `rgb(255 0 102)`, `hsl(330 100% 50%)` or a CSS name like `tomato`.
+
 ### API
 
-The API is hosted at the same url as the website. You can find the swagger documentation on [svg-recolor.jorgenkh.no/docs](https://svg-recolor.jorgenkh.no/api) or [svg-recolor.jorgenkh.no/redoc](https://svg-recolor.jorgenkh.no/redoc) if you prefer the redoc style.
+The API is hosted at the same URL as the website. Interactive docs: [Swagger](https://svg-recolor.jorgenkh.no/docs) or [ReDoc](https://svg-recolor.jorgenkh.no/redoc).
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /api/recolor?url=…` | Recolor an SVG from a public link (GitHub file pages are converted to raw links). Cacheable, so it works as an `<img src>`. |
+| `POST /api/recolor` | Recolor an SVG sent as a multipart `file` field, a multipart `url` field, or the raw request body. |
+| `POST /api/recolor/batch` | Recolor up to 50 files (`files` fields) with the same settings and get a ZIP back. |
+| `GET /api/palette?url=…` / `POST /api/palette` | List the colors in an SVG with their counts. |
+| `GET /api/modes` | List the modes and option ranges. |
+| `POST /colorize` | Original endpoint, kept for backwards compatibility. |
+
+Query parameters for the recolor endpoints: `color`, `mode`, `hue`, `saturation`, `lightness`,
+`format` (`svg` or `json`, which also returns the old→new color mapping) and `download`.
+
+```sh
+# Upload a file
+curl -X POST "https://svg-recolor.jorgenkh.no/api/recolor?color=ff0066&mode=colorize" \
+  -F "file=@icon.svg" -o icon-pink.svg
+
+# Send the SVG as the request body
+curl -X POST "https://svg-recolor.jorgenkh.no/api/recolor?color=tomato&mode=solid" \
+  -H "Content-Type: image/svg+xml" --data-binary @icon.svg -o icon-red.svg
+
+# Recolor from a link
+curl "https://svg-recolor.jorgenkh.no/api/recolor?url=https://example.com/icon.svg&mode=hue&color=teal" -o icon.svg
+
+# Many files at once
+curl -X POST "https://svg-recolor.jorgenkh.no/api/recolor/batch?mode=grayscale" \
+  -F "files=@a.svg" -F "files=@b.svg" -o recolored.zip
+```
+
+```html
+<!-- Use it directly as an image -->
+<img src="https://svg-recolor.jorgenkh.no/api/recolor?url=https://example.com/icon.svg&color=ff0066&mode=solid" alt="">
+```
 
 ### CLI Tool
 
-Simply dowload `colorize_svg.py` and run it with python.
-
-Example usage:
+Clone the repository (with submodules) and run `colorize_svg.py` with Python.
 
 ```sh
 python colorize_svg.py path/to/input.svg path/to/output.svg --color "255,0,0"
+python colorize_svg.py input.svg output.svg --color seagreen --mode colorize
+python colorize_svg.py input.svg output.svg --mode adjust --hue 45 --lightness -10
+python colorize_svg.py input.svg --palette
 ```
 
 ### Legacy Shell Script
@@ -79,7 +133,7 @@ Other ways to contribute:
 Clone the repository and install the dependencies using pipenv.
 
 ```sh
-git clone https://github.com/Snailedlt/svg-recolor.git
+git clone --recurse-submodules https://github.com/Snailedlt/svg-recolor.git
 cd svg-recolor
 pipenv install
 ```

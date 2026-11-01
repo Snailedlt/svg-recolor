@@ -1,100 +1,65 @@
+"""Command-line interface for SVG Recolor.
+
+Examples:
+    python colorize_svg.py icon.svg icon-pink.svg --color "#ff0066"
+    python colorize_svg.py icon.svg icon-green.svg --color seagreen --mode colorize
+    python colorize_svg.py logo.svg logo-shifted.svg --mode adjust --hue 45 --lightness -10
+    python colorize_svg.py icon.svg --palette
+"""
+
 import argparse
-import platform
-import subprocess
-import tempfile
-import os
 import sys
 
+import recolor as engine
 
-# TODO: add support for 3 digit hex colors
-# TODO: Move to utils.py
-def is_hex_color(color):
-    return bool(
-        color.startswith("#")
-        and len(color) == 7
-        and all(c in "0123456789ABCDEFabcdef" for c in color[1:])
+
+def colorize_svg(input_svg, output_svg, color, mode=engine.DEFAULT_MODE, hue=0, saturation=0, lightness=0):
+    """Recolor ``input_svg`` and write the result to ``output_svg``. Returns the engine result."""
+    with open(input_svg, "rb") as f:
+        svg = engine.decode_svg(f.read())
+    result = engine.recolor(
+        svg,
+        engine.Options(mode=mode, color=color, hue=hue, saturation=saturation, lightness=lightness),
     )
-
-
-# TODO: add support for 3 digit hex colors
-# TODO: Move to utils.py
-def hex_to_rgb(hexcolor):
-    hexcolor = hexcolor.lstrip("#")
-    return tuple(int(hexcolor[i : i + 2], 16) for i in (0, 2, 4))
-
-
-def colorize_svg(input_svg, output_svg, color):
-    print(f"Input SVG: {input_svg}")
-    print(f"Color: {color}")
-    print(f"Output SVG: {output_svg}")
-
-    if is_hex_color(color):
-        red, green, blue = hex_to_rgb(color)
-    else:
-        red, green, blue = map(int, color.split(","))
-
-    print(f"Red: {red}, Green: {green}, Blue: {blue}")
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".svg") as temp_grayscale_svg:
-        temp_grayscale_svg_path = temp_grayscale_svg.name
-
-    try:
-        # Check if input file exists
-        if not os.path.isfile(input_svg):
-            print(f"Error: Input file '{input_svg}' does not exist.")
-            sys.exit(1)
-
-        # TODO: Convert SVG styles to attributes with SVGO (or similar)
-
-        # Convert to grayscale using svgray
-        print("Converting to grayscale...")
-
-        with open(temp_grayscale_svg_path, "w") as f:
-            subprocess.run(
-                [
-                    sys.executable,
-                    "./submodules/svgray/.svgray.py",
-                    input_svg,
-                ],
-                check=True,
-                stdout=f,
-            )
-
-        # Add color using svgshift
-        print("Adding color...")
-        with open(output_svg, "w") as f:
-            subprocess.run(
-                [
-                    # ./svgshift-<your-environment>.exe (ubuntu or windows)
-                    f"./svgshift-{platform.system().lower()}.exe",
-                    "addrgb",
-                    str(red),
-                    str(green),
-                    str(blue),
-                    temp_grayscale_svg_path,
-                ],
-                stdout=f,
-                check=True,
-            )
-
-        print(f"Colorized SVG saved as {output_svg}")
-
-    finally:
-        print("Cleaning up...")
-        os.remove(temp_grayscale_svg_path)
+    with open(output_svg, "w", encoding="utf-8") as f:
+        f.write(result.svg)
+    return result
 
 
 def main(args=None):
-    parser = argparse.ArgumentParser(description="Colorize SVG script")
+    parser = argparse.ArgumentParser(description="Recolor SVG files with svgray and svgshift.")
     parser.add_argument("input_svg", help="Input SVG file")
-    parser.add_argument("output_svg", help="Output SVG file")
+    parser.add_argument("output_svg", nargs="?", help="Output SVG file")
     parser.add_argument(
         "--color",
-        required=True,
-        help="Color in hex (e.g., #FF5733) or RGB (e.g., 255,125,0) format",
+        default="#FF0066",
+        help="Target color: hex (#FF5733, F53), RGB (255,125,0), rgb()/hsl() or a CSS name",
     )
+    parser.add_argument("--mode", default=engine.DEFAULT_MODE, choices=list(engine.MODES))
+    parser.add_argument("--hue", type=int, default=0, help="Rotate hue by degrees (-360..360)")
+    parser.add_argument("--saturation", type=int, default=0, help="Shift saturation (-100..100)")
+    parser.add_argument("--lightness", type=int, default=0, help="Shift lightness (-100..100)")
+    parser.add_argument("--palette", action="store_true", help="Only list the colors in the input SVG")
     args = parser.parse_args(args)
-    colorize_svg(args.input_svg, args.output_svg, args.color)
+
+    try:
+        if args.palette:
+            with open(args.input_svg, "rb") as f:
+                for entry in engine.palette(engine.decode_svg(f.read())):
+                    print(f"{entry['color']}  x{entry['count']}")
+            return
+        if not args.output_svg:
+            parser.error("output_svg is required unless --palette is used")
+        result = colorize_svg(
+            args.input_svg, args.output_svg, args.color, args.mode, args.hue, args.saturation, args.lightness
+        )
+    except (engine.RecolorError, OSError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    for entry in result.palette():
+        print(f"{entry['from']} -> {entry['to']}")
+    print(f"Saved {args.output_svg}")
 
 
 if __name__ == "__main__":
