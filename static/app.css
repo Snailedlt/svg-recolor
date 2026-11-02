@@ -440,12 +440,21 @@ pre.code .c { color: #6b7286; }
 /* Code blocks: a Copy button in the corner, and syntax colors (highlight.js).
    The code background is dark in both themes, so one palette serves both;
    every color passes WCAG AA (4.5:1) on --code-bg. */
-.code-box { position: relative; display: flex; flex-direction: column; min-width: 0; }
-.code-box.fill { flex: 1; min-height: 0; }
-.code-box > pre.code { flex: 1; }
-.code-box > pre.code { padding-right: 84px; } /* room for the Copy button */
+.code-box {
+    flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--code-bg); border: 1px solid var(--code-border); border-radius: var(--radius-sm);
+}
+.code-box > pre.code { flex: 1; border: 0; border-radius: 0; }
+.code-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none;
+    padding: 5px 6px 5px 14px; border-bottom: 1px solid var(--code-border);
+    color: #9aa3b5; font-size: 0.74rem; font-weight: 600;
+}
+.code-lang { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.copy-btn-row svg { width: 14px; height: 14px; }
+.copy-btn-row.done { color: var(--ok, #1f9d55); }
 .copy-chip {
-    position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 6px;
+    flex: none; display: inline-flex; align-items: center; gap: 6px;
     padding: 5px 10px; border-radius: 7px; border: 1px solid var(--code-border);
     background: color-mix(in srgb, var(--code-bg) 82%, #fff 18%); color: var(--code-text);
     font: 600 0.74rem/1 var(--sans, inherit); cursor: pointer; opacity: 0.85;

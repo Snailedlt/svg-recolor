@@ -130,8 +130,8 @@ test('code blocks are highlighted and copy their full text', async () => {
     await page.locator('#code-view .t-t').first().waitFor();
     assert.ok(await page.locator('#code-view .t-k').count() > 0, 'keywords are highlighted');
     const shown = await page.textContent('#code-view');
-    await page.click('#code-view + .copy-chip');
-    await page.locator('#code-view + .copy-chip', { hasText: 'Copied' }).waitFor();
+    await page.click('#tab-code .code-head .copy-chip');
+    await page.locator('#tab-code .code-head .copy-chip', { hasText: 'Copied' }).waitFor();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), shown, 'copies exactly the code');
 
     await page.click('#tab-btn-api');
@@ -141,9 +141,20 @@ test('code blocks are highlighted and copy their full text', async () => {
     // Ctrl+C on the focused block with nothing selected copies all of it.
     await page.focus('#snippet');
     await page.keyboard.press('Control+c');
-    await page.locator('#snippet + .copy-chip', { hasText: 'Copied' }).waitFor();
+    await page.locator('#tab-api .code-head .copy-chip', { hasText: 'Copied' }).waitFor();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), await page.textContent('#snippet'));
     assert.equal(await page.locator('#mcp-cmd .t-f').textContent(), 'claude');
+    assert.equal(await page.textContent('#code-view-lang'), 'React');
+    assert.equal(await page.textContent('#snippet-lang'), 'Rust');
+    // Copy never sits on top of code: it is in a header bar or a button row.
+    const overlaps = await page.$$eval('.copy-chip, .copy-btn-row', (btns) => btns.filter((b) => {
+        const r = b.getBoundingClientRect();
+        return [...document.querySelectorAll('pre.code')].some((p) => {
+            const q = p.getBoundingClientRect();
+            return r.width && q.width && r.left < q.right && r.right > q.left && r.top < q.bottom && r.bottom > q.top;
+        });
+    }).length);
+    assert.equal(overlaps, 0);
     assert.deepEqual(problems, []);
 });
 

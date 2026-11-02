@@ -119,14 +119,13 @@
         else Hl.render(el, text, lang);
     }
     const copySources = new Map(); // <pre> id -> () => [full text, label]
+    // The Code and API views get a header bar (language on the left, Copy on the
+    // right); small blocks get Copy in the button row under them. Never on the code.
     function setupCodeBlock(pre) {
-        const box = document.createElement('div');
-        box.className = 'code-box' + (pre.classList.contains('fill') ? ' fill' : '');
-        pre.replaceWith(box);
-        box.append(pre);
+        const fill = pre.classList.contains('fill');
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'copy-chip';
+        btn.className = fill ? 'copy-chip' : 'btn btn-ghost btn-sm copy-btn-row';
         btn.title = 'Copy all (or focus the code and press Ctrl+C)';
         btn.setAttribute('aria-label', 'Copy ' + (pre.getAttribute('aria-label') || 'code').toLowerCase());
         const label = document.createElement('span');
@@ -152,9 +151,29 @@
                 copy();
             }
         });
-        box.append(btn);
+        if (fill) {
+            const box = document.createElement('div');
+            box.className = 'code-box';
+            const head = document.createElement('div');
+            head.className = 'code-head';
+            const lang = document.createElement('span');
+            lang.className = 'code-lang';
+            lang.id = pre.id + '-lang';
+            head.append(lang, btn);
+            pre.replaceWith(box);
+            box.append(head, pre);
+        } else {
+            let row = pre.nextElementSibling;
+            if (!row || !row.classList.contains('row')) {
+                row = document.createElement('div');
+                row.className = 'row';
+                pre.after(row);
+            }
+            row.prepend(btn);
+        }
         if (pre.dataset.lang) showCode(pre, pre.textContent, pre.dataset.lang);
     }
+    function setCodeLang(id, text) { const el = $(id + '-lang'); if (el) el.textContent = text; }
     $$('pre.code').forEach(setupCodeBlock);
 
     async function errorDetail(res) {
@@ -850,6 +869,7 @@
         const view = $('code-view');
         const f = F.get(state.format);
         $('code-prompt-bar').hidden = !f.prompt;
+        setCodeLang('code-view', f.prompt ? 'AI prompt' : f.label);
         if (!state.result) {
             view.textContent = 'Load an SVG to see it as ' + f.label + ' code here.';
             $('code-meta').textContent = '';
@@ -902,6 +922,7 @@
     function updateSnippet() {
         const sn = S.get(state.snippet);
         $('api-prompt-bar').hidden = !sn.prompt;
+        setCodeLang('snippet', sn.prompt ? 'AI prompt' : sn.label);
         showCode($('snippet'), S.build(state.snippet, snippetContext()), sn.lang);
         const code = $('snippet').textContent;
         $('api-hint').textContent = sn.prompt
