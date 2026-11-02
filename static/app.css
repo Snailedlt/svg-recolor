@@ -207,19 +207,53 @@ body.dragging::after {
 }
 .code-editor > .code-input::placeholder { color: #8a92a6; }
 .code-editor > .code-input::selection { background: rgba(110, 150, 255, 0.35); }
-.code-input-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
-.code-input-btns { display: flex; gap: 6px; flex: none; }
-.btn-icon { padding-left: 8px; padding-right: 8px; }
-.btn-icon svg { width: 15px; height: 15px; }
-/* Expanded: the same editor as a large overlay */
+/* Expand button inside the editor's corner (the field has room for it) */
+.code-editor > .code-input { padding-right: 40px; }
+.code-expand {
+    position: absolute; top: 6px; right: 6px; z-index: 1; display: grid; place-items: center;
+    width: 28px; height: 28px; padding: 0; border-radius: 7px; border: 1px solid var(--code-border);
+    background: color-mix(in srgb, var(--code-bg) 82%, #fff 18%); color: var(--code-text); cursor: pointer; opacity: .8;
+}
+.code-expand:hover, .code-expand:focus-visible { opacity: 1; }
+.code-expand:focus-visible { outline: 2px solid var(--pick); outline-offset: 2px; }
+.code-expand svg { width: 14px; height: 14px; }
+/* One status line: what happens with the code right now */
+.code-status { display: flex; align-items: baseline; gap: 7px; margin: 6px 0 0; font-size: 0.78rem; color: var(--text-muted); min-height: 1.4em; }
+.code-status .dot { flex: none; transform: translateY(-1px); width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+.code-status.ok .dot { background: var(--success); }
+.code-status.warn .dot { background: var(--warning); }
+.code-status.warn { color: var(--text); }
+#code-status-text { min-width: 0; overflow-wrap: anywhere; }
+/* Header and preview only show in the large editor */
+.code-panel-head, .code-preview { display: none; }
+.code-preview {
+    margin: 0; position: relative; display: none; place-items: center; min-height: 0; overflow: hidden;
+    border-radius: var(--radius-sm); border: 1px solid var(--border);
+    background: repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 50% / 16px 16px;
+}
+.code-preview img { max-width: 80%; max-height: 80%; width: auto; height: auto; }
+.code-preview img:not([src]) { display: none; }
+.code-preview figcaption {
+    position: absolute; top: 8px; left: 8px; padding: 3px 8px; border-radius: 6px;
+    background: var(--surface); color: var(--text-muted); font-size: 0.7rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+}
 .code-panel.expanded {
-    position: fixed; inset: 5vh max(16px, 5vw); z-index: 60; display: flex; flex-direction: column;
-    padding: 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border);
+    position: fixed; inset: 5vh max(16px, 4vw); z-index: 60; display: flex; flex-direction: column; gap: 10px;
+    padding: 12px 14px 10px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border);
     box-shadow: 0 0 0 100vmax rgba(5, 7, 12, 0.62), 0 24px 64px rgba(0, 0, 0, 0.45);
 }
-.code-panel.expanded .code-editor { flex: 1; min-height: 0; margin-top: 0; display: flex; }
+.code-panel.expanded .code-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.code-panel-title { font-weight: 700; font-size: 0.95rem; }
+.code-panel.expanded .code-panel-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
+.code-panel.expanded .code-preview { display: grid; }
+.code-panel.expanded .code-editor { min-height: 0; margin-top: 0; display: flex; }
 .code-panel.expanded .code-input { height: auto; flex: 1; max-height: none; resize: none; font-size: 0.84rem; }
 .code-panel.expanded .code-editor-hl { font-size: 0.84rem; }
+.code-panel.expanded .code-expand { display: none; }
+.code-panel.expanded .code-status { margin: 0; }
+@media (max-width: 760px) {
+    .code-panel.expanded .code-panel-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
+}
 body.code-expanded { overflow: hidden; }
 .code-input-row .field-hint { margin: 0; }
 .section-title .link-btn.aside { font-size: 0.78rem; }

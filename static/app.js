@@ -360,6 +360,8 @@
     let codeName = null; // keeps the file name when editing the current SVG as code
     function showSource(kind) {
         SOURCES.forEach((k) => { $('source-' + k).hidden = k !== kind; });
+        // In the code editor the current SVG is what's in the field, so "Done" fits.
+        $('source-cancel').textContent = kind === 'code' && state.doc && state.doc.source === 'code' ? 'Done' : 'Keep current SVG';
         $$('#source-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.source === kind)));
     }
     function focusSource(kind) {
@@ -395,7 +397,7 @@
             $('code-input').setSelectionRange(0, 0); // start at the top, not the end
             $('code-input').scrollTop = 0;
             syncCodeScroll();
-            $('code-input-hint').textContent = 'This is the current SVG. Edit it, then apply.';
+            setCodeStatus('ok', 'This is the current SVG. Edits are used as you type.');
         }
         showSourcePicker(kind);
         focusSource(kind);
@@ -416,7 +418,8 @@
         hlFrame = requestAnimationFrame(() => {
             showCode(codeHl, codeInput.value + '\n', 'markup'); // the newline keeps a trailing empty line visible
             // Match the textarea's text width when it shows a scrollbar.
-            codeHl.style.paddingRight = (12 + codeInput.offsetWidth - codeInput.clientWidth) + 'px';
+            const pad = parseFloat(getComputedStyle(codeInput).paddingRight) || 0;
+            codeHl.style.paddingRight = (pad + codeInput.offsetWidth - codeInput.clientWidth) + 'px';
             syncCodeScroll();
         });
     }
@@ -425,34 +428,65 @@
     codeInput.addEventListener('scroll', syncCodeScroll);
     if (window.ResizeObserver) new ResizeObserver(syncCodeEditor).observe(codeInput);
 
+    // Code is used as you type: once it parses as SVG (a short pause after the
+    // last key), it replaces the current SVG. The status line says what happened.
+    let codeTimer = 0;
+    function setCodeStatus(kind, text) {
+        $('code-status').className = 'code-status ' + kind;
+        $('code-status-text').textContent = text;
+        $('code-status').title = text;
+    }
+    function codeProblem(text) {
+        if (!text) return 'empty';
+        if (new Blob([text]).size > MAX_BYTES) return 'Too large: the limit is 2 MB.';
+        if (!/<svg[\s>]/i.test(text)) return 'Waiting for an <svg> element…';
+        const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+        const err = doc.querySelector('parsererror');
+        if (err) {
+            // Chrome wraps the message in boilerplate; its <div> holds just the error.
+            const msg = ((err.querySelector('div') || err).textContent || '').split(/Below is a rendering/)[0];
+            const m = /line (\d+)[^:]*:\s*([^\n]*)/i.exec(msg);
+            return 'Not valid SVG yet' + (m ? ' (line ' + m[1] + ': ' + m[2].trim().replace(/\.$/, '') + ')' : '') + '. Ctrl+Enter uses it anyway.';
+        }
+        if (doc.documentElement.localName !== 'svg') return 'The outermost element must be <svg>.';
+        return null;
+    }
+    function applyCode(force) {
+        clearTimeout(codeTimer);
+        const text = codeInput.value.trim();
+        const problem = codeProblem(text);
+        if (problem === 'empty') return setCodeStatus('', 'Paste or type SVG. It\'s used as you type.');
+        const forced = force && problem && /^Not valid/.test(problem);
+        if (problem && !forced) return setCodeStatus('warn', problem);
+        if (state.doc && state.doc.text === text) return setCodeStatus('ok', 'In use · ' + state.doc.palette.length + ' colors');
+        loadText(text, codeName || 'pasted.svg', new Blob([text]).size, null, 'code', true);
+        if (state.doc && state.doc.text === text) {
+            setCodeStatus('ok', 'Applied · ' + state.doc.palette.length + ' colors' + (forced ? ' (not valid XML; used anyway)' : ''));
+            $('source-cancel').hidden = false;
+            $('source-cancel').textContent = 'Done';
+        }
+    }
+    codeInput.addEventListener('input', () => { clearTimeout(codeTimer); codeTimer = setTimeout(applyCode, 400); });
+    codeInput.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); applyCode(true); }
+    });
+
+    // The larger editor: same field, plus a live preview of the result.
     function setCodeExpanded(on) {
         $('code-panel').classList.toggle('expanded', on);
         document.body.classList.toggle('code-expanded', on);
-        const btn = $('code-expand');
-        btn.setAttribute('aria-pressed', String(on));
-        btn.setAttribute('aria-label', on ? 'Shrink the editor' : 'Expand the editor');
-        btn.title = on ? 'Shrink the editor (Esc)' : 'Expand the editor (Esc to close)';
+        if (on && (resultUrl || originalUrl)) $('code-preview-img').src = resultUrl || originalUrl;
         codeInput.focus();
         syncCodeEditor();
+        if (!on) $('code-expand').focus();
     }
-    $('code-expand').addEventListener('click', () => setCodeExpanded(!$('code-panel').classList.contains('expanded')));
+    $('code-expand').addEventListener('click', () => setCodeExpanded(true));
+    $('code-collapse').addEventListener('click', () => setCodeExpanded(false));
     $('code-panel').addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && $('code-panel').classList.contains('expanded')) { e.preventDefault(); e.stopPropagation(); setCodeExpanded(false); }
     });
 
-    function useCode() {
-        const text = $('code-input').value.trim();
-        if (!text) return showError('Paste or type some SVG markup first.');
-        if ($('code-panel').classList.contains('expanded')) setCodeExpanded(false);
-        const name = codeName || 'pasted.svg';
-        loadText(text, name, new Blob([text]).size, null, 'code');
-    }
-    $('code-use').addEventListener('click', useCode);
-    $('code-input').addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); useCode(); }
-    });
-
-    async function loadText(text, name, size, fromUrl, source) {
+    async function loadText(text, name, size, fromUrl, source, keepEditorOpen) {
         clearError();
         if (size > MAX_BYTES) return showError('This file is ' + formatBytes(size) + '. The limit is 2 MB; try optimizing it with SVGO first.');
         if (!/<svg[\s>]/i.test(text)) return showError('That doesn\'t look like an SVG: no <svg> element was found.');
@@ -468,7 +502,7 @@
         $('file-name').textContent = name;
         const from = { link: ' · from link', code: ' · from code' }[source] || '';
         $('file-size').textContent = formatBytes(size) + ' · ' + state.doc.palette.length + ' colors' + from;
-        hideSourcePicker();
+        if (!keepEditorOpen) hideSourcePicker();
         if (fromUrl) $('url-input').value = fromUrl;
         updateSnippet();
         syncPageUrl();
@@ -709,6 +743,7 @@
         if (resultUrl) URL.revokeObjectURL(resultUrl);
         resultUrl = URL.createObjectURL(new Blob([r.svg], { type: 'image/svg+xml' }));
         renderImage($('result-container'), resultUrl, 'Recolored ' + state.doc.name);
+        $('code-preview-img').src = resultUrl;
         renderPalette(r.palette);
         if (state.tab === 'code') renderCode();
         syncCopyButton();
