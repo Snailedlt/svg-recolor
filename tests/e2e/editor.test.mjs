@@ -97,6 +97,34 @@ test('code and API lists: search, best match and AI prompt fallback', async () =
     assert.equal(await page.textContent('#copy-label'), 'Copy prompt');
 });
 
+test('code blocks are highlighted and copy their full text', async () => {
+    const { page, problems } = await open();
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+    await page.click('#try-example');
+    await page.waitForSelector('#file-chip:not([hidden])');
+    await page.click('#tab-btn-code');
+    await page.fill('#format-search', 'react');
+    await page.press('#format-search', 'Enter');
+    await page.locator('#code-view .t-t').first().waitFor();
+    assert.ok(await page.locator('#code-view .t-k').count() > 0, 'keywords are highlighted');
+    const shown = await page.textContent('#code-view');
+    await page.click('#code-view + .copy-chip');
+    await page.locator('#code-view + .copy-chip', { hasText: 'Copied' }).waitFor();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), shown, 'copies exactly the code');
+
+    await page.click('#tab-btn-api');
+    await page.fill('#snippet-search', 'rust');
+    await page.press('#snippet-search', 'Enter');
+    await page.locator('#snippet .t-s').first().waitFor();
+    // Ctrl+C on the focused block with nothing selected copies all of it.
+    await page.focus('#snippet');
+    await page.keyboard.press('Control+c');
+    await page.locator('#snippet + .copy-chip', { hasText: 'Copied' }).waitFor();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), await page.textContent('#snippet'));
+    assert.equal(await page.locator('#mcp-cmd .t-f').textContent(), 'claude');
+    assert.deepEqual(problems, []);
+});
+
 test('no accessibility violations (axe) in every tab, both themes', async () => {
     for (const colorScheme of ['dark', 'light']) {
         const { page } = await open({ colorScheme, bypassCSP: true });

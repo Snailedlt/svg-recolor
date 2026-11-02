@@ -190,7 +190,7 @@ _landing_cache: Optional[str] = None
 _bundle_cache: Optional[tuple[str, str]] = None
 
 # Scripts served as one bundle (/assets/app.js) to save requests. Order matters.
-BUNDLE = ("engine.js", "icons.js", "formats.js", "snippets.js", "app.js")
+BUNDLE = ("engine.js", "icons.js", "formats.js", "snippets.js", "highlight.js", "app.js")
 # Small images inlined into the page as data: URIs, saving a request each.
 INLINE_IMAGES = ("/static/logo-56.webp", "/static/avatar-48.webp")
 

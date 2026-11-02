@@ -309,7 +309,7 @@ CI runs all of these on every push and pull request (`.github/workflows/ci.yml`)
 - Dependencies come from `Pipfile.lock` (Python 3.12). Don't add a `pyproject.toml`: Vercel's Python builder
   prefers it over `Pipfile.lock`, and one without `[project] dependencies` deploys with nothing installed (every
   request then fails with `ModuleNotFoundError`). Lint settings live in `ruff.toml` for that reason.
-- The code stays compatible with Python 3.9 (CI tests 3.9 and 3.12).
+- CI tests Python 3.12 and 3.13.
 - `/api/health` runs both tools on one color and reports the Python version, libc and any error, uncached.
   If the tools fail, the page still loads and the browser fetches the style thumbnails itself.
 - The app rate-limits per IP in memory (see Configuration). On serverless that is per instance, so also add an edge rule

@@ -2,8 +2,8 @@
 # dependencies from pyproject.toml whenever one exists (ahead of Pipfile.lock), and
 # a pyproject.toml with only tool settings means nothing gets installed.
 
-# The code stays compatible with Python 3.9 (CI tests it), so keep typing.Optional:
-# FastAPI evaluates parameter annotations at runtime, where `X | None` needs 3.10.
+# The code avoids `X | None` (FastAPI evaluates parameter annotations at runtime,
+# and that syntax needs 3.10+), so it still imports on older Pythons.
 target-version = "py39"
 exclude = [
     "submodules",

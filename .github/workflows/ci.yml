@@ -13,9 +13,10 @@ jobs:
     name: Python (engine, API, MCP, browser parity)
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        # 3.12 is what Pipfile asks for and what Vercel runs; 3.9 is the oldest supported.
-        python-version: ["3.9", "3.12"]
+        # 3.12 is what Pipfile asks for and what Vercel runs; 3.13 is the next one.
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
         with:

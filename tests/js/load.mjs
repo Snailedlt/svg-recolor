@@ -3,6 +3,6 @@ import { createRequire } from 'node:module';
 
 globalThis.window = globalThis;
 const require = createRequire(import.meta.url);
-for (const f of ['icons.js', 'engine.js', 'formats.js', 'snippets.js']) require('../../static/' + f);
+for (const f of ['icons.js', 'engine.js', 'formats.js', 'snippets.js', 'highlight.js']) require('../../static/' + f);
 
-export const { SvgFormats, SvgSnippets, SvgEngine, SvgIcons } = globalThis;
+export const { SvgFormats, SvgSnippets, SvgEngine, SvgIcons, SvgHighlight } = globalThis;

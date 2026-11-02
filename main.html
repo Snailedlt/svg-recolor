@@ -332,19 +332,18 @@
                         <div class="card">
                             <h3>MCP server</h3>
                             <p>Add it to Claude Code, Cursor or any MCP client. Tools: <code>recolor_svg</code>, <code>list_svg_colors</code>, <code>list_recolor_modes</code>.</p>
-                            <pre class="code" id="mcp-cmd"></pre>
-                            <div class="row"><button type="button" class="btn btn-ghost btn-sm" data-copy-from="mcp-cmd">Copy command</button></div>
+                            <pre class="code" id="mcp-cmd" tabindex="0" aria-label="MCP install command" data-copy-label="Command"></pre>
                         </div>
                         <div class="card">
                             <h3>llms.txt</h3>
                             <p>A short plain-text guide to every endpoint, parameter and mode. Point an agent at it and it can use the API right away.</p>
-                            <pre class="code" id="llms-url"></pre>
+                            <pre class="code" id="llms-url" tabindex="0" aria-label="llms.txt link" data-copy-label="Link"></pre>
                             <div class="row"><a class="btn btn-ghost btn-sm" href="/llms.txt" target="_blank" rel="noopener">Open llms.txt</a></div>
                         </div>
                         <div class="card">
                             <h3>JSON in, JSON out</h3>
                             <p>Send SVG markup as JSON and get the result plus a color mapping back. The OpenAPI spec has stable operation IDs for generating tools.</p>
-                            <pre class="code">POST /api/recolor?format=json
+                            <pre class="code" tabindex="0" aria-label="JSON request example" data-lang="sh" data-copy-label="Example">POST /api/recolor?format=json
 {"svg": "&lt;svg …&gt;", "color": "tomato", "mode": "solid"}</pre>
                             <div class="row"><a class="btn btn-ghost btn-sm" href="/openapi.json" target="_blank" rel="noopener">OpenAPI spec</a><a class="btn btn-ghost btn-sm" href="/api" target="_blank" rel="noopener">API index</a></div>
                         </div>

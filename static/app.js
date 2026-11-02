@@ -102,10 +102,61 @@
         try {
             await navigator.clipboard.writeText(text);
             toast(label + ' copied to clipboard');
+            return true;
         } catch (e) {
             showError('Your browser blocked clipboard access. Select the text and copy it manually.');
+            return false;
         }
     }
+
+    // ------------------------------------------------------------------
+    // Code blocks: syntax highlighting (highlight.js) and a Copy button on each
+    // ------------------------------------------------------------------
+    const Hl = window.SvgHighlight;
+    const HIGHLIGHT_LIMIT = 150000; // bigger inputs show plain, to keep typing smooth
+    function showCode(el, text, lang) {
+        if (!Hl || text.length > HIGHLIGHT_LIMIT) el.textContent = text;
+        else Hl.render(el, text, lang);
+    }
+    const copySources = new Map(); // <pre> id -> () => [full text, label]
+    function setupCodeBlock(pre) {
+        const box = document.createElement('div');
+        box.className = 'code-box' + (pre.classList.contains('fill') ? ' fill' : '');
+        pre.replaceWith(box);
+        box.append(pre);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'copy-chip';
+        btn.title = 'Copy all (or focus the code and press Ctrl+C)';
+        btn.setAttribute('aria-label', 'Copy ' + (pre.getAttribute('aria-label') || 'code').toLowerCase());
+        const label = document.createElement('span');
+        label.textContent = 'Copy';
+        btn.append($('copy-btn').querySelector('svg').cloneNode(true), label);
+        let reset = null;
+        const copy = async () => {
+            const src = copySources.get(pre.id);
+            const [text, name] = src ? src() : [pre.textContent, pre.dataset.copyLabel || 'Code'];
+            if (!text || !text.trim()) return;
+            if (await copyText(text, name)) {
+                btn.classList.add('done');
+                label.textContent = 'Copied';
+                clearTimeout(reset);
+                reset = setTimeout(() => { btn.classList.remove('done'); label.textContent = 'Copy'; }, 1600);
+            }
+        };
+        btn.addEventListener('click', copy);
+        // Ctrl/Cmd+C with nothing selected copies the whole block.
+        pre.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'c' && !String(window.getSelection())) {
+                e.preventDefault();
+                copy();
+            }
+        });
+        box.append(btn);
+        if (pre.dataset.lang) showCode(pre, pre.textContent, pre.dataset.lang);
+    }
+    $$('pre.code').forEach(setupCodeBlock);
+
     async function errorDetail(res) {
         const body = await res.text();
         try {
@@ -766,7 +817,7 @@
             return;
         }
         const text = codeFor(state.format);
-        view.textContent = text.length > CODE_VIEW_LIMIT ? text.slice(0, CODE_VIEW_LIMIT) + '\n\n… shortened in this view. Copy and Download include everything.' : text;
+        showCode(view, text.length > CODE_VIEW_LIMIT ? text.slice(0, CODE_VIEW_LIMIT) + '\n\n… shortened in this view. Copy and Download include everything.' : text, f.prompt ? 'text' : Hl.langFor(f.file));
         const meta = $('code-meta');
         meta.replaceChildren();
         const file = document.createElement('span');
@@ -811,11 +862,11 @@
     function updateSnippet() {
         const sn = S.get(state.snippet);
         $('api-prompt-bar').hidden = !sn.prompt;
-        $('snippet').textContent = S.build(state.snippet, snippetContext());
+        showCode($('snippet'), S.build(state.snippet, snippetContext()), sn.lang);
         $('api-hint').textContent = sn.prompt
             ? 'Paste this into ChatGPT, Claude, Copilot or any AI agent.'
             : 'Uses your current settings. No API key needed.';
-        $('mcp-cmd').textContent = 'claude mcp add --transport http svg-recolor ' + SITE + '/mcp';
+        showCode($('mcp-cmd'), 'claude mcp add --transport http svg-recolor ' + SITE + '/mcp', 'sh');
         $('llms-url').textContent = SITE + '/llms.txt';
     }
     const snippetList = createLangList({
@@ -862,12 +913,15 @@
             btn.disabled = !state.result;
         }
     }
+    // What a copy gives: always the complete text, never the shortened view.
+    function snippetCopy() { return [S.build(state.snippet, snippetContext()), S.get(state.snippet).prompt ? 'Prompt' : 'Snippet']; }
+    function codeCopy(id) { return state.result ? [codeFor(id), F.get(id).prompt ? 'Prompt' : F.get(id).label] : ['', '']; }
     function copyCurrent() {
-        if (state.tab === 'api') return copyText($('snippet').textContent, S.get(state.snippet).prompt ? 'Prompt' : 'Snippet');
-        if (!state.result) return;
-        const id = state.tab === 'code' ? state.format : 'svg';
-        copyText(codeFor(id), F.get(id).prompt ? 'Prompt' : F.get(id).label);
+        const [text, label] = state.tab === 'api' ? snippetCopy() : codeCopy(state.tab === 'code' ? state.format : 'svg');
+        if (text) copyText(text, label);
     }
+    copySources.set('code-view', () => codeCopy(state.format));
+    copySources.set('snippet', snippetCopy);
     // Download follows the view: the SVG file, or the code file in the Code tab.
     let downloadUrl = null;
     function syncDownload() {
@@ -882,7 +936,6 @@
         downloadBtn.tabIndex = 0;
     }
     $('copy-btn').addEventListener('click', copyCurrent);
-    $$('[data-copy-from]').forEach((b) => b.addEventListener('click', () => copyText($(b.dataset.copyFrom).textContent, 'Command')));
     downloadBtn.addEventListener('click', (e) => {
         if (!state.result) { e.preventDefault(); return; }
         toast('Downloading ' + downloadBtn.download);
