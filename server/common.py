@@ -16,7 +16,8 @@ APP_VERSION = "2.0.0"
 
 # Cache policy. `s-maxage` lets the hosting CDN (Vercel's edge network) answer repeat
 # requests without running the function, which keeps cost flat as traffic grows.
-CACHE_PAGE = "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400"
+# Vercel purges its CDN cache on every deploy, so long s-maxage values are safe.
+CACHE_PAGE = "public, max-age=300, s-maxage=86400, stale-while-revalidate=604800"
 CACHE_STATIC = "public, max-age=86400, s-maxage=604800, stale-while-revalidate=604800"
 CACHE_DOCS = "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
 CACHE_REMOTE = "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800"

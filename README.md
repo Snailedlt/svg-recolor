@@ -114,14 +114,30 @@ palette, asks this endpoint for the new colors, and applies them locally, so the
 
 ### Hosting and scaling
 
-The service is built to stay cheap under load:
+Built to stay inside a free hosting tier. What a visitor costs:
 
-- The website sends only an SVG's palette (a few hex colors) to `GET /api/map-colors`. With `v=<engine version>`
-  the response is cacheable for a year (`s-maxage`), so the CDN answers repeat palettes without running the function.
-  The result is byte-for-byte the same as `POST /api/recolor`.
-- Results are cached per color and setting inside each warm instance, so svgray/svgshift rarely run twice for the same color.
-- The page, static files, docs and linked-SVG responses all send `s-maxage`/`stale-while-revalidate`,
-  and CSS/JS URLs carry a content hash.
+| | Requests | Function calls |
+| --- | --- | --- |
+| First visit | 6 (page, CSS, one script bundle, 2 fonts, favicon) | 1 (the page, then cached at the CDN) |
+| Repeat visit | 0 (everything is cached in the browser) | 0 |
+| Loading an SVG | 1 API call | at most 1 (identical palettes are CDN hits) |
+| Each color or adjustment change | 1 API call | at most 1 |
+| Switching style | 0 | 0 |
+
+How:
+
+- **Only the palette goes to the server.** The browser extracts the SVG's colors and calls `GET /api/map-colors`
+  once with `modes=` for all six styles, which feeds both the preview and the style thumbnails. With `v=<engine version>`
+  the response is cacheable for a year, so the CDN answers repeat palettes without running the function.
+  The output is byte-for-byte the same as `POST /api/recolor`.
+- **The page ships what it needs.** The sample image's colors for the default settings are embedded in the page (no API
+  calls on load), the scripts are served as one bundle (`/assets/app.js`), and small images are inlined.
+- **Everything versioned is immutable.** CSS, the bundle, fonts and icons carry a content hash or version in their URL and
+  are cached for a year; the page itself for 5 minutes in the browser and a day at the CDN (Vercel purges on deploy).
+- **No wasted invocations.** `/favicon.ico`, `/apple-touch-icon.png` and `/robots.txt` are answered and cached instead of
+  404ing through the function, and `robots.txt` keeps crawlers off the API.
+- Results are cached per color and setting inside each warm instance, Sentry only reports errors by default, and the
+  per-IP rate limiter caps abuse (see Configuration).
 - Bump `ENGINE_VERSION` in `recolor.py` whenever the color math changes, so cached mappings are not reused.
 
 ### Website tips
@@ -263,7 +279,8 @@ BASE_URL=http://127.0.0.1:8000 npm test   # browser tests: editor flows, axe acc
 ```
 
 `tests/test_syntax.py` parses the Swift, Dart/Flutter and PowerShell output with tree-sitter grammars
-(`pip install tree-sitter-language-pack`); those languages have no compiler in CI, so this checks syntax only.
+(`pip install tree-sitter-language-pack`). `python tests/online/check.py` goes further and type-checks the
+Swift snippet with swiftc (Compiler Explorer) and the Dart snippet and Flutter format with DartPad's analyzer.
 
 CI runs all of these on every push and pull request (`.github/workflows/ci.yml`), using the versions in `Pipfile.lock`.
 `tests/test_parity.py` keeps `static/engine.js` and `recolor.py` byte-for-byte identical; if you change one, change the other.
@@ -273,7 +290,7 @@ CI runs all of these on every push and pull request (`.github/workflows/ci.yml`)
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `SENTRY_DSN` | the project DSN | Set to an empty string to disable Sentry |
-| `SENTRY_TRACES_SAMPLE_RATE` | `0.05` | Share of requests traced |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0` | Share of requests traced (0 = errors only, the cheapest) |
 | `SENTRY_PROFILING` | off | `1` enables continuous profiling |
 | `SVG_RECOLOR_DEV` | off | `1` re-reads `main.html` on every request (handy while editing) |
 | `RATE_LIMIT_WORK` | `60` | Requests per minute per IP for uploads, link fetches and MCP (`0` disables) |

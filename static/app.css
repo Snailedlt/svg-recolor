@@ -8,14 +8,14 @@
     font-style: normal;
     font-weight: 400 800;
     font-display: swap;
-    src: url(/static/fonts/Inter-400-800-latin.woff2) format('woff2');
+    src: url(/static/fonts/Inter-400-800-latin.woff2?v=1) format('woff2');
 }
 @font-face {
     font-family: 'JetBrains Mono';
     font-style: normal;
     font-weight: 400 500;
     font-display: swap;
-    src: url(/static/fonts/JetBrainsMono-400-500-latin.woff2) format('woff2');
+    src: url(/static/fonts/JetBrainsMono-400-500-latin.woff2?v=1) format('woff2');
 }
 
 :root {

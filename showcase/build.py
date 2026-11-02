@@ -51,13 +51,19 @@ def build() -> str:
     # Server calls -> in-browser color math; demo defaults; no URL updates.
     js = replace(js, "const SITE = location.origin.startsWith('http') ? location.origin : 'https://svg-recolor.jorgenkh.no';",
                  f"const SITE = '{SITE}';\n    const EXAMPLE_SVG = {json.dumps(example)};\n" + (HERE / "demo-color-math.js").read_text(encoding="utf-8"))
-    js = replace(js, "    async function fetchMappingFor(params, colors, signal) {", """    // Showcase: the color math runs in the browser instead of on the server.
-    async function fetchMappingFor(params, colors, signal) {
-        const p = Object.fromEntries(params);
+    js = replace(js, "    async function fetchAllModes(colors) {", """    // Showcase: the color math runs in the browser instead of on the server.
+    async function fetchAllModes(colors) {
+        const shared = sharedParams();
+        const p = Object.fromEntries(shared);
+        const mappings = {};
+        for (const mode of MODE_KEYS) {
+            const m = DemoEngine.mapColors(colors, { mode, color: '#' + (p.color || 'ff0066'), hue: +p.hue || 0, saturation: +p.saturation || 0, lightness: +p.lightness || 0 });
+            mappings[mode] = Object.fromEntries(Object.entries(m).map(([k, v]) => ['#' + k, '#' + v]));
+        }
         await new Promise((r) => setTimeout(r, 30));
-        return DemoEngine.mapColors(colors, { mode: p.mode, color: '#' + (p.color || 'ff0066'), hue: +p.hue || 0, saturation: +p.saturation || 0, lightness: +p.lightness || 0 });
+        storeMappings(mappings, shared);
     }
-    async function fetchMappingFromServer(params, colors, signal) {""")
+    async function fetchAllModesFromServer(colors) {""")
     js = replace(js, "            const res = await fetch('/api/fetch?url=' + encodeURIComponent(url));",
                  "            throw new Error('This demo can\\'t download from other sites. On " + SITE.split('//')[1]
                  + " the server fetches links for you; here, upload a file or try the example.');\n"
@@ -96,7 +102,7 @@ def build() -> str:
 
     libs = "".join(f"\n<script>\n{read('static/' + name)}\n</script>" for name in ("engine.js", "icons.js", "formats.js", "snippets.js"))
     body, count = re.subn(
-        r'\s*<script>window\.SVG_RECOLOR[^<]*</script>(\s*<script src="/static/\w+\.js\?v=__HASH__" defer></script>)+',
+        r'\s*<script>window\.SVG_RECOLOR[^<]*</script>\s*(<!--[^>]*-->\s*)?<script src="/assets/app\.js\?v=__HASH__" defer></script>',
         lambda m: libs + "\n<script>\n" + js + "\n</script>\n", body,
     )
     if count != 1 or "/static/" in body:

@@ -120,3 +120,30 @@ test('phone layout has no horizontal scroll', async () => {
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390, tab);
     }
 });
+
+test('request budget: no API calls on load, one per settings change (keeps hosting cheap)', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const calls = [];
+    const files = [];
+    page.on('request', (r) => {
+        const path = new URL(r.url()).pathname;
+        if (path.startsWith('/api/')) calls.push(path);
+        else if (r.url().startsWith(BASE)) files.push(path);
+    });
+    await page.goto(BASE + '/');
+    await page.locator('.style .thumb img').nth(5).waitFor(); // thumbnails come from data in the page
+    assert.deepEqual(calls, [], 'no API calls on page load');
+    assert.ok(files.length <= 6, `page load uses at most 6 files (page, CSS, script, 2 fonts, favicon), got ${files.length}: ${files}`);
+    await page.click('#try-example');
+    await page.locator('#status-text', { hasText: 'colors' }).waitFor();
+    await page.locator('.style .thumb img').nth(5).waitFor();
+    await page.waitForTimeout(700);
+    assert.equal(calls.length, 1, 'preview and all six thumbnails share one call');
+    await page.click('.preset[data-hex="#3ECF8E"]');
+    await page.locator('#status-text', { hasText: '#3ECF8E' }).waitFor();
+    await page.waitForTimeout(700);
+    assert.equal(calls.length, 2, 'one call per color change');
+    await page.click('.style[data-mode="solid"]');
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    assert.equal(calls.length, 2, 'switching style reuses what was already fetched');
+});

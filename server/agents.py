@@ -43,6 +43,7 @@ Base URL: {base}
 - Recolor a file: `POST {base}/api/recolor?color=ff0066` with multipart field `file`
 - Many files: `POST {base}/api/recolor/batch` with multipart fields `files` → ZIP
 - Just colors: `GET {base}/api/map-colors?colors=5a9fd4,306998&color=tomato&mode=colorize`
+  (or `modes=tint,solid,...` for several styles in one call, returned as `mappings`)
   → `{{"mapping": {{"#5a9fd4": "#…"}}}}`. Use this when you already have the colors (design tokens, themes).
 - List colors: `GET {base}/api/palette?url=<svg-url>` or `POST {base}/api/palette` (same bodies as above)
 - Modes and limits: `GET {base}/api/modes`

@@ -12,12 +12,11 @@
         <meta name="theme-color" content="#0f1117">
 
         <!-- Favicon -->
-        <link rel="icon" type="image/png" href="/static/favicon/favicon-96x96.png" sizes="96x96" />
-        <link rel="icon" type="image/svg+xml" href="/static/favicon/favicon.svg" />
-        <link rel="shortcut icon" href="/static/favicon/favicon.ico" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/static/favicon/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" href="/static/favicon/favicon-96x96.png?v=__HASH__" sizes="96x96" />
+        <link rel="icon" type="image/svg+xml" href="/static/favicon/favicon.svg?v=__HASH__" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/static/favicon/apple-touch-icon.png?v=__HASH__" />
         <meta name="apple-mobile-web-app-title" content="SVG Recolor" />
-        <link rel="manifest" href="/static/favicon/site.webmanifest" />
+        <link rel="manifest" href="/static/favicon/site.webmanifest?v=__HASH__" />
 
         <!-- Facebook Meta Tags -->
         <meta property="og:url" content="https://svg-recolor.jorgenkh.no/">
@@ -38,7 +37,7 @@
         <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
         <link rel="service-desc" type="application/json" href="/openapi.json">
 
-        <link rel="preload" href="/static/fonts/Inter-400-800-latin.woff2" as="font" type="font/woff2" crossorigin>
+        <link rel="preload" href="/static/fonts/Inter-400-800-latin.woff2?v=1" as="font" type="font/woff2" crossorigin>
         <link rel="stylesheet" href="/static/app.css?v=__HASH__">
         <script>
             // Apply the saved or system theme before first paint.
@@ -257,7 +256,7 @@
                                 </div>
                                 <div class="palette" id="palette" hidden>
                                     <span>Colors</span>
-                                    <ul id="palette-list" aria-label="Original color to new color"></ul>
+                                    <ul id="palette-list" aria-label="Original color to new color" tabindex="0"></ul>
                                 </div>
                             </div>
 
@@ -406,11 +405,8 @@
 
         <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-        <script>window.SVG_RECOLOR = { engineVersion: '__ENGINE_VERSION__' };</script>
-        <script src="/static/engine.js?v=__HASH__" defer></script>
-        <script src="/static/icons.js?v=__HASH__" defer></script>
-        <script src="/static/formats.js?v=__HASH__" defer></script>
-        <script src="/static/snippets.js?v=__HASH__" defer></script>
-        <script src="/static/app.js?v=__HASH__" defer></script>
+        <script>window.SVG_RECOLOR = __CONFIG__;</script>
+        <!-- engine.js, icons.js, formats.js, snippets.js and app.js, served as one file -->
+        <script src="/assets/app.js?v=__HASH__" defer></script>
     </body>
 </html>

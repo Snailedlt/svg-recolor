@@ -12,7 +12,13 @@ from typing import Annotated, Literal
 import sentry_sdk
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+)
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.staticfiles import StaticFiles
 
@@ -42,14 +48,14 @@ from server.ratelimit import rate_limit_middleware
 # Error and performance monitoring. Configured by environment variables so tests
 # and local runs stay quiet, and production samples traces instead of recording all.
 #   SENTRY_DSN                  set to "" to disable (defaults to the project's DSN)
-#   SENTRY_TRACES_SAMPLE_RATE   share of requests traced (default 0.05)
+#   SENTRY_TRACES_SAMPLE_RATE   share of requests traced (default 0: errors only, cheapest)
 #   SENTRY_PROFILING            "1" to enable continuous profiling (default off)
 sentry_sdk.init(
     dsn=os.environ.get(
         "SENTRY_DSN",
         "https://98b39a4523a365e1bbc2639fbb075633@o4508424099856384.ingest.de.sentry.io/4508424101363792",
     ),
-    traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.05")),
+    traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0")),
     _experiments={"continuous_profiling_auto_start": os.environ.get("SENTRY_PROFILING") == "1"},
 )
 
@@ -111,8 +117,9 @@ async def cache_headers(request: Request, call_next):
     path = request.url.path
     if response.status_code == 200 and "cache-control" not in response.headers:
         if path.startswith("/static/"):
-            response.headers["Cache-Control"] = CACHE_STATIC
-        elif path in ("/llms.txt", "/api", "/api/modes", "/openapi.json"):
+            versioned = "v=" in request.url.query  # content-hashed URL from the page
+            response.headers["Cache-Control"] = CACHE_IMMUTABLE if versioned else CACHE_STATIC
+        elif path in ("/llms.txt", "/api", "/api/modes", "/openapi.json", "/docs", "/redoc"):
             response.headers["Cache-Control"] = CACHE_DOCS
     return response
 
@@ -180,21 +187,80 @@ def _page_security_headers(html: str) -> dict:
 
 
 _landing_cache: str | None = None
+_bundle_cache: tuple[str, str] | None = None
+
+# Scripts served as one bundle (/assets/app.js) to save requests. Order matters.
+BUNDLE = ("engine.js", "icons.js", "formats.js", "snippets.js", "app.js")
+# Small images inlined into the page as data: URIs, saving a request each.
+INLINE_IMAGES = ("/static/logo-56.webp", "/static/avatar-48.webp")
+
+
+def _bundle() -> tuple[str, str]:
+    """(javascript, short content hash) of the concatenated editor scripts."""
+    global _bundle_cache
+    if _bundle_cache is None or os.environ.get("SVG_RECOLOR_DEV"):
+        js = "\n;\n".join((BASE_DIR / "static" / name).read_text(encoding="utf-8") for name in BUNDLE)
+        _bundle_cache = (js, hashlib.sha256(js.encode()).hexdigest()[:12])
+    return _bundle_cache
+
+
+def _page_config() -> str:
+    """window.SVG_RECOLOR: the engine version, plus the sample image's colors in
+    every style, so the style thumbnails need no API call on page load."""
+    sample = (BASE_DIR / "static" / "examples" / "sample.svg").read_text(encoding="utf-8").strip()
+    colors = list(engine.extract_palette(engine.normalize_svg(sample)))
+    seed = {}
+    for mode, info in engine.MODES.items():
+        key = ("color=ff0066&" if info["uses_color"] else "") + f"mode={mode}"
+        seed[key] = engine.map_colors(colors, engine.Options(mode=mode, color="ff0066"))
+    config = {"engineVersion": engine.ENGINE_VERSION, "sample": sample, "seed": seed}
+    return json.dumps(config, separators=(",", ":")).replace("</", "<\\/")
 
 
 def _landing_html() -> str:
     global _landing_cache
     if _landing_cache is None or os.environ.get("SVG_RECOLOR_DEV"):
         html = (BASE_DIR / "main.html").read_text(encoding="utf-8")
-        # Content hashes in asset URLs (/static/x.js?v=__HASH__): browsers and the
-        # CDN can cache them, and a deploy that changes a file changes its URL.
+        # Content hashes in asset URLs (/static/x.css?v=__HASH__): browsers and the
+        # CDN cache them forever, and a deploy that changes a file changes its URL.
         def asset_hash(m: re.Match) -> str:
             digest = hashlib.sha256((BASE_DIR / m.group(1).lstrip("/")).read_bytes()).hexdigest()[:12]
             return f"{m.group(1)}?v={digest}"
 
         html = re.sub(r"(/static/[\w./-]+)\?v=__HASH__", asset_hash, html)
-        _landing_cache = html.replace("__ENGINE_VERSION__", engine.ENGINE_VERSION)
+        html = html.replace("/assets/app.js?v=__HASH__", f"/assets/app.js?v={_bundle()[1]}")
+        for path in INLINE_IMAGES:
+            data = base64.b64encode((BASE_DIR / path.lstrip("/")).read_bytes()).decode()
+            html = html.replace(f'src="{path}"', f'src="data:image/webp;base64,{data}"')
+        _landing_cache = html.replace("__CONFIG__", _page_config())
     return _landing_cache
+
+
+@app.get("/assets/app.js", include_in_schema=False)
+async def app_bundle(v: str | None = None):
+    js, digest = _bundle()
+    cache = CACHE_IMMUTABLE if v == digest else CACHE_STATIC
+    return Response(js, media_type="text/javascript; charset=utf-8", headers={"Cache-Control": cache})
+
+
+# Browsers ask for these at the site root on their own; serve them from the CDN
+# instead of letting every request fall through to a 404 in the function.
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon_ico():
+    return FileResponse(BASE_DIR / "static/favicon/favicon.ico", headers={"Cache-Control": CACHE_STATIC})
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+@app.get("/apple-touch-icon-precomposed.png", include_in_schema=False)
+async def apple_touch_icon():
+    return FileResponse(BASE_DIR / "static/favicon/apple-touch-icon.png", headers={"Cache-Control": CACHE_STATIC})
+
+
+@app.get("/robots.txt", include_in_schema=False)
+async def robots_txt():
+    # Keep crawlers on the page and off the API, which would only burn function time.
+    body = "User-agent: *\nAllow: /$\nAllow: /llms.txt\nAllow: /static/\nDisallow: /api\nDisallow: /mcp\nDisallow: /colorize\nDisallow: /docs\nDisallow: /redoc\n"
+    return PlainTextResponse(body, headers={"Cache-Control": CACHE_DOCS})
 
 
 # --------------------------------------------------------------------------
@@ -355,9 +421,20 @@ def _parse_colors(raw) -> list[str]:
     return [str(c) for c in raw]
 
 
-async def _map_response(colors: list[str], opts: engine.Options, cache: bool):
+def _parse_modes(raw) -> list[str]:
+    modes = [m for m in re.split(r"[\s,]+", raw) if m] if isinstance(raw, str) else list(raw or [])
+    unknown = [m for m in modes if m not in engine.MODES]
+    if unknown or not modes:
+        raise HTTPException(400, f"'modes' must list modes from: {', '.join(engine.MODES)}.")
+    return list(dict.fromkeys(modes))
+
+
+async def _map_response(colors: list[str], opts_by_mode: dict[str, engine.Options], cache: bool, single: str | None):
+    def compute():
+        return {mode: engine.map_colors(colors, opts) for mode, opts in opts_by_mode.items()}
+
     try:
-        mapping = await run_in_threadpool(engine.map_colors, colors, opts)
+        results = await run_in_threadpool(compute)
     except engine.RecolorError as e:
         bad_request(e)
     except (RuntimeError, OSError, subprocess.SubprocessError) as e:
@@ -366,10 +443,10 @@ async def _map_response(colors: list[str], opts: engine.Options, cache: bool):
     headers = {"Access-Control-Allow-Origin": "*"}
     if cache:
         headers["Cache-Control"] = CACHE_IMMUTABLE
-    return JSONResponse(
-        {"engine": engine.ENGINE_VERSION, "mode": opts.mode, "mapping": {f"#{k}": f"#{v}" for k, v in mapping.items()}},
-        headers=headers,
-    )
+    as_hex = {mode: {f"#{k}": f"#{v}" for k, v in m.items()} for mode, m in results.items()}
+    body = {"engine": engine.ENGINE_VERSION}
+    body.update({"mode": single, "mapping": as_hex[single]} if single else {"mappings": as_hex})
+    return JSONResponse(body, headers=headers)
 
 
 @app.get("/api/map-colors", tags=["Recolor"], operation_id="mapColors", summary="Recolor a list of colors")
@@ -380,30 +457,34 @@ async def map_colors_get(
     hue: HueParam = 0,
     saturation: SatParam = 0,
     lightness: LightParam = 0,
+    modes: Annotated[str | None, Query(description="Comma-separated modes to compute in one call; the response then has `mappings` per mode instead of `mapping`.", examples=["tint,colorize,solid"])] = None,
     v: Annotated[str | None, Query(description="Engine version; pass the `engine` value from a previous response to get a long-lived cacheable URL.")] = None,
 ):
     """Runs only the colors through the engine and returns the old-to-new mapping. The cheapest way
-    to recolor: the website extracts an SVG's palette in the browser, calls this endpoint, and
-    applies the mapping itself. Responses are cached by the CDN, so identical requests are free.
+    to recolor: the website extracts an SVG's palette in the browser, calls this endpoint once for
+    all styles (`modes=`), and applies the mapping itself. Responses are cached by the CDN, so
+    identical requests are free.
 
     Also handy for design tokens or theme colors."""
-    opts = options(mode, color, hue, saturation, lightness)
-    return await _map_response(_parse_colors(colors), opts, cache=v == engine.ENGINE_VERSION)
+    names = _parse_modes(modes) if modes else [mode]
+    opts_by_mode = {m: options(m, color, hue, saturation, lightness) for m in names}
+    return await _map_response(_parse_colors(colors), opts_by_mode, cache=v == engine.ENGINE_VERSION, single=None if modes else mode)
 
 
 @app.post("/api/map-colors", tags=["Recolor"], operation_id="mapColorsPost", summary="Recolor a list of colors (JSON)")
 async def map_colors_post(request: Request):
     """Same as `GET /api/map-colors`, for long palettes: send
-    `{"colors": ["#5a9fd4", ...], "color": "tomato", "mode": "colorize"}`."""
+    `{"colors": ["#5a9fd4", ...], "color": "tomato", "mode": "colorize"}` (or `"modes": [...]`)."""
     try:
         data = json.loads(await request.body() or b"{}")
     except ValueError:
         raise HTTPException(400, "The JSON body could not be parsed.")
     if not isinstance(data, dict):
         raise HTTPException(400, "The JSON body must be an object.")
-    opts = options(data.get("mode") or engine.DEFAULT_MODE, data.get("color") or "ff0066",
-                    data.get("hue", 0), data.get("saturation", 0), data.get("lightness", 0))
-    return await _map_response(_parse_colors(data.get("colors")), opts, cache=False)
+    single = None if data.get("modes") else (data.get("mode") or engine.DEFAULT_MODE)
+    names = _parse_modes(data["modes"]) if data.get("modes") else [single]
+    opts_by_mode = {m: options(m, data.get("color") or "ff0066", data.get("hue", 0), data.get("saturation", 0), data.get("lightness", 0)) for m in names}
+    return await _map_response(_parse_colors(data.get("colors")), opts_by_mode, cache=False, single=single)
 
 
 @app.post(

@@ -56,7 +56,6 @@
     };
     const mapCache = new Map();
     let reqId = 0;
-    let controller = null;
     let debounceTimer = null;
     let urlTimer = null;
     let originalUrl = null;
@@ -459,44 +458,72 @@
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(recolor, delay === undefined ? 200 : delay);
     }
-    async function fetchMapping(colors) {
-        if (controller) controller.abort();
-        controller = new AbortController();
-        return fetchMappingFor(settingsParams(), colors, controller.signal);
+    // One request fetches every style's colors for the current color and
+    // adjustments, so the preview and all six thumbnails cost a single call (and
+    // identical calls are CDN cache hits). Identical in-flight requests are shared.
+    const inflight = new Map();
+    function sharedParams() {
+        const q = settingsParams('tint'); // color + adjustments
+        q.delete('mode');
+        return q;
     }
-    async function fetchMappingFor(params, colors, signal) {
-        const key = params.toString();
-        let known = mapCache.get(key) || {};
-        const missing = colors.filter((c) => !(c in known)).sort();
-        if (missing.length) {
-            let res;
-            if (missing.length <= MAX_GET_COLORS) {
-                const q = new URLSearchParams(params);
-                q.set('colors', missing.join(','));
-                if (ENGINE_VERSION) q.set('v', ENGINE_VERSION);
-                res = await fetch('/api/map-colors?' + q.toString(), { signal });
-            } else {
-                const body = Object.fromEntries(params);
-                body.colors = missing;
-                res = await fetch('/api/map-colors', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal,
-                });
-            }
-            if (!res.ok) throw new Error(await errorDetail(res));
-            const data = await res.json();
-            known = Object.assign({}, known);
-            for (const [from, to] of Object.entries(data.mapping)) known[from.slice(1).toLowerCase()] = to.slice(1).toLowerCase();
-            mapCache.set(key, known);
-            if (mapCache.size > 300) mapCache.delete(mapCache.keys().next().value);
+    async function fetchAllModes(colors) {
+        const missing = MODE_KEYS.filter((m) => {
+            const known = mapCache.get(settingsParams(m).toString());
+            return !known || colors.some((c) => !(c in known));
+        });
+        if (!missing.length || !colors.length) return;
+        const sorted = [...new Set(colors)].sort();
+        const shared = sharedParams();
+        const key = shared.toString() + '|' + sorted.join(',');
+        if (!inflight.has(key)) {
+            inflight.set(key, (async () => {
+                let res;
+                if (sorted.length <= MAX_GET_COLORS) {
+                    const q = new URLSearchParams(shared);
+                    q.set('modes', MODE_KEYS.join(','));
+                    q.set('colors', sorted.join(','));
+                    if (ENGINE_VERSION) q.set('v', ENGINE_VERSION);
+                    res = await fetch('/api/map-colors?' + q.toString());
+                } else {
+                    const body = Object.assign(Object.fromEntries(shared), { modes: MODE_KEYS, colors: sorted });
+                    res = await fetch('/api/map-colors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                }
+                if (!res.ok) throw new Error(await errorDetail(res));
+                storeMappings((await res.json()).mappings, shared);
+            })().finally(() => inflight.delete(key)));
         }
-        return known;
+        return inflight.get(key);
     }
+    // Keys are built from the parameters the request was sent with (not the
+    // current settings, which may have changed meanwhile), in settingsParams' order.
+    function storeMappings(mappings, shared) {
+        for (const [mode, mapping] of Object.entries(mappings)) {
+            const q = new URLSearchParams();
+            if (MODES[mode].color && shared.has('color')) q.set('color', shared.get('color'));
+            q.set('mode', mode);
+            for (const k of ['hue', 'saturation', 'lightness']) if (shared.has(k)) q.set(k, shared.get(k));
+            const key = q.toString();
+            const known = Object.assign({}, mapCache.get(key));
+            for (const [from, to] of Object.entries(mapping)) known[from.slice(1).toLowerCase()] = to.slice(1).toLowerCase();
+            mapCache.set(key, known);
+        }
+        while (mapCache.size > 300) mapCache.delete(mapCache.keys().next().value);
+    }
+    async function mappingFor(mode, colors) {
+        await fetchAllModes(colors);
+        return mapCache.get(settingsParams(mode).toString()) || {};
+    }
+    // The page ships the sample image's colors for the default settings, so the
+    // thumbnails on first load need no request.
+    for (const [key, mapping] of Object.entries(CFG.seed || {})) mapCache.set(key, Object.assign({}, mapping));
+
     // Style thumbnails: the current SVG (or a small sample) rendered in every
     // style with the current color and adjustments, so each choice shows what it does.
-    const SAMPLE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="18" cy="19" r="13" fill="#3b82f6"/><circle cx="30" cy="19" r="13" fill="#f59e0b" fill-opacity=".9"/><circle cx="24" cy="31" r="13" fill="#10b981" fill-opacity=".9"/><circle cx="24" cy="24" r="4" fill="#ffffff"/><path d="M6 44h36" stroke="#1f2937" stroke-width="3"/></svg>';
+    const SAMPLE_SVG = CFG.sample || '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="18" cy="19" r="13" fill="#3b82f6"/><circle cx="30" cy="19" r="13" fill="#f59e0b" fill-opacity=".9"/><circle cx="24" cy="31" r="13" fill="#10b981" fill-opacity=".9"/><circle cx="24" cy="24" r="4" fill="#ffffff"/><path d="M6 44h36" stroke="#1f2937" stroke-width="3"/></svg>';
     const SAMPLE = (function () { const norm = Engine.normalize(SAMPLE_SVG); return { norm, palette: Engine.palette(norm) }; })();
     let thumbTimer = null;
-    let thumbController = null;
+    let thumbId = 0;
     const thumbUrls = {};
     function scheduleThumbs(delay) {
         clearTimeout(thumbTimer);
@@ -505,13 +532,14 @@
     async function renderThumbs() {
         const doc = state.doc && state.doc.norm.length < 250000 ? state.doc : SAMPLE;
         const colors = doc.palette.map((p) => p[0]);
-        if (thumbController) thumbController.abort();
-        thumbController = new AbortController();
-        const signal = thumbController.signal;
-        await Promise.all(MODE_KEYS.map(async (mode) => {
-            try {
-                const mapping = colors.length ? await fetchMappingFor(settingsParams(mode), colors, signal) : {};
-                if (signal.aborted) return;
+        const id = ++thumbId;
+        try {
+            await fetchAllModes(colors);
+        } catch (e) { return; /* thumbnails are a nicety; ignore failures */ }
+        if (id !== thumbId) return;
+        MODE_KEYS.forEach((mode) => {
+            {
+                const mapping = mapCache.get(settingsParams(mode).toString()) || {};
                 if (thumbUrls[mode]) URL.revokeObjectURL(thumbUrls[mode]);
                 thumbUrls[mode] = URL.createObjectURL(new Blob([Engine.apply(doc.norm, mapping)], { type: 'image/svg+xml' }));
                 const box = document.querySelector('[data-thumb="' + mode + '"]');
@@ -519,8 +547,8 @@
                 img.alt = '';
                 img.src = thumbUrls[mode];
                 box.replaceChildren(img);
-            } catch (e) { /* thumbnails are a nicety; ignore failures */ }
-        }));
+            }
+        });
     }
 
     function outputName() {
@@ -545,7 +573,7 @@
         setStatus('work', 'Recoloring…');
         try {
             const colors = doc.palette.map((p) => p[0]);
-            const mapping = colors.length ? await fetchMapping(colors) : {};
+            const mapping = colors.length ? await mappingFor(state.mode, colors) : {};
             if (id !== reqId || doc !== state.doc) return;
             state.result = {
                 svg: Engine.apply(doc.norm, mapping),

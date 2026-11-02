@@ -253,3 +253,37 @@ def test_map_colors_limits(client):
     colors = [f"#{i:06x}" for i in range(r.MAX_PALETTE)]
     assert client.post("/api/map-colors", json={"colors": colors, "mode": "grayscale"}).status_code == 200
     assert client.post("/api/map-colors", json={"colors": colors + ["#ffffff"], "mode": "grayscale"}).status_code == 400
+
+
+def test_map_colors_many_modes_in_one_call(client):
+    res = client.get("/api/map-colors", params={"colors": "5a9fd4,306998", "modes": "tint,solid,grayscale", "color": "red", "v": r.ENGINE_VERSION})
+    data = res.json()
+    assert set(data["mappings"]) == {"tint", "solid", "grayscale"} and "mapping" not in data
+    assert data["mappings"]["solid"] == {"#5a9fd4": "#ff0000", "#306998": "#ff0000"}
+    single = client.get("/api/map-colors", params={"colors": "5a9fd4,306998", "mode": "tint", "color": "red"}).json()["mapping"]
+    assert single == data["mappings"]["tint"]
+    assert client.get("/api/map-colors", params={"colors": "5a9fd4", "modes": "tint,nope"}).status_code == 400
+    posted = client.post("/api/map-colors", json={"colors": ["#5a9fd4"], "modes": ["hue", "solid"], "color": "teal"}).json()
+    assert set(posted["mappings"]) == {"hue", "solid"}
+
+
+def test_page_needs_few_requests(client):
+    import re
+
+    html = client.get("/").text
+    scripts = re.findall(r'<script src="([^"]+)"', html)
+    assert len(scripts) == 1 and scripts[0].startswith("/assets/app.js?v=")  # one bundle
+    assert 'src="/static/logo-56.webp"' not in html and "data:image/webp;base64," in html  # small images inlined
+    config = re.search(r"window\.SVG_RECOLOR = (\{.*?\});</script>", html).group(1)
+    assert '"seed"' in config and "color=ff0066&mode=colorize" in config  # thumbnails need no API call on load
+    bundle = client.get(scripts[0])
+    assert "SvgEngine" in bundle.text and "immutable" in bundle.headers["cache-control"]
+
+
+def test_root_files_browsers_ask_for_are_cached(client):
+    for path in ("/favicon.ico", "/apple-touch-icon.png", "/robots.txt"):
+        res = client.get(path)
+        assert res.status_code == 200 and "s-maxage" in res.headers["cache-control"], path
+    assert "Disallow: /api" in client.get("/robots.txt").text
+    assert "immutable" in client.get("/static/app.css?v=abc").headers["cache-control"]
+    assert "immutable" not in client.get("/static/app.css").headers["cache-control"]
