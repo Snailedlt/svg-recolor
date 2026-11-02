@@ -306,8 +306,10 @@ CI runs all of these on every push and pull request (`.github/workflows/ci.yml`)
 - `svgshift-linux.exe` is a static binary (`scripts/build-svgshift.sh`), so it runs whatever the host's glibc
   version is. It is committed as executable. If a platform drops the bit, the engine copies it to a temp folder
   and marks it executable, or compiles it from `submodules/svgshift` when gcc is available.
-- The code stays compatible with Python 3.9, which is what Vercel's older build image runs (CI tests 3.9, 3.10
-  and 3.12). Ruff is set to `py39` so it doesn't rewrite `Optional[...]` into `X | None`, which breaks on 3.9.
+- Dependencies come from `Pipfile.lock` (Python 3.12). Don't add a `pyproject.toml`: Vercel's Python builder
+  prefers it over `Pipfile.lock`, and one without `[project] dependencies` deploys with nothing installed (every
+  request then fails with `ModuleNotFoundError`). Lint settings live in `ruff.toml` for that reason.
+- The code stays compatible with Python 3.9 (CI tests 3.9 and 3.12).
 - `/api/health` runs both tools on one color and reports the Python version, libc and any error, uncached.
   If the tools fail, the page still loads and the browser fetches the style thumbnails itself.
 - The app rate-limits per IP in memory (see Configuration). On serverless that is per instance, so also add an edge rule

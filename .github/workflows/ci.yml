@@ -14,9 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # 3.9 is what Vercel's older build image runs; 3.10 is what Pipfile asks for;
-        # 3.12 is Vercel's default on the current image.
-        python-version: ["3.9", "3.10", "3.12"]
+        # 3.12 is what Pipfile asks for and what Vercel runs; 3.9 is the oldest supported.
+        python-version: ["3.9", "3.12"]
     steps:
       - uses: actions/checkout@v5
         with:
