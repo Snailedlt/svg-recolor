@@ -132,7 +132,14 @@ The service is built to stay cheap under load:
   - Python: Python, Streamlit, Django / Jinja
   - More: Laravel Blade, Flutter, Blazor
 
-  Press <kbd>F</kbd> to search formats. Formats are defined in [`static/formats.js`](static/formats.js); adding one is a single entry.
+- The **API** tab turns your settings into a ready-to-run request in 20 languages and clients: curl, HTTPie, PowerShell,
+  a hotlink URL, HTML, fetch, Node.js, axios, Python requests and httpx, Go, Rust, Java, Kotlin, C#, PHP, Ruby, Swift,
+  Dart, plus MCP setup.
+- Need something else? Pick **AI prompt** in either tab (or search for your language) and type a language or framework.
+  You get a prompt to paste into ChatGPT, Claude, Copilot or any AI agent: for the Code tab it includes the recolored SVG,
+  for the API tab it describes the endpoint, settings, responses and errors.
+
+  Press <kbd>F</kbd> to search formats or languages. Code formats live in [`static/formats.js`](static/formats.js) and API snippets in [`static/snippets.js`](static/snippets.js); adding one is a single entry.
   SVGs with embedded CSS or braces are inserted as a string for the template languages that would otherwise interpret them.
 - Compare before and after side by side or with a slider.
 - Press <kbd>?</kbd> for keyboard shortcuts: <kbd>1</kbd>-<kbd>6</kbd> pick a mode, <kbd>P</kbd>/<kbd>E</kbd>/<kbd>A</kbd> switch tabs, <kbd>Ctrl</kbd>+<kbd>S</kbd> downloads, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> copies.
@@ -217,4 +224,4 @@ pipenv run colorize path/to/input.svg path/to/output.svg --color "255,0,0"
 
 ## Credits
 
-Framework icons in the Code tab are from [Simple Icons](https://simpleicons.org) (CC0).
+Framework and language icons are from [Simple Icons](https://simpleicons.org) (CC0).

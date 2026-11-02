@@ -147,7 +147,13 @@ def _landing_html() -> str:
         html = (BASE_DIR / "main.html").read_text(encoding="utf-8")
         # Content hashes in asset URLs: browsers and the CDN can cache them, and a
         # deploy that changes a file changes its URL.
-        for placeholder, asset in (("__APP_CSS_V__", "app.css"), ("__APP_JS_V__", "app.js"), ("__FORMATS_JS_V__", "formats.js")):
+        for placeholder, asset in (
+            ("__APP_CSS_V__", "app.css"),
+            ("__APP_JS_V__", "app.js"),
+            ("__ICONS_JS_V__", "icons.js"),
+            ("__FORMATS_JS_V__", "formats.js"),
+            ("__SNIPPETS_JS_V__", "snippets.js"),
+        ):
             digest = hashlib.sha256((BASE_DIR / "static" / asset).read_bytes()).hexdigest()[:12]
             html = html.replace(placeholder, digest)
         _landing_cache = html.replace("__ENGINE_VERSION__", engine.ENGINE_VERSION)

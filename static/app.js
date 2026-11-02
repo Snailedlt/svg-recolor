@@ -144,7 +144,7 @@
         adj: { hue: 0, saturation: 0, lightness: 0 },
         tab: 'preview',
         format: 'svg', // set from storage at start
-        snippet: 'curl',
+        snippet: 'curl', // set from storage at start
     };
     const mapCache = new Map();
     let reqId = 0;
@@ -596,21 +596,157 @@
     // ------------------------------------------------------------------
     // Code tab: output formats
     // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // Pickers: recent items as icon buttons plus a searchable, grouped menu.
+    // Used for code formats (Code tab) and API snippets (API tab).
+    // ------------------------------------------------------------------
+    function createPicker(o) {
+        const el = (suffix) => $(o.prefix + '-' + suffix);
+        const btn = el('btn');
+        const menu = el('menu');
+        const search = el('search');
+        const quick = el('quick');
+        const saved = store.get(o.storeKey, o.defaults[0]);
+        let current = o.items.has(saved) ? saved : o.defaults[0];
+        const recent = () => store.get(o.recentKey, o.defaults).filter((id) => o.items.has(id));
+
+        function sync() {
+            const item = o.items.get(current);
+            el('btn-icon').innerHTML = o.items.icon(item, 16);
+            el('btn-label').textContent = item.label;
+            menu.querySelectorAll('.format-item').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === current)));
+            quick.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === current)));
+        }
+        function renderQuick() {
+            quick.replaceChildren();
+            recent().forEach((id) => {
+                const item = o.items.get(id);
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.dataset.id = id;
+                b.title = item.label;
+                b.setAttribute('aria-label', item.label);
+                b.innerHTML = o.items.icon(item, 15);
+                b.addEventListener('click', () => set(id, true));
+                quick.appendChild(b);
+            });
+            sync();
+        }
+        function set(id, keepQuickOrder) {
+            if (!o.items.has(id)) id = o.defaults[0];
+            current = id;
+            store.set(o.storeKey, id);
+            store.set(o.recentKey, [id].concat(recent().filter((x) => x !== id)).slice(0, 4));
+            if (!keepQuickOrder) renderQuick(); else sync();
+            o.onChange(id);
+        }
+        function render(filter) {
+            const q = (filter || '').trim().toLowerCase();
+            const groups = el('groups');
+            groups.replaceChildren();
+            let shown = 0;
+            o.items.groups.forEach((g) => {
+                const items = o.items.list.filter((it) => it.group === g
+                    && (!q || (it.label + ' ' + it.id + ' ' + it.group + ' ' + (it.file || '') + ' ' + (it.keywords || '')).toLowerCase().includes(q)));
+                if (!items.length) return;
+                const section = document.createElement('div');
+                section.className = 'format-group';
+                const h = document.createElement('h3');
+                h.textContent = g;
+                const grid = document.createElement('div');
+                grid.className = 'format-grid';
+                items.forEach((it) => {
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'format-item' + (it.prompt ? ' is-prompt' : '');
+                    b.dataset.id = it.id;
+                    b.innerHTML = o.items.icon(it, 16);
+                    const label = document.createElement('span');
+                    label.textContent = it.label;
+                    b.appendChild(label);
+                    b.addEventListener('click', () => { set(it.id); close(true); });
+                    grid.appendChild(b);
+                    shown++;
+                });
+                section.append(h, grid);
+                groups.appendChild(section);
+            });
+            const empty = el('empty');
+            empty.hidden = shown > 0;
+            if (!shown) el('empty-text').textContent = 'No built-in option for "' + filter.trim() + '".';
+            sync();
+        }
+        function open() {
+            if (state.tab !== o.tab) setTab(o.tab);
+            search.value = '';
+            render('');
+            menu.hidden = false;
+            btn.setAttribute('aria-expanded', 'true');
+            search.focus();
+        }
+        function close(focusButton) {
+            if (menu.hidden) return;
+            menu.hidden = true;
+            btn.setAttribute('aria-expanded', 'false');
+            if (focusButton) btn.focus();
+        }
+        btn.addEventListener('click', () => (menu.hidden ? open() : close(false)));
+        search.addEventListener('input', () => render(search.value));
+        search.addEventListener('keydown', (e) => {
+            const first = el('groups').querySelector('.format-item');
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (first) first.click();
+                else el('empty-ai').click();
+            } else if (e.key === 'ArrowDown' && first) {
+                e.preventDefault();
+                first.focus();
+            }
+        });
+        // Nothing matches: offer the AI prompt, pre-filled with what was typed.
+        el('empty-ai').addEventListener('click', () => {
+            o.onPromptTarget(search.value.trim());
+            set('ai');
+            close(false);
+        });
+        menu.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); return; }
+            if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key) || e.target.tagName === 'INPUT') return;
+            const items = Array.from(menu.querySelectorAll('.format-item'));
+            const i = items.indexOf(e.target);
+            if (i < 0) return;
+            e.preventDefault();
+            const step = { ArrowDown: 2, ArrowUp: -2, ArrowRight: 1, ArrowLeft: -1 }[e.key];
+            const next = items[i + step];
+            if (next) next.focus(); else if (step < 0) search.focus();
+        });
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#' + o.prefix + '-picker')) close(false);
+        });
+        return { get: () => current, set, open, close, renderQuick };
+    }
+
+    // ------------------------------------------------------------------
+    // Code tab
+    // ------------------------------------------------------------------
+    const S = window.SvgSnippets;
     let codeCache = { key: null, text: '' };
     function codeFor(id) {
         if (!state.result) return '';
+        const f = F.get(id);
+        if (f.prompt) return S.codePrompt($('code-target').value, state.result.svg, state.result.filename);
         const key = id + '\u0000' + state.result.svg;
         if (codeCache.key !== key) codeCache = { key, text: F.convert(id, state.result.svg) };
         return codeCache.text;
     }
     function codeFileName(id) {
-        const f = F.get(id);
         if (id === 'svg') return state.result ? state.result.filename : 'icon.svg';
-        return f.file.split('/').pop();
+        return F.get(id).file.split('/').pop();
     }
     function renderCode() {
         const view = $('code-view');
         const f = F.get(state.format);
+        $('code-prompt-bar').hidden = !f.prompt;
         if (!state.result) {
             view.textContent = 'Load an SVG to see it as ' + f.label + ' code here.';
             $('code-meta').textContent = '';
@@ -627,149 +763,63 @@
         meta.append(file, ' · ' + formatBytes(new Blob([text]).size) + ' · ' + text.split('\n').length + ' lines');
         $('code-hint').textContent = f.usage;
     }
-
-    // Format picker: recent formats as icon buttons, plus a searchable menu.
-    function setFormat(id, fromMenu) {
-        if (!F.has(id)) id = 'svg';
-        state.format = id;
-        store.set('format', id);
-        const recent = [id].concat(store.get('recentFormats', ['svg', 'react', 'vue', 'svelte']).filter((x) => x !== id && F.has(x))).slice(0, 4);
-        store.set('recentFormats', recent);
-        syncFormatButton();
-        if (!fromMenu) renderQuickFormats();
+    const formatPicker = createPicker({
+        prefix: 'format', tab: 'code', items: F, storeKey: 'format', recentKey: 'recentFormats',
+        defaults: ['svg', 'react', 'vue', 'svelte'],
+        onChange: (id) => {
+            state.format = id;
+            renderCode();
+            syncCopyButton();
+            syncDownload();
+            if (F.get(id).prompt && !$('code-target').value) $('code-target').focus();
+        },
+        onPromptTarget: (t) => { if (t) { $('code-target').value = t; store.set('codeTarget', t); } },
+    });
+    $('code-target').value = store.get('codeTarget', '');
+    $('code-target').addEventListener('input', (e) => {
+        store.set('codeTarget', e.target.value);
         renderCode();
-        syncCopyButton();
         syncDownload();
-    }
-    function syncFormatButton() {
-        const f = F.get(state.format);
-        $('format-btn-icon').innerHTML = F.icon(f, 16);
-        $('format-btn-label').textContent = f.label;
-        $$('.format-item, #quick-formats button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.format === state.format)));
-    }
-    function renderQuickFormats() {
-        const box = $('quick-formats');
-        box.replaceChildren();
-        store.get('recentFormats', ['svg', 'react', 'vue', 'svelte']).filter((id) => F.has(id)).forEach((id) => {
-            const f = F.get(id);
-            const b = document.createElement('button');
-            b.type = 'button';
-            b.dataset.format = id;
-            b.title = f.label;
-            b.setAttribute('aria-label', f.label);
-            b.innerHTML = F.icon(f, 15);
-            b.addEventListener('click', () => setFormat(id, true));
-            box.appendChild(b);
-        });
-        syncFormatButton();
-    }
-    function renderFormatMenu(filter) {
-        const q = (filter || '').trim().toLowerCase();
-        const groups = $('format-groups');
-        groups.replaceChildren();
-        let shown = 0;
-        F.groups.forEach((g) => {
-            const items = F.list.filter((f) => f.group === g && (!q || (f.label + ' ' + f.id + ' ' + f.group + ' ' + f.file).toLowerCase().includes(q)));
-            if (!items.length) return;
-            const section = document.createElement('div');
-            section.className = 'format-group';
-            const h = document.createElement('h3');
-            h.textContent = g;
-            const grid = document.createElement('div');
-            grid.className = 'format-grid';
-            items.forEach((f) => {
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.className = 'format-item';
-                b.dataset.format = f.id;
-                b.title = f.file;
-                b.innerHTML = F.icon(f, 16);
-                const label = document.createElement('span');
-                label.textContent = f.label;
-                b.appendChild(label);
-                b.addEventListener('click', () => { setFormat(f.id); closeFormatMenu(true); });
-                grid.appendChild(b);
-                shown++;
-            });
-            section.append(h, grid);
-            groups.appendChild(section);
-        });
-        $('format-empty').hidden = shown > 0;
-        syncFormatButton();
-    }
-    function openFormatMenu() {
-        if (state.tab !== 'code') setTab('code');
-        renderFormatMenu('');
-        $('format-search').value = '';
-        $('format-menu').hidden = false;
-        $('format-btn').setAttribute('aria-expanded', 'true');
-        $('format-search').focus();
-    }
-    function closeFormatMenu(focusButton) {
-        if ($('format-menu').hidden) return;
-        $('format-menu').hidden = true;
-        $('format-btn').setAttribute('aria-expanded', 'false');
-        if (focusButton) $('format-btn').focus();
-    }
-    $('format-btn').addEventListener('click', () => ($('format-menu').hidden ? openFormatMenu() : closeFormatMenu(false)));
-    $('format-search').addEventListener('input', (e) => renderFormatMenu(e.target.value));
-    $('format-search').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            const first = $('format-groups').querySelector('.format-item');
-            if (first) first.click();
-        } else if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            const first = $('format-groups').querySelector('.format-item');
-            if (first) first.focus();
-        }
-    });
-    $('format-menu').addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeFormatMenu(true); return; }
-        if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key) || e.target.tagName === 'INPUT') return;
-        const items = $$('#format-groups .format-item');
-        const i = items.indexOf(e.target);
-        if (i < 0) return;
-        e.preventDefault();
-        const step = { ArrowDown: 2, ArrowUp: -2, ArrowRight: 1, ArrowLeft: -1 }[e.key];
-        const next = items[i + step];
-        if (next) next.focus(); else if (step < 0) $('format-search').focus();
-    });
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.format-picker')) closeFormatMenu(false);
     });
 
     // ------------------------------------------------------------------
     // API tab: snippets for the current settings
     // ------------------------------------------------------------------
-    function updateSnippet() {
+    function snippetContext() {
         const q = settingsParams();
-        const link = (state.doc && state.doc.fromUrl) || 'https://example.com/icon.svg';
+        const params = {};
+        for (const [k, v] of q) params[k] = /^(hue|saturation|lightness)$/.test(k) ? Number(v) : v;
         const getQ = new URLSearchParams(q);
-        getQ.set('url', link);
-        const getUrl = SITE + '/api/recolor?' + getQ.toString();
-        const fname = state.doc && !state.doc.fromUrl ? state.doc.name : 'icon.svg';
-        const out = fname.replace(/\.svg$/i, '') + '-recolored.svg';
-        const pyParams = '{' + Array.from(q).map(([k, v]) => JSON.stringify(k) + ': ' + JSON.stringify(v)).join(', ') + '}';
-        const jsonBody = Object.assign({ svg: '<svg …>' }, Object.fromEntries(q));
-        const snippets = {
-            curl: '# Upload a file\ncurl -X POST "' + SITE + '/api/recolor?' + q.toString() + '" \\\n  -F "file=@' + fname + '" \\\n  -o ' + out
-                + '\n\n# Or send JSON and get the color mapping back too\ncurl -X POST "' + SITE + '/api/recolor?format=json" \\\n  -H "Content-Type: application/json" \\\n  -d \'' + JSON.stringify(jsonBody) + '\'',
-            link: '# Recolor a linked SVG (cached, safe to hotlink)\n' + getUrl,
-            html: '<\!-- Use the API directly as an image -->\n<img src="' + getUrl + '" alt="">',
-            js: "const form = new FormData();\nform.append('file', file); // a File or Blob\n\nconst res = await fetch('" + SITE + '/api/recolor?' + q.toString() + "', {\n  method: 'POST',\n  body: form,\n});\nif (!res.ok) throw new Error((await res.json()).detail);\nconst svg = await res.text();",
-            python: 'import requests\n\nwith open("' + fname + '", "rb") as f:\n    res = requests.post(\n        "' + SITE + '/api/recolor",\n        params=' + pyParams + ',\n        files={"file": f},\n    )\nres.raise_for_status()\n\nwith open("' + out + '", "wb") as f:\n    f.write(res.content)',
-            mcp: '# Claude Code\nclaude mcp add --transport http svg-recolor ' + SITE + '/mcp\n\n# Other MCP clients (JSON config)\n{\n  "mcpServers": {\n    "svg-recolor": { "type": "http", "url": "' + SITE + '/mcp" }\n  }\n}\n\n# Then ask your agent, for example:\n# "Recolor ' + fname + ' with svg-recolor: mode ' + state.mode + (MODES[state.mode].color ? ', color ' + state.color : '') + '"',
+        getQ.set('url', (state.doc && state.doc.fromUrl) || 'https://example.com/icon.svg');
+        const input = state.doc && !state.doc.fromUrl ? state.doc.name : 'icon.svg';
+        return {
+            site: SITE, query: q.toString(), params, getUrl: SITE + '/api/recolor?' + getQ.toString(),
+            input, output: input.replace(/\.svg$/i, '') + '-recolored.svg', target: $('api-target').value,
         };
-        $('snippet').textContent = snippets[state.snippet];
+    }
+    function updateSnippet() {
+        const sn = S.get(state.snippet);
+        $('api-prompt-bar').hidden = !sn.prompt;
+        $('snippet').textContent = S.build(state.snippet, snippetContext());
+        $('api-hint').textContent = sn.prompt
+            ? 'Paste this into ChatGPT, Claude, Copilot or any AI agent.'
+            : 'Uses your current settings. No API key needed.';
         $('mcp-cmd').textContent = 'claude mcp add --transport http svg-recolor ' + SITE + '/mcp';
         $('llms-url').textContent = SITE + '/llms.txt';
     }
-    $$('#snippet-tabs button').forEach((b) => b.addEventListener('click', () => {
-        state.snippet = b.dataset.snippet;
-        $$('#snippet-tabs button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-        updateSnippet();
-    }));
+    const snippetPicker = createPicker({
+        prefix: 'snippet', tab: 'api', items: S, storeKey: 'snippet', recentKey: 'recentSnippets',
+        defaults: ['curl', 'fetch', 'requests', 'ai'],
+        onChange: (id) => {
+            state.snippet = id;
+            updateSnippet();
+            syncCopyButton();
+            if (S.get(id).prompt && !$('api-target').value) $('api-target').focus();
+        },
+        onPromptTarget: (t) => { if (t) { $('api-target').value = t; store.set('apiTarget', t); } },
+    });
+    $('api-target').value = store.get('apiTarget', '');
+    $('api-target').addEventListener('input', (e) => { store.set('apiTarget', e.target.value); updateSnippet(); });
 
     // ------------------------------------------------------------------
     // Tabs, view, background, copy, download, share
@@ -781,7 +831,8 @@
         $$('.ws-tools').forEach((el) => { el.hidden = el.dataset.for !== tab; });
         if (tab === 'code') renderCode();
         if (tab === 'api') updateSnippet();
-        if (tab !== 'code') closeFormatMenu(false);
+        if (tab !== 'code') formatPicker.close(false);
+        if (tab !== 'api') snippetPicker.close(false);
         syncCopyButton();
         syncDownload();
     }
@@ -796,18 +847,18 @@
     function syncCopyButton() {
         const btn = $('copy-btn');
         if (state.tab === 'api') {
-            $('copy-label').textContent = 'Copy snippet';
+            $('copy-label').textContent = S.get(state.snippet).prompt ? 'Copy prompt' : 'Copy snippet';
             btn.disabled = false;
         } else {
-            $('copy-label').textContent = 'Copy ' + (state.tab === 'code' ? F.get(state.format).label : 'SVG');
+            $('copy-label').textContent = state.tab === 'code' && F.get(state.format).prompt ? 'Copy prompt' : 'Copy ' + (state.tab === 'code' ? F.get(state.format).label : 'SVG');
             btn.disabled = !state.result;
         }
     }
     function copyCurrent() {
-        if (state.tab === 'api') return copyText($('snippet').textContent, 'Snippet');
+        if (state.tab === 'api') return copyText($('snippet').textContent, S.get(state.snippet).prompt ? 'Prompt' : 'Snippet');
         if (!state.result) return;
         const id = state.tab === 'code' ? state.format : 'svg';
-        copyText(codeFor(id), F.get(id).label);
+        copyText(codeFor(id), F.get(id).prompt ? 'Prompt' : F.get(id).label);
     }
     // Download follows the view: the SVG file, or the code file in the Code tab.
     let downloadUrl = null;
@@ -881,7 +932,7 @@
         else if (key === 'p') setTab('preview');
         else if (key === 'e') setTab('code');
         else if (key === 'a') setTab('api');
-        else if (key === 'f') openFormatMenu();
+        else if (key === 'f') (state.tab === 'api' ? snippetPicker : formatPicker).open();
         else if (key === 'v') setView(stage.dataset.view === 'slider' ? 'side' : 'slider');
         else if (key === 'b') { const order = ['checker', 'light', 'dark']; setBg(order[(order.indexOf(stage.dataset.bg) + 1) % 3]); }
         else if (e.key === '?') openShortcuts();
@@ -904,8 +955,10 @@
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));
     renderRecent();
-    state.format = F.has(store.get('format', 'svg')) ? store.get('format', 'svg') : 'svg';
-    renderQuickFormats();
+    state.format = formatPicker.get();
+    state.snippet = snippetPicker.get();
+    formatPicker.renderQuick();
+    snippetPicker.renderQuick();
     updateSnippet();
     syncCopyButton();
     if (start.get('url')) {

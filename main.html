@@ -229,28 +229,39 @@
                                 </div>
                             </div>
                             <div class="ws-tools" data-for="code" hidden>
-                                <div class="quick-formats" id="quick-formats" role="group" aria-label="Recent formats"></div>
-                                <div class="format-picker">
-                                    <button type="button" class="btn btn-ghost btn-sm" id="format-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="format-menu" title="Choose a format (F)">
-                                        <span id="format-btn-icon" class="fi-wrap"></span><span id="format-btn-label">SVG</span>
+                                <div class="quick-formats" id="format-quick" role="group" aria-label="Recent formats"></div>
+                                <div class="format-picker" id="format-picker">
+                                    <button type="button" class="btn btn-ghost btn-sm" id="format-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="format-menu" title="Choose a code format (F)">
+                                        <span id="format-btn-icon" class="fi-wrap"></span><span id="format-btn-label"></span>
                                         <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
                                     </button>
                                     <div class="format-menu" id="format-menu" role="dialog" aria-label="Choose a code format" hidden>
                                         <label for="format-search" class="sr-only">Search formats</label>
-                                        <input id="format-search" class="text-field" type="search" placeholder="Search formats" autocomplete="off" spellcheck="false">
+                                        <input id="format-search" class="text-field" type="search" placeholder="Search formats, e.g. Vue" autocomplete="off" spellcheck="false">
                                         <div id="format-groups"></div>
-                                        <p class="format-empty" id="format-empty" hidden>No format matches. <a href="https://github.com/Snailedlt/svg-recolor/issues/new?title=Code%20format%20request" target="_blank" rel="noopener">Request one</a></p>
+                                        <div class="format-empty" id="format-empty" hidden>
+                                            <span id="format-empty-text"></span>
+                                            <button type="button" class="btn btn-ghost btn-sm" id="format-empty-ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Get an AI prompt for it</button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                             <div class="ws-tools" data-for="api" hidden>
-                                <div class="segmented" role="group" aria-label="Snippet type" id="snippet-tabs">
-                                    <button type="button" data-snippet="curl" aria-pressed="true">curl</button>
-                                    <button type="button" data-snippet="link" aria-pressed="false">Link</button>
-                                    <button type="button" data-snippet="html" aria-pressed="false">HTML</button>
-                                    <button type="button" data-snippet="js" aria-pressed="false">JS</button>
-                                    <button type="button" data-snippet="python" aria-pressed="false">Python</button>
-                                    <button type="button" data-snippet="mcp" aria-pressed="false">MCP</button>
+                                <div class="quick-formats" id="snippet-quick" role="group" aria-label="Recent languages"></div>
+                                <div class="format-picker" id="snippet-picker">
+                                    <button type="button" class="btn btn-ghost btn-sm" id="snippet-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="snippet-menu" title="Choose a language or client (F)">
+                                        <span id="snippet-btn-icon" class="fi-wrap"></span><span id="snippet-btn-label"></span>
+                                        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                                    </button>
+                                    <div class="format-menu" id="snippet-menu" role="dialog" aria-label="Choose a language or client" hidden>
+                                        <label for="snippet-search" class="sr-only">Search languages</label>
+                                        <input id="snippet-search" class="text-field" type="search" placeholder="Search, e.g. Rust or C#" autocomplete="off" spellcheck="false">
+                                        <div id="snippet-groups"></div>
+                                        <div class="format-empty" id="snippet-empty" hidden>
+                                            <span id="snippet-empty-text"></span>
+                                            <button type="button" class="btn btn-ghost btn-sm" id="snippet-empty-ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Get an AI prompt for it</button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -288,6 +299,10 @@
 
                             <div class="tab-panel" role="tabpanel" id="tab-code" aria-labelledby="tab-btn-code" hidden>
                                 <div class="code-wrap">
+                                    <div class="prompt-bar" id="code-prompt-bar" hidden>
+                                        <label for="code-target">Framework or language</label>
+                                        <input id="code-target" class="text-field" type="text" placeholder="e.g. Qwik, SwiftUI, Jetpack Compose, Elm" autocomplete="off" spellcheck="false">
+                                    </div>
                                     <pre class="code fill" id="code-view" tabindex="0" aria-label="Result code">Load an SVG to see its recolored code here.</pre>
                                     <div class="code-meta"><span id="code-meta"></span><span id="code-hint"></span></div>
                                 </div>
@@ -295,8 +310,12 @@
 
                             <div class="tab-panel" role="tabpanel" id="tab-api" aria-labelledby="tab-btn-api" hidden>
                                 <div class="code-wrap">
+                                    <div class="prompt-bar" id="api-prompt-bar" hidden>
+                                        <label for="api-target">Language or framework</label>
+                                        <input id="api-target" class="text-field" type="text" placeholder="e.g. Elixir, Zig, Spring Boot, Laravel" autocomplete="off" spellcheck="false">
+                                    </div>
                                     <pre class="code fill" id="snippet" tabindex="0" aria-label="API snippet"></pre>
-                                    <div class="code-meta"><span>Uses your current settings. No API key needed.</span><span><a href="/docs" target="_blank" rel="noopener">Swagger</a> · <a href="/llms.txt" target="_blank" rel="noopener">llms.txt</a> · <a href="#api">All endpoints</a></span></div>
+                                    <div class="code-meta"><span id="api-hint">Uses your current settings. No API key needed.</span><span><a href="/docs" target="_blank" rel="noopener">Swagger</a> · <a href="/llms.txt" target="_blank" rel="noopener">llms.txt</a> · <a href="#api">All endpoints</a></span></div>
                                 </div>
                             </div>
                         </div>
@@ -351,7 +370,7 @@
             <section class="more" id="api">
                 <div class="wrap">
                     <h2>HTTP API</h2>
-                    <p class="lead">Everything the editor does is available over HTTP with the same modes and options. The <b>API</b> tab above turns your current settings into ready-to-run code.</p>
+                    <p class="lead">Everything the editor does is available over HTTP with the same modes and options. The <b>API</b> tab above turns your current settings into ready-to-run code for 20 languages and clients, or an AI prompt for any other.</p>
                     <ul class="endpoints">
                         <li><span class="verb get">GET</span><code>/api/recolor?url=…</code><span class="d">Recolor a linked SVG. Cached, so it works as an &lt;img&gt; src.</span></li>
                         <li><span class="verb post">POST</span><code>/api/recolor</code><span class="d">Upload a file, send JSON, or send the SVG as the body.</span></li>
@@ -390,7 +409,7 @@
                 <dt><kbd>Ctrl</kbd> <kbd>V</kbd></dt><dd>Paste an SVG file or SVG code</dd>
                 <dt><kbd>C</kbd></dt><dd>Edit the color</dd>
                 <dt><kbd>P</kbd> <kbd>E</kbd> <kbd>A</kbd></dt><dd>Preview, Code or API tab</dd>
-                <dt><kbd>F</kbd></dt><dd>Choose a code format (React, Vue, Svelte, Python…)</dd>
+                <dt><kbd>F</kbd></dt><dd>Choose a code format or API language</dd>
                 <dt><kbd>V</kbd> / <kbd>B</kbd></dt><dd>Side by side or slider / cycle the background</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>Enter</kbd></dt><dd>Recolor now</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>S</kbd></dt><dd>Download the result</dd>
@@ -402,7 +421,9 @@
         <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
         <script>window.SVG_RECOLOR = { engineVersion: '__ENGINE_VERSION__' };</script>
+        <script src="/static/icons.js?v=__ICONS_JS_V__" defer></script>
         <script src="/static/formats.js?v=__FORMATS_JS_V__" defer></script>
+        <script src="/static/snippets.js?v=__SNIPPETS_JS_V__" defer></script>
         <script src="/static/app.js?v=__APP_JS_V__" defer></script>
     </body>
 </html>

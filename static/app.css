@@ -419,7 +419,11 @@ pre.code .c { color: #6b7286; }
 .format-item span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .format-item:hover, .format-item:focus-visible { background: var(--surface-2); outline: none; }
 .format-item[aria-pressed="true"] { background: color-mix(in srgb, var(--pick) 12%, var(--surface-2)); }
-.format-empty { margin: 4px; font-size: 0.84rem; color: var(--text-faint); }
+.format-empty { margin: 2px 4px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; font-size: 0.84rem; color: var(--text-faint); }
+.format-item.is-prompt .fi { color: var(--pick); }
+.prompt-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.prompt-bar label { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); }
+.prompt-bar .text-field { max-width: 360px; }
 .code-meta .file { font-family: var(--mono); color: var(--text-muted); }
 
 /* Action bar */
