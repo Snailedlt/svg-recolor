@@ -15,15 +15,11 @@ SVG Recolor is a website, HTTP API, MCP server and CLI to recolor SVG files. It 
 > [!NOTE]
 > Submodules have their own licenses and may or may not be covered by the license of this project. Check the submodule's license for details.
 
-> [!WARNING]
-> This project is still under construction and may not be fully functional yet.
-
 ## Features
 
-[Website](#website): Use the intuitive web interface to recolor SVG files without any setup.
-[API](#api): Integrate SVG recoloring into your applications with ease.
-[CLI Tool](#cli-tool): Recolor SVG files directly from your terminal with this Python script.
-[Legacy Shell Script](#legacy-shell-script): Same as above, but with a shell script (not maintained).
+- [Website](#website): recolor SVGs in the browser, no setup, with code for 24 frameworks.
+- [API](#api): the same over HTTP, plus an [MCP server](#ai-agents) for AI agents.
+- [CLI Tool](#cli-tool): recolor files from your terminal, with Python or the [shell script](#shell-script).
 
 ## Usage
 
@@ -182,18 +178,18 @@ python colorize_svg.py example-input-svgs/rainbow-snail.svg --palette
 | :---: | :---: | :---: | :---: | :---: |
 | <img src="example-input-svgs/rainbow-snail.svg" width="120" alt="Rainbow snail"> | <img src="example-input-svgs/rainbow-snail-colorize.svg" width="120" alt="Colorized purple"> | <img src="example-input-svgs/rainbow-snail-solid.svg" width="120" alt="Solid sea green"> | <img src="example-input-svgs/rainbow-snail-grayscale.svg" width="120" alt="Grayscale"> | <img src="example-input-svgs/rainbow-snail-hue.svg" width="120" alt="Hue rotated"> |
 
-### Legacy Shell Script
+### Shell script
 
-Run `colorize_svg_old.bash` in your terminal (it needs the `argparse-bash` submodule).
-
-Example Usage:
+`colorize_svg.sh` keeps the original shell script's interface. It runs the CLI above in Tint mode (grayscale, then
+add the color), which is what the original did, and passes any other option through.
 
 ```bash
-# Recolor the input SVG file to red and save it to the output file using RGB color values
-./colorize_svg_old.bash example-input-svgs/rainbow-snail.svg tmp/output.svg --color "255,0,0"
+# Red, as hex or as RGB values
+./colorize_svg.sh example-input-svgs/rainbow-snail.svg tmp/output.svg --color "#FF0000"
+./colorize_svg.sh example-input-svgs/rainbow-snail.svg tmp/output.svg --color "255,0,0"
 
-# Recolor the input SVG file to red and save it to the output file using hex color values
-./colorize_svg_old.bash example-input-svgs/rainbow-snail.svg tmp/output.svg --color "#FF0000"
+# Any CLI option works too
+./colorize_svg.sh example-input-svgs/rainbow-snail.svg tmp/output.svg --color teal --mode colorize
 ```
 
 ## Contributing
@@ -260,9 +256,9 @@ pipenv run colorize path/to/input.svg path/to/output.svg --color "255,0,0"
 | `server/` | `common.py` (shared helpers, cache policy), `fetching.py` (safe link downloads), `agents.py` (`/llms.txt`, `/mcp`) |
 | `main.html`, `static/` | The editor: `engine.js` (browser twin of the engine), `formats.js` (code formats), `snippets.js` (API examples), `highlight.js` (syntax highlighting), `icons.js`, `app.js`, `app.css` |
 | `static/examples/rainbow-snail.svg` | The style previews, "Try an example" and the link preview. Traced from the original art (`logo/old-social-preview.jpg`) by `scripts/trace-snail.py` with the svg-icons agent skill's `vectorize.js` (one path per color, 51 KB) |
-| `scripts/make-og-image.mjs` | Renders the link preview (`static/og-image.png`) with the real engine |
+| `scripts/make-og-image.mjs` | Renders the link previews with the real engine: `static/og-image.png` (site) and `docs/github-social-preview.png` (repo Settings > Social preview, GitHub's 1280x640 template) |
 | `example-input-svgs/` | The rainbow snail and CLI outputs from it (see CLI Tool) |
-| `colorize_svg.py` | CLI |
+| `colorize_svg.py`, `colorize_svg.sh` | CLI, and its shell wrapper |
 | `tests/` | pytest suite; `tests/js` (browser scripts), `tests/php` (Blade), `tests/live` (snippets run in their languages), `tests/e2e` (browser) |
 | `showcase/` | Builds a standalone demo page of the editor |
 | `docs/screenshots/` | Before/after screenshots |

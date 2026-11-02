@@ -34,30 +34,37 @@ PALETTE = {
     "deeppurple": (68, 24, 104),
 }
 HUES = [("red", 0), ("orange", 30), ("yellow", 55), ("green", 120), ("cyan", 190), ("blue", 225), ("purple", 275), ("magenta", 315), ("red", 360)]
-def classify(r, g, b, x, y, h_img):
-    h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
-    if l < 0.10: return "ink"
-    if l < 0.26 and s > 0.25 and 240 <= h * 360 <= 330: return "deeppurple"
-    if l < 0.15: return "ink"
-    if s < 0.22 or (l > 0.8 and s < 0.4):
-        if y > h_img * 0.9 and l < 0.5: return "ground"
-        return "white" if l > 0.72 else "gray" if l > 0.45 else "darkgray"
-    if y > h_img * 0.93 and 40 <= h * 360 <= 70 and l < 0.45: return "ground"
-    hd = h * 360
-    return min(HUES, key=lambda t: abs(t[1] - hd))[0]
+def classify(r, g, b, y, height):
+    """Palette name for one pixel (y and height tell the ground strip apart)."""
+    hue, light, sat = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+    deg = hue * 360
+    if light < 0.10:
+        return "ink"
+    if light < 0.26 and sat > 0.25 and 240 <= deg <= 330:
+        return "deeppurple"
+    if light < 0.15:
+        return "ink"
+    if sat < 0.22 or (light > 0.8 and sat < 0.4):
+        if y > height * 0.9 and light < 0.5:
+            return "ground"
+        return "white" if light > 0.72 else "gray" if light > 0.45 else "darkgray"
+    if y > height * 0.93 and 40 <= deg <= 70 and light < 0.45:
+        return "ground"
+    return min(HUES, key=lambda t: abs(t[1] - deg))[0]
 ROOT = Path(__file__).resolve().parent.parent
 im = Image.open(ROOT / 'logo/old-social-preview.jpg').convert('RGB').crop((25, 125, 465, 495))  # the rainbow snail
 im = im.resize((round(im.width * SCALE), round(im.height * SCALE)), Image.LANCZOS).filter(ImageFilter.MedianFilter(3))
 bg = (38, 38, 38)
 src = im.load()
-rgba = Image.new('RGBA', im.size); out = rgba.load()
+rgba = Image.new('RGBA', im.size)
+out = rgba.load()
 for y in range(im.height):
     for x in range(im.width):
         R, G, B = src[x, y]
         if max(abs(R - bg[0]), abs(G - bg[1]), abs(B - bg[2])) < 16:
             out[x, y] = (0, 0, 0, 0)
         else:
-            out[x, y] = (*PALETTE[classify(R, G, B, x, y, im.height)], 255)
+            out[x, y] = (*PALETTE[classify(R, G, B, y, im.height)], 255)
 rgba = rgba.filter(ImageFilter.ModeFilter(3))
 args = argparse.ArgumentParser(description=__doc__.splitlines()[0])
 args.add_argument("--skill", help="path to the svg-icons skill (with its scripts/ installed: npm install)")

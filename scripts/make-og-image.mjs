@@ -1,5 +1,9 @@
-// Renders the link preview (static/og-image.png, 1200x630): the logo and name, what
-// the site does, and the rainbow snail before and after, recolored by the real engine.
+// Renders the link previews: the logo and name, what the site does, and the rainbow
+// snail before and after, recolored by the real engine.
+//   static/og-image.png              1200x630, for the site's Open Graph / Twitter tags
+//   docs/github-social-preview.png   1280x640, for the repo's Settings > Social preview;
+//                                    follows GitHub's template: everything important
+//                                    stays inside a 40pt (80px) border
 //
 //   cd tests/e2e && npm ci            # once: this script borrows its Playwright
 //   node scripts/make-og-image.mjs    # from the repo root
@@ -24,15 +28,17 @@ function recolored(svg, mode, color) {
     return execFileSync(process.env.PYTHON || 'python3', ['-c', py, mode, color], { cwd: root, input: svg, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 }
 
+const after = recolored(snail, 'colorize', 'a855f7');
 const figure = (svg, label) => `<figure style="margin:0;display:grid;justify-items:center;gap:10px">
     <img src="${uri('image/svg+xml', svg)}" width="268" height="225" style="object-fit:contain">
     <figcaption style="font:600 22px Inter;color:#9aa3b5;letter-spacing:.02em">${label}</figcaption></figure>`;
 
-const html = `<!doctype html><html><head><style>
+// pad: [vertical, horizontal] distance from the edge to the content.
+const card = (width, height, pad) => `<!doctype html><html><head><style>
     @font-face { font-family: Inter; src: url(${font}) format('woff2'); font-weight: 400 800; }
-    html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+    html, body { margin: 0; width: ${width}px; height: ${height}px; overflow: hidden; }
 </style></head><body>
-<div style="width:1200px;height:630px;box-sizing:border-box;padding:64px 72px;display:flex;flex-direction:column;justify-content:space-between;
+<div id="card" style="width:${width}px;height:${height}px;box-sizing:border-box;padding:${pad[0]}px ${pad[1]}px;display:flex;flex-direction:column;justify-content:space-between;
         background:radial-gradient(900px 500px at 85% 10%, #2a1f5c 0%, transparent 60%), radial-gradient(700px 400px at 0% 100%, #0f3b3a 0%, transparent 60%), #0f1117;
         color:#f3f4f8;font-family:Inter">
     <div style="display:flex;align-items:center;gap:18px">
@@ -47,16 +53,28 @@ const html = `<!doctype html><html><head><style>
         <div style="display:flex;align-items:center;gap:6px">
             ${figure(snail, 'Original')}
             <svg width="54" height="40" viewBox="0 0 54 40" style="margin-bottom:40px"><path d="M4 20h40M32 8l13 12-13 12" fill="none" stroke="#9aa3b5" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            ${figure(recolored(snail, 'colorize', 'a855f7'), 'Colorize')}
+            ${figure(after, 'Colorize')}
         </div>
     </div>
     <div style="font:600 24px Inter;color:#8b93a7">svg-recolor.jorgenkh.no</div>
 </div></body></html>`;
 
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
-const page = await browser.newPage({ viewport: { width: 1200, height: 630 } });
-await page.setContent(html);
-await page.evaluate(() => document.fonts.ready);
-writeFileSync(path.join(root, 'static/og-image.png'), await page.screenshot({ type: 'png' }));
+const page = await browser.newPage();
+for (const [out, width, height, pad, safe] of [
+    ['static/og-image.png', 1200, 630, [64, 72], 0],
+    ['docs/github-social-preview.png', 1280, 640, [96, 104], 80],
+]) {
+    await page.setViewportSize({ width, height });
+    await page.setContent(card(width, height, pad));
+    await page.evaluate(() => document.fonts.ready);
+    if (safe) { // GitHub's template: nothing important within `safe` px of an edge
+        const outside = await page.evaluate((safe) => [...document.querySelectorAll('#card img, #card span, #card figcaption, #card div:not(#card)')]
+            .filter((el) => !el.children.length || el.tagName === 'IMG').map((el) => el.getBoundingClientRect())
+            .filter((r) => r.width && (r.left < safe || r.top < safe || r.right > innerWidth - safe || r.bottom > innerHeight - safe)).length, safe);
+        if (outside) throw new Error(`${out}: ${outside} element(s) inside the ${safe}px border`);
+    }
+    writeFileSync(path.join(root, out), await page.screenshot({ type: 'png' }));
+    console.log(`wrote ${out}`);
+}
 await browser.close();
-console.log('wrote static/og-image.png');
