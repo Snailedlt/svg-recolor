@@ -21,7 +21,7 @@
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
-    const clean = (svg) => svg.replace(/<\?xml[\s\S]*?\?>/g, '').replace(/<!DOCTYPE[\s\S]*?>/gi, '').replace(/<!--[\s\S]*?-->/g, '').trim();
+    const clean = (svg) => svg.replace(/<\?xml[\s\S]*?\?>/g, '').replace(/<!DOCTYPE[\s\S]*?>/gi, '').replace(/<!(?:--)[\s\S]*?-->/g, '').trim();
     const indent = (text, n) => text.split('\n').map((l) => (l ? ' '.repeat(n) + l : l)).join('\n');
     const oneLine = (svg) => clean(svg).replace(/\s*\n\s*/g, ' ');
     const dataUri = (svg) => 'data:image/svg+xml,' + encodeURIComponent(oneLine(svg)).replace(/'/g, '%27').replace(/\(/g, '%28').replace(/\)/g, '%29');
@@ -29,7 +29,7 @@
     const textNodes = (svg) => svg.replace(/<[^>]*>/g, '');
     // Markup that a template language would try to interpret: CSS in <style>,
     // braces or '@' in text. Those formats fall back to injecting the raw string.
-    const hasStyle = (svg) => /<style[\s>]/i.test(svg) || /<script[\s>]/i.test(svg);
+    const hasStyle = (svg) => /<style[\s>]/i.test(svg) || /<(?:script)[\s>]/i.test(svg);
     const hasBraces = (svg) => /[{}]/.test(textNodes(svg));
     const templateSafe = (svg) => !hasStyle(svg) && !hasBraces(svg);
     const jsTemplate = (s) => s.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
@@ -95,11 +95,11 @@
         { id: 'vue', label: 'Vue', group: 'JavaScript', icon: 'vuedotjs', file: 'RecoloredIcon.vue', usage: '<RecoloredIcon class="size-6" />',
             code: (s) => templateSafe(s)
                 ? '<template>\n' + indent(clean(s), 2) + '\n</template>\n'
-                : '<script setup>\nconst svg = `' + jsTemplate(clean(s)) + '`;\n</script>\n\n<template>\n  <span v-html="svg" />\n</template>\n' },
+                : '<script setup>\nconst svg = `' + jsTemplate(clean(s)) + '`;\n<\/script>\n\n<template>\n  <span v-html="svg" />\n</template>\n' },
         { id: 'svelte', label: 'Svelte', group: 'JavaScript', icon: 'svelte', file: 'RecoloredIcon.svelte', usage: '<RecoloredIcon class="size-6" /> (Svelte 5)',
             code: (s) => templateSafe(s)
-                ? '<script>\n  let props = $props();\n</script>\n\n' + addAttr(clean(s), '{...props}') + '\n'
-                : '<script>\n  let props = $props();\n  const svg = `' + jsTemplate(clean(s)) + '`;\n</script>\n\n<span {...props}>{@html svg}</span>\n' },
+                ? '<script>\n  let props = $props();\n<\/script>\n\n' + addAttr(clean(s), '{...props}') + '\n'
+                : '<script>\n  let props = $props();\n  const svg = `' + jsTemplate(clean(s)) + '`;\n<\/script>\n\n<span {...props}>{@html svg}</span>\n' },
         { id: 'angular', label: 'Angular', group: 'JavaScript', icon: 'angular', file: 'recolored-icon.component.ts', usage: '<app-recolored-icon />',
             code: (s) => (templateSafe(s) && !/@/.test(textNodes(s)))
                 ? "import { Component } from '@angular/core';\n\n@Component({\n  selector: 'app-recolored-icon',\n  standalone: true,\n  template: `\n" + indent(jsTemplate(clean(s)), 4) + "\n  `,\n})\nexport class RecoloredIconComponent {}\n"

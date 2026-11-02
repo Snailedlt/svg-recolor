@@ -756,7 +756,7 @@
             curl: '# Upload a file\ncurl -X POST "' + SITE + '/api/recolor?' + q.toString() + '" \\\n  -F "file=@' + fname + '" \\\n  -o ' + out
                 + '\n\n# Or send JSON and get the color mapping back too\ncurl -X POST "' + SITE + '/api/recolor?format=json" \\\n  -H "Content-Type: application/json" \\\n  -d \'' + JSON.stringify(jsonBody) + '\'',
             link: '# Recolor a linked SVG (cached, safe to hotlink)\n' + getUrl,
-            html: '<!-- Use the API directly as an image -->\n<img src="' + getUrl + '" alt="">',
+            html: '<\!-- Use the API directly as an image -->\n<img src="' + getUrl + '" alt="">',
             js: "const form = new FormData();\nform.append('file', file); // a File or Blob\n\nconst res = await fetch('" + SITE + '/api/recolor?' + q.toString() + "', {\n  method: 'POST',\n  body: form,\n});\nif (!res.ok) throw new Error((await res.json()).detail);\nconst svg = await res.text();",
             python: 'import requests\n\nwith open("' + fname + '", "rb") as f:\n    res = requests.post(\n        "' + SITE + '/api/recolor",\n        params=' + pyParams + ',\n        files={"file": f},\n    )\nres.raise_for_status()\n\nwith open("' + out + '", "wb") as f:\n    f.write(res.content)',
             mcp: '# Claude Code\nclaude mcp add --transport http svg-recolor ' + SITE + '/mcp\n\n# Other MCP clients (JSON config)\n{\n  "mcpServers": {\n    "svg-recolor": { "type": "http", "url": "' + SITE + '/mcp" }\n  }\n}\n\n# Then ask your agent, for example:\n# "Recolor ' + fname + ' with svg-recolor: mode ' + state.mode + (MODES[state.mode].color ? ', color ' + state.color : '') + '"',
