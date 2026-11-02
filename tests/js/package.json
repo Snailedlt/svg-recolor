@@ -1,0 +1,14 @@
+{
+  "name": "svg-recolor-js-tests",
+  "private": true,
+  "type": "module",
+  "description": "Tests for static/formats.js and static/snippets.js (run from this folder: npm ci && npm test)",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "@vue/compiler-sfc": "3.5.13",
+    "esbuild": "0.24.2",
+    "svelte": "5.19.0"
+  }
+}

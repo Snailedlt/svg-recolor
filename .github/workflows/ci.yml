@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python (engine, API, MCP, browser parity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the locked dependencies
+        run: |
+          pip install pipenv
+          pipenv requirements > requirements.lock.txt
+          pip install -r requirements.lock.txt pytest
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: pytest -q
+        env:
+          SENTRY_DSN: ""
+
+  javascript:
+    name: JavaScript (code formats compile, API snippets)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tests/js
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/js/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: npm test

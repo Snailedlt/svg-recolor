@@ -187,8 +187,8 @@ def _parse_func(kind: str, args: str) -> tuple[str, float | None] | None:
     if kind.startswith("rgb"):
         rgb = [v * 2.55 if u == "%" else v for v, u in vals[:3]]
         return _to_hex(*rgb), alpha
-    (h, _), (s, _), (l, _) = vals[:3]
-    r, g, b = colorsys.hls_to_rgb((h % 360) / 360, _clamp(l, 0, 100) / 100, _clamp(s, 0, 100) / 100)
+    (h, _), (s, _), (light, _) = vals[:3]
+    r, g, b = colorsys.hls_to_rgb((h % 360) / 360, _clamp(light, 0, 100) / 100, _clamp(s, 0, 100) / 100)
     return _to_hex(r * 255, g * 255, b * 255), alpha
 
 
@@ -229,8 +229,8 @@ def rgb_to_hex(rgb) -> str:
 
 def _svgshift_hsl(rgb) -> tuple[int, int, int]:
     """HSL on svgshift's scale (H 0-360, S/L 0-100)."""
-    h, l, s = colorsys.rgb_to_hls(*(c / 255 for c in rgb))
-    return round(h * 360), round(s * 100), round(l * 100)
+    h, light, s = colorsys.rgb_to_hls(*(c / 255 for c in rgb))
+    return round(h * 360), round(s * 100), round(light * 100)
 
 
 # --------------------------------------------------------------------------

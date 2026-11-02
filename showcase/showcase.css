@@ -1,0 +1,19 @@
+/* Extra styles for the standalone showcase page. */
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 21; background: var(--bg); }
+header.site { top: env(safe-area-inset-top, 0px); }
+.demo-note { display: flex; gap: 10px; align-items: center; margin: 0 0 12px; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px dashed var(--border-strong); background: var(--surface); color: var(--text-muted); font-size: 0.84rem; }
+.demo-note b { color: var(--text); }
+.demo-note .tag { flex: none; font-size: 0.68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; border-radius: 6px; background: color-mix(in srgb, var(--pick) 16%, transparent); color: var(--pick); }
+.app-grid { height: calc(100vh - var(--header-h) - 80px); }
+@media (max-width: 900px) { .app-grid { height: auto; } }
+.compare { display: grid; grid-template-columns: 0.75fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 800px) { .compare { grid-template-columns: 1fr; } }
+.compare figure { margin: 0; overflow: hidden; min-width: 0; padding: 0; gap: 0; }
+.compare figcaption { display: flex; justify-content: space-between; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 0.86rem; font-weight: 600; }
+.compare figcaption span { color: var(--text-faint); font-weight: 500; }
+.compare img { display: block; width: 100%; height: auto; }
+.changes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 28px; margin: 24px 0 0; padding: 0; list-style: none; }
+@media (max-width: 700px) { .changes { grid-template-columns: 1fr; } }
+.changes li { display: flex; gap: 10px; color: var(--text-muted); font-size: 0.9rem; }
+.changes li::before { content: ""; flex: none; width: 8px; height: 8px; margin-top: 8px; border-radius: 2px; background: var(--pick); }
+.changes b { color: var(--text); font-weight: 600; }

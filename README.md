@@ -5,9 +5,11 @@
 [![ko-fi](https://img.shields.io/badge/Ko--fi-support_me_on-red?logo=ko-fi)](https://ko-fi.com/snailedlt)
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-donate-yellow?logo=buymeacoffee)](https://buymeacoffee.com/snailedlt)
 
-SVG Recolor is a simple CLI tool, API and website to recolor SVG files. It is written in python.
+[![CI](https://github.com/Snailedlt/svg-recolor/actions/workflows/ci.yml/badge.svg)](https://github.com/Snailedlt/svg-recolor/actions/workflows/ci.yml)
 
-<!-- ![website](website_screenshot.png) -->
+SVG Recolor is a website, HTTP API, MCP server and CLI to recolor SVG files. It is written in Python.
+
+![The SVG Recolor editor](website_screenshot.png)
 
 > [!NOTE]
 > Submodules have their own licenses and may or may not be covered by the license of this project. Check the submodule's license for details.
@@ -192,7 +194,7 @@ Other ways to contribute:
 
 ### Installation
 
-Clone the repository and install the dependencies using pipenv.
+Clone the repository (with submodules) and install the dependencies using pipenv.
 
 ```sh
 git clone --recurse-submodules https://github.com/Snailedlt/svg-recolor.git
@@ -220,10 +222,58 @@ pipenv run dev
 If you wish to run the CLI without downloading the required dependencies to a separate virtual env, you can use the following command:
 
 ```sh
-# Update the dependencies if you haven't already
-pipenv update
 pipenv run colorize path/to/input.svg path/to/output.svg --color "255,0,0"
 ```
+
+### Project layout
+
+| Path | What it is |
+| --- | --- |
+| `recolor.py` | The engine: color normalization, palette, modes, svgray/svgshift wrappers, per-color cache |
+| `main.py` | FastAPI app: website, recolor/palette/map-colors endpoints, cache headers |
+| `server/` | `common.py` (shared helpers, cache policy), `fetching.py` (safe link downloads), `agents.py` (`/llms.txt`, `/mcp`) |
+| `main.html`, `static/` | The editor: `engine.js` (browser twin of the engine), `formats.js` (code formats), `snippets.js` (API examples), `icons.js`, `app.js`, `app.css` |
+| `colorize_svg.py` | CLI |
+| `tests/` | pytest suite, plus `tests/js` for the browser scripts |
+| `showcase/` | Builds a standalone demo page of the editor |
+
+### Tests
+
+```sh
+pip install pytest          # once
+pytest -q                   # engine, API, MCP, and browser/server engine parity (needs Node.js)
+```
+
+```sh
+cd tests/js && npm ci && npm test   # code formats compile with their real toolchains; API snippets
+```
+
+CI runs both on every push and pull request (`.github/workflows/ci.yml`), using the versions in `Pipfile.lock`.
+`tests/test_parity.py` keeps `static/engine.js` and `recolor.py` byte-for-byte identical; if you change one, change the other.
+
+### Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SENTRY_DSN` | the project DSN | Set to an empty string to disable Sentry |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.05` | Share of requests traced |
+| `SENTRY_PROFILING` | off | `1` enables continuous profiling |
+| `SVG_RECOLOR_DEV` | off | `1` re-reads `main.html` on every request (handy while editing) |
+
+### Deploying (Vercel)
+
+- `vercel.json` routes everything to `main.py`; the CDN caches responses that send `s-maxage`
+  (the page, static files, docs, linked SVGs and `/api/map-colors?v=...`). After a deploy, a repeated
+  `/api/map-colors` request should answer with `x-vercel-cache: HIT`.
+- Submodules must be checked out: `submodules/svgray/.svgray.py` is imported at runtime.
+- `svgshift-linux.exe` is committed as executable. If a platform drops the bit, the engine copies it to a
+  temp folder and marks it executable, or compiles it from `submodules/svgshift` when gcc is available.
+- Rate limiting is best done at the edge (for example a Vercel Firewall rate-limit rule on `/api/*` and `/mcp`).
+
+### Showcase page
+
+`python showcase/build.py` (needs Pillow) writes a single self-contained HTML file of the editor to
+`showcase/dist/`. It inlines everything and runs the color math in the browser, so it works without the server.
 
 ## Credits
 

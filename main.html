@@ -41,7 +41,7 @@
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-        <link rel="stylesheet" href="/static/app.css?v=__APP_CSS_V__">
+        <link rel="stylesheet" href="/static/app.css?v=__HASH__">
         <script>
             // Apply the saved or system theme before first paint.
             (function () {
@@ -128,8 +128,8 @@
                             <section class="step" aria-labelledby="style-title">
                                 <h2 class="step-head" id="style-title"><span class="step-n">1</span>Style<span class="step-sub">how the colors change</span></h2>
                                 <div class="styles" id="modes" role="radiogroup" aria-label="Style">
-                                    <button type="button" class="style" data-mode="tint" role="radio" aria-checked="true"><span class="thumb" data-thumb="tint"></span><span class="style-name">Tint</span><kbd>1</kbd></button>
-                                    <button type="button" class="style" data-mode="colorize" role="radio" aria-checked="false"><span class="thumb" data-thumb="colorize"></span><span class="style-name">Colorize</span><kbd>2</kbd></button>
+                                    <button type="button" class="style" data-mode="tint" role="radio" aria-checked="false"><span class="thumb" data-thumb="tint"></span><span class="style-name">Tint</span><kbd>1</kbd></button>
+                                    <button type="button" class="style" data-mode="colorize" role="radio" aria-checked="true"><span class="thumb" data-thumb="colorize"></span><span class="style-name">Colorize</span><kbd>2</kbd></button>
                                     <button type="button" class="style" data-mode="hue" role="radio" aria-checked="false"><span class="thumb" data-thumb="hue"></span><span class="style-name">Hue</span><kbd>3</kbd></button>
                                     <button type="button" class="style" data-mode="solid" role="radio" aria-checked="false"><span class="thumb" data-thumb="solid"></span><span class="style-name">Solid</span><kbd>4</kbd></button>
                                     <button type="button" class="style" data-mode="grayscale" role="radio" aria-checked="false"><span class="thumb" data-thumb="grayscale"></span><span class="style-name">Grayscale</span><kbd>5</kbd></button>
@@ -400,9 +400,10 @@
         <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
         <script>window.SVG_RECOLOR = { engineVersion: '__ENGINE_VERSION__' };</script>
-        <script src="/static/icons.js?v=__ICONS_JS_V__" defer></script>
-        <script src="/static/formats.js?v=__FORMATS_JS_V__" defer></script>
-        <script src="/static/snippets.js?v=__SNIPPETS_JS_V__" defer></script>
-        <script src="/static/app.js?v=__APP_JS_V__" defer></script>
+        <script src="/static/engine.js?v=__HASH__" defer></script>
+        <script src="/static/icons.js?v=__HASH__" defer></script>
+        <script src="/static/formats.js?v=__HASH__" defer></script>
+        <script src="/static/snippets.js?v=__HASH__" defer></script>
+        <script src="/static/app.js?v=__HASH__" defer></script>
     </body>
 </html>

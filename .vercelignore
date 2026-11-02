@@ -1,1 +1,6 @@
 logo
+tests
+showcase
+node_modules
+.github
+.pytest_cache
