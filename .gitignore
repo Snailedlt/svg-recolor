@@ -3,3 +3,6 @@ __pycache__/
 node_modules/
 .pytest_cache/
 showcase/dist/
+tests/php/vendor/
+tests/php/build/
+tests/live/build/

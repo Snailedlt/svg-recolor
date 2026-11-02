@@ -56,3 +56,65 @@ jobs:
           python-version: "3.12"
       - run: npm ci
       - run: npm test
+
+  php:
+    name: PHP (Laravel Blade format renders with real Blade)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tests/php
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          tools: composer
+      - run: composer install --no-interaction --no-progress
+      - run: node generate.mjs
+      - run: php blade-test.php
+
+  live-snippets:
+    name: API snippets run against a live server (13 languages + Blazor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Kotlin
+        run: sudo snap install kotlin --classic
+      - name: Install the app and Python clients
+        run: |
+          pip install pipenv
+          pipenv requirements > requirements.lock.txt
+          pip install -r requirements.lock.txt requests httpie
+      - name: Run every snippet against the server
+        run: bash tests/live/run.sh
+        env:
+          DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+          DOTNET_NOLOGO: "1"

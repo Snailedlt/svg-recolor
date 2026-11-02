@@ -239,3 +239,17 @@ def test_page_has_strict_security_headers(client):
     for body in re.findall(r"<script>([\s\S]*?)</script>", res.text):  # every inline script is allowed by hash
         digest = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
         assert f"'sha256-{digest}'" in csp
+
+
+def test_full_batch_of_50(client, python_svg):
+    files = [("files", (f"icon{i}.svg", python_svg, "image/svg+xml")) for i in range(50)]
+    res = client.post("/api/recolor/batch?mode=solid&color=red", files=files)
+    assert res.status_code == 200 and len(zipfile.ZipFile(io.BytesIO(res.content)).namelist()) == 50
+    too_many = files + [("files", ("x.svg", python_svg, "image/svg+xml"))]
+    assert client.post("/api/recolor/batch", files=too_many).status_code == 400
+
+
+def test_map_colors_limits(client):
+    colors = [f"#{i:06x}" for i in range(r.MAX_PALETTE)]
+    assert client.post("/api/map-colors", json={"colors": colors, "mode": "grayscale"}).status_code == 200
+    assert client.post("/api/map-colors", json={"colors": colors + ["#ffffff"], "mode": "grayscale"}).status_code == 400

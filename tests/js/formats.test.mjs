@@ -1,4 +1,5 @@
-// Every code format must produce code that its real toolchain accepts, for a plain
+// Every code format must produce code that its real toolchain accepts (esbuild,
+// Svelte, Vue, Astro, Python; Blade and Flutter/Blazor are checked elsewhere or by hand), for a plain
 // SVG and for one with <style>, braces, backticks, ${} and quotes.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,6 +10,7 @@ import { execFileSync } from 'node:child_process';
 import * as esbuild from 'esbuild';
 import { compile } from 'svelte/compiler';
 import { parse as vueParse, compileTemplate, compileScript } from '@vue/compiler-sfc';
+import { transform as astroTransform } from '@astrojs/compiler';
 import { SvgFormats as F, SvgIcons } from './load.mjs';
 
 const plain = readFileSync(new URL('../fixtures/python.svg', import.meta.url), 'utf8');
@@ -36,6 +38,12 @@ for (const [name, svg] of [['plain', plain], ['tricky', tricky]]) {
             if (JSX.includes(f.id)) await esbuild.transform(code, { loader: 'jsx' });
             else if (TSX.includes(f.id)) await esbuild.transform(code, { loader: 'tsx', tsconfigRaw: { compilerOptions: { experimentalDecorators: true } } });
             else if (f.id === 'svelte') compile(code, { filename: 'Icon.svelte' });
+            else if (f.id === 'astro') {
+                // The Astro compiler is lenient, so also parse the JavaScript it generates.
+                const r = await astroTransform(code, { filename: 'Icon.astro' });
+                assert.equal(r.diagnostics.filter((d) => d.severity === 1).length, 0);
+                await esbuild.transform(r.code, { loader: 'ts' });
+            }
             else if (f.id === 'vue') {
                 const { descriptor, errors } = vueParse(code);
                 assert.equal(errors.length, 0);

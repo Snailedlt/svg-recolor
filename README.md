@@ -248,7 +248,15 @@ pytest -q                   # engine, API, MCP, and browser/server engine parity
 cd tests/js && npm ci && npm test   # code formats compile with their real toolchains; API snippets
 ```
 
-CI runs both on every push and pull request (`.github/workflows/ci.yml`), using the versions in `Pipfile.lock`.
+```sh
+cd tests/php && composer install && node generate.mjs && php blade-test.php   # Blade format renders exactly
+```
+
+```sh
+bash tests/live/run.sh   # runs the API snippets in their real languages against a local server
+```
+
+CI runs all four on every push and pull request (`.github/workflows/ci.yml`), using the versions in `Pipfile.lock`.
 `tests/test_parity.py` keeps `static/engine.js` and `recolor.py` byte-for-byte identical; if you change one, change the other.
 
 ### Configuration

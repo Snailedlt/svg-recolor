@@ -117,7 +117,7 @@
 
         // More
         { id: 'blade', label: 'Laravel Blade', group: 'More', icon: 'laravel', file: 'resources/views/components/recolored-icon.blade.php', usage: '<x-recolored-icon class="size-6" />',
-            code: (s) => addAttr(clean(s).replace(/\{\{|\{!!|@/g, (m) => '@' + m), '{{ $attributes }}') + '\n' },
+            code: (s) => bladeComponent(clean(s)) },
         { id: 'flutter', label: 'Flutter', group: 'More', icon: 'flutter', file: 'lib/recolored_icon.dart', usage: 'Needs flutter_svg. Use recoloredIcon() as a widget.',
             code: (s) => "import 'package:flutter/widgets.dart';\nimport 'package:flutter_svg/flutter_svg.dart';\n\nconst recoloredIconSvg = r'''\n" + clean(s).replace(/'''/g, "''\\'") + "\n''';\n\nWidget recoloredIcon({double size = 24}) =>\n    SvgPicture.string(recoloredIconSvg, width: size, height: size);\n" },
         { id: 'blazor', label: 'Blazor', group: 'More', icon: 'blazor', file: 'RecoloredIcon.razor', usage: '<RecoloredIcon class="size-6" />',
@@ -129,6 +129,21 @@
             code: (s) => s },
     ];
     const GROUPS = ['Basics', 'JavaScript', 'Python', 'More', 'AI agents'];
+
+    // Blade: the SVG body goes inside @verbatim so Blade prints it exactly
+    // (no echoes, directives or comments); only the root tag gets {{ $attributes }}.
+    function bladeComponent(svg) {
+        const root = /<svg\b[^>]*>/i.exec(svg);
+        const close = svg.lastIndexOf('</svg>');
+        if (!root || close < 0 || /@endverbatim/i.test(svg)) return addAttr(bladeEscape(svg), '{{ $attributes }}') + '\n';
+        const start = root.index + root[0].length;
+        return addAttr(bladeEscape(svg.slice(0, start)), '{{ $attributes }}')
+            + '@verbatim' + svg.slice(start, close) + '@endverbatim' + svg.slice(close) + '\n';
+    }
+    // Fallback escaping: prefix "{{", "{!!" and directive-like "@word" with "@".
+    function bladeEscape(s) {
+        return s.replace(/(\{\{|\{!!)|(?<![\w@])@(?=[\w@{])/g, (m, echo) => (echo ? '@' + echo : '@@'));
+    }
 
     function pyString(s) {
         if (!s.includes('"""') && !/\\$/.test(s)) return '"""\\\n' + s.replace(/\\/g, '\\\\') + '\n"""';

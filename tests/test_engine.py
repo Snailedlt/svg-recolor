@@ -136,3 +136,29 @@ def test_decode_svg_rejects_non_svg_and_large_files():
         r.decode_svg(b"hello")
     with pytest.raises(r.RecolorError):
         r.decode_svg(b"<svg>" + b" " * (r.MAX_SVG_BYTES + 1))
+
+
+def _many_colors(n: int) -> str:
+    return '<svg xmlns="http://www.w3.org/2000/svg">' + "".join(f'<rect fill="#{i * 2654435761 % 0xFFFFFF:06x}"/>' for i in range(n)) + "</svg>"
+
+
+def test_palette_at_the_limit_is_fast():
+    svg = _many_colors(r.MAX_PALETTE)
+    start = time.monotonic()
+    res = r.recolor(svg, r.Options(mode="colorize", color="teal", hue=30, lightness=-5))
+    assert len(res.mapping) == r.MAX_PALETTE
+    assert time.monotonic() - start < 5
+
+
+def test_palette_over_the_limit_is_refused():
+    with pytest.raises(r.RecolorError):
+        r.recolor(_many_colors(r.MAX_PALETTE + 1), r.Options(mode="solid", color="red"))
+
+
+def test_largest_allowed_file_is_fast():
+    svg = '<svg xmlns="http://www.w3.org/2000/svg">' + '<path fill="#5a9fd4" d="M0 0h1v1z"/>' * 55_000 + "</svg>"
+    assert len(svg.encode()) < r.MAX_SVG_BYTES
+    start = time.monotonic()
+    res = r.recolor(r.decode_svg(svg.encode()), r.Options(mode="hue", color="red"))
+    assert res.svg.count("<path") == 55_000
+    assert time.monotonic() - start < 5
