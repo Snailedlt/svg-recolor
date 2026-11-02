@@ -126,7 +126,10 @@ The service is built to stay cheap under load:
 
 - The page URL keeps your settings (`?mode=colorize&color=ff0066&url=...`), so you can bookmark or share a setup. Opening a link with `url=` loads that SVG.
 - Everything fits on one screen: settings on the left, and Preview, Code and API tabs on the right, with Share, Copy and Download always visible.
-- The **Code** tab turns the result into ready-to-paste code for 23 targets, and Download saves it with the right file name:
+- Settings follow the order the engine applies them: **1 Style** (each tile shows your SVG in that style), **2 Color** (only for
+  styles that use one) and **3 Adjust** (hue, saturation and lightness, applied last to any style). The "Original" style keeps
+  the colors so only Adjust changes them (`mode=adjust` in the API).
+- The **Code** tab lists every format beside the code and turns the result into ready-to-paste code for 23 targets, and Download saves it with the right file name:
   - Basics: SVG, HTML `<img>`, CSS, Tailwind, data URI, Base64, Markdown
   - JavaScript: React, React (TS), React Native, Vue, Svelte, Angular, Solid, Astro, Lit, Web Component
   - Python: Python, Streamlit, Django / Jinja

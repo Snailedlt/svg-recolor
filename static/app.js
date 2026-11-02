@@ -19,12 +19,12 @@
     const CODE_VIEW_LIMIT = 400000;
     const PRESETS = ['#FF0066', '#FF5C00', '#F5A524', '#3ECF8E', '#00B8D9', '#569CD6', '#7C5CFF', '#111827', '#9AA1B2'];
     const MODES = {
-        tint: { label: 'Tint', color: true, desc: 'Grayscale, then add your color. Dark areas take the color, highlights stay light.' },
+        tint: { label: 'Tint', color: true, desc: 'Grayscale, then add your color. Dark parts take the color, light parts stay light.' },
         colorize: { label: 'Colorize', color: true, desc: 'Your hue and saturation on every color, keeping its lightness, so shading survives.' },
         hue: { label: 'Hue', color: true, desc: 'Changes only the hue. Saturation and lightness stay, so muted tones stay muted.' },
         solid: { label: 'Solid', color: true, desc: 'Every color becomes exactly your color. Best for single-color icons and logos.' },
         grayscale: { label: 'Grayscale', color: false, desc: 'Converts every color to its gray equivalent.' },
-        adjust: { label: 'Adjust', color: false, desc: 'Keeps the colors. Use Fine-tune to shift hue, saturation and lightness.' },
+        adjust: { label: 'Original', color: false, desc: 'Keeps the original colors, so only step 3 (Adjust) changes them.' },
     };
     const MODE_KEYS = Object.keys(MODES);
     const F = window.SvgFormats; // code formats, see formats.js
@@ -236,14 +236,16 @@
     // ------------------------------------------------------------------
     // Settings: mode, color, fine-tune
     // ------------------------------------------------------------------
-    function settingsParams() {
+    function settingsParams(mode) {
+        mode = mode || state.mode;
         const q = new URLSearchParams();
-        if (MODES[state.mode].color) q.set('color', state.color.slice(1).toLowerCase());
-        q.set('mode', state.mode);
+        if (MODES[mode].color) q.set('color', state.color.slice(1).toLowerCase());
+        q.set('mode', mode);
         for (const k of ['hue', 'saturation', 'lightness']) if (state.adj[k]) q.set(k, state.adj[k]);
         return q;
     }
     function settingsChanged() {
+        scheduleThumbs();
         updateSnippet();
         syncPageUrl();
         scheduleLive();
@@ -252,14 +254,27 @@
     function setMode(mode, user) {
         if (!MODES[mode]) return;
         state.mode = mode;
-        $$('.mode').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+        $$('.style').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
         $('mode-desc').textContent = MODES[mode].desc;
-        $('color-step').classList.toggle('step-off', !MODES[mode].color);
-        $('color-note').textContent = MODES[mode].color ? '' : 'not used by ' + MODES[mode].label;
-        if (mode === 'adjust') $('finetune').open = true;
+        // Step 2 only matters for styles that use a color.
+        const usesColor = MODES[mode].color;
+        $('color-body').hidden = !usesColor;
+        $('color-note').hidden = !usesColor;
+        $('color-skip').hidden = usesColor;
+        $('color-skip').textContent = MODES[mode].label + ' doesn\'t use a color. Pick Tint, Colorize, Hue or Solid to recolor with one.';
         if (user) settingsChanged();
     }
-    $$('.mode').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode, true)));
+    $$('.style').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode, true)));
+    $('modes').addEventListener('keydown', (e) => {
+        const dir = { ArrowRight: 1, ArrowDown: 3, ArrowLeft: -1, ArrowUp: -3 }[e.key];
+        if (!dir) return;
+        e.preventDefault();
+        const i = MODE_KEYS.indexOf(state.mode);
+        const next = MODE_KEYS[(i + dir + MODE_KEYS.length) % MODE_KEYS.length];
+        setMode(next, true);
+        document.querySelector('.style[data-mode="' + next + '"]').focus();
+    });
+
 
     PRESETS.forEach((hex) => {
         const b = document.createElement('button');
@@ -328,7 +343,12 @@
             state.adj[k] = v;
             $('adj-' + k + '-out').textContent = (v > 0 ? '+' : '') + v + (k === 'hue' ? '°' : '');
         }
-        $('finetune-badge').hidden = !(state.adj.hue || state.adj.saturation || state.adj.lightness);
+        const parts = [];
+        if (state.adj.hue) parts.push('hue ' + (state.adj.hue > 0 ? '+' : '') + state.adj.hue + '°');
+        if (state.adj.saturation) parts.push('saturation ' + (state.adj.saturation > 0 ? '+' : '') + state.adj.saturation);
+        if (state.adj.lightness) parts.push('lightness ' + (state.adj.lightness > 0 ? '+' : '') + state.adj.lightness);
+        $('adjust-sub').textContent = parts.length ? parts.join(', ') : 'optional, applied last';
+        $('adj-reset').hidden = !parts.length;
         if (user) settingsChanged();
     }
     ADJ.forEach(([k]) => $('adj-' + k).addEventListener('input', () => syncAdjust(true)));
@@ -400,6 +420,7 @@
         updateSnippet();
         syncPageUrl();
         recolor();
+        scheduleThumbs(250);
     }
     async function loadFile(file) {
         if (!file) return;
@@ -495,24 +516,26 @@
         debounceTimer = setTimeout(recolor, delay === undefined ? 200 : delay);
     }
     async function fetchMapping(colors) {
-        const params = settingsParams();
+        if (controller) controller.abort();
+        controller = new AbortController();
+        return fetchMappingFor(settingsParams(), colors, controller.signal);
+    }
+    async function fetchMappingFor(params, colors, signal) {
         const key = params.toString();
         let known = mapCache.get(key) || {};
         const missing = colors.filter((c) => !(c in known)).sort();
         if (missing.length) {
-            if (controller) controller.abort();
-            controller = new AbortController();
             let res;
             if (missing.length <= MAX_GET_COLORS) {
                 const q = new URLSearchParams(params);
                 q.set('colors', missing.join(','));
                 if (ENGINE_VERSION) q.set('v', ENGINE_VERSION);
-                res = await fetch('/api/map-colors?' + q.toString(), { signal: controller.signal });
+                res = await fetch('/api/map-colors?' + q.toString(), { signal });
             } else {
                 const body = Object.fromEntries(params);
                 body.colors = missing;
                 res = await fetch('/api/map-colors', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal,
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal,
                 });
             }
             if (!res.ok) throw new Error(await errorDetail(res));
@@ -524,6 +547,38 @@
         }
         return known;
     }
+    // Style thumbnails: the current SVG (or a small sample) rendered in every
+    // style with the current color and adjustments, so each choice shows what it does.
+    const SAMPLE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="18" cy="19" r="13" fill="#3b82f6"/><circle cx="30" cy="19" r="13" fill="#f59e0b" fill-opacity=".9"/><circle cx="24" cy="31" r="13" fill="#10b981" fill-opacity=".9"/><circle cx="24" cy="24" r="4" fill="#ffffff"/><path d="M6 44h36" stroke="#1f2937" stroke-width="3"/></svg>';
+    const SAMPLE = (function () { const norm = Engine.normalize(SAMPLE_SVG); return { norm, palette: Engine.palette(norm) }; })();
+    let thumbTimer = null;
+    let thumbController = null;
+    const thumbUrls = {};
+    function scheduleThumbs(delay) {
+        clearTimeout(thumbTimer);
+        thumbTimer = setTimeout(renderThumbs, delay === undefined ? 450 : delay);
+    }
+    async function renderThumbs() {
+        const doc = state.doc && state.doc.norm.length < 250000 ? state.doc : SAMPLE;
+        const colors = doc.palette.map((p) => p[0]);
+        if (thumbController) thumbController.abort();
+        thumbController = new AbortController();
+        const signal = thumbController.signal;
+        await Promise.all(MODE_KEYS.map(async (mode) => {
+            try {
+                const mapping = colors.length ? await fetchMappingFor(settingsParams(mode), colors, signal) : {};
+                if (signal.aborted) return;
+                if (thumbUrls[mode]) URL.revokeObjectURL(thumbUrls[mode]);
+                thumbUrls[mode] = URL.createObjectURL(new Blob([Engine.apply(doc.norm, mapping)], { type: 'image/svg+xml' }));
+                const box = document.querySelector('[data-thumb="' + mode + '"]');
+                const img = document.createElement('img');
+                img.alt = '';
+                img.src = thumbUrls[mode];
+                box.replaceChildren(img);
+            } catch (e) { /* thumbnails are a nicety; ignore failures */ }
+        }));
+    }
+
     function outputName() {
         const stem = (state.doc.name || 'image.svg').replace(/\.svg$/i, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'image';
         return stem + '_recolored_' + state.mode + (MODES[state.mode].color ? '_' + state.color.slice(1).toLowerCase() : '') + '.svg';
@@ -597,133 +652,113 @@
     // Code tab: output formats
     // ------------------------------------------------------------------
     // ------------------------------------------------------------------
-    // Pickers: recent items as icon buttons plus a searchable, grouped menu.
-    // Used for code formats (Code tab) and API snippets (API tab).
+    // Language lists: a searchable, grouped list beside the code in the
+    // Code and API tabs. Used for code formats and API snippets.
     // ------------------------------------------------------------------
-    function createPicker(o) {
+    function createLangList(o) {
         const el = (suffix) => $(o.prefix + '-' + suffix);
-        const btn = el('btn');
-        const menu = el('menu');
+        const list = el('list');
         const search = el('search');
-        const quick = el('quick');
-        const saved = store.get(o.storeKey, o.defaults[0]);
-        let current = o.items.has(saved) ? saved : o.defaults[0];
-        const recent = () => store.get(o.recentKey, o.defaults).filter((id) => o.items.has(id));
+        const saved = store.get(o.storeKey, o.fallback);
+        let current = o.items.has(saved) ? saved : o.fallback;
 
-        function sync() {
-            const item = o.items.get(current);
-            el('btn-icon').innerHTML = o.items.icon(item, 16);
-            el('btn-label').textContent = item.label;
-            menu.querySelectorAll('.format-item').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === current)));
-            quick.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === current)));
-        }
-        function renderQuick() {
-            quick.replaceChildren();
-            recent().forEach((id) => {
-                const item = o.items.get(id);
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.dataset.id = id;
-                b.title = item.label;
-                b.setAttribute('aria-label', item.label);
-                b.innerHTML = o.items.icon(item, 15);
-                b.addEventListener('click', () => set(id, true));
-                quick.appendChild(b);
+        function sync(scroll) {
+            list.querySelectorAll('.lang-item').forEach((b) => {
+                const on = b.dataset.id === current;
+                b.setAttribute('aria-selected', String(on));
+                b.tabIndex = on ? 0 : -1;
+                if (on && scroll) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
             });
-            sync();
         }
-        function set(id, keepQuickOrder) {
-            if (!o.items.has(id)) id = o.defaults[0];
-            current = id;
-            store.set(o.storeKey, id);
-            store.set(o.recentKey, [id].concat(recent().filter((x) => x !== id)).slice(0, 4));
-            if (!keepQuickOrder) renderQuick(); else sync();
-            o.onChange(id);
-        }
-        function render(filter) {
-            const q = (filter || '').trim().toLowerCase();
-            const groups = el('groups');
-            groups.replaceChildren();
+        // Best match for Enter: label prefix, then label, then keywords/file, then group.
+        let best = null;
+        const score = (it, q) => {
+            const label = it.label.toLowerCase();
+            if (label.startsWith(q)) return 0;
+            if (label.includes(q) || it.id.includes(q)) return 1;
+            if (((it.keywords || '') + ' ' + (it.file || '')).toLowerCase().includes(q)) return 2;
+            return 3;
+        };
+        function render() {
+            const q = search.value.trim().toLowerCase();
+            list.replaceChildren();
             let shown = 0;
+            best = null;
+            let bestScore = 9;
             o.items.groups.forEach((g) => {
                 const items = o.items.list.filter((it) => it.group === g
                     && (!q || (it.label + ' ' + it.id + ' ' + it.group + ' ' + (it.file || '') + ' ' + (it.keywords || '')).toLowerCase().includes(q)));
                 if (!items.length) return;
-                const section = document.createElement('div');
-                section.className = 'format-group';
                 const h = document.createElement('h3');
                 h.textContent = g;
-                const grid = document.createElement('div');
-                grid.className = 'format-grid';
+                list.appendChild(h);
                 items.forEach((it) => {
                     const b = document.createElement('button');
                     b.type = 'button';
-                    b.className = 'format-item' + (it.prompt ? ' is-prompt' : '');
+                    b.className = 'lang-item' + (it.prompt ? ' is-prompt' : '');
+                    b.setAttribute('role', 'option');
                     b.dataset.id = it.id;
+                    b.title = it.file || it.label;
                     b.innerHTML = o.items.icon(it, 16);
                     const label = document.createElement('span');
                     label.textContent = it.label;
                     b.appendChild(label);
-                    b.addEventListener('click', () => { set(it.id); close(true); });
-                    grid.appendChild(b);
+                    b.addEventListener('click', () => set(it.id));
+                    list.appendChild(b);
                     shown++;
+                    if (q) { const sc = score(it, q); if (sc < bestScore) { bestScore = sc; best = it.id; } }
                 });
-                section.append(h, grid);
-                groups.appendChild(section);
             });
-            const empty = el('empty');
-            empty.hidden = shown > 0;
-            if (!shown) el('empty-text').textContent = 'No built-in option for "' + filter.trim() + '".';
-            sync();
+            el('empty').hidden = shown > 0;
+            if (!shown) el('empty-text').textContent = 'Nothing built in for "' + search.value.trim() + '".';
+            sync(false);
         }
-        function open() {
-            if (state.tab !== o.tab) setTab(o.tab);
-            search.value = '';
-            render('');
-            menu.hidden = false;
-            btn.setAttribute('aria-expanded', 'true');
-            search.focus();
+        function set(id) {
+            if (!o.items.has(id)) id = o.fallback;
+            current = id;
+            store.set(o.storeKey, id);
+            sync(true);
+            o.onChange(id);
         }
-        function close(focusButton) {
-            if (menu.hidden) return;
-            menu.hidden = true;
-            btn.setAttribute('aria-expanded', 'false');
-            if (focusButton) btn.focus();
-        }
-        btn.addEventListener('click', () => (menu.hidden ? open() : close(false)));
-        search.addEventListener('input', () => render(search.value));
+        search.addEventListener('input', render);
         search.addEventListener('keydown', (e) => {
-            const first = el('groups').querySelector('.format-item');
+            const first = list.querySelector('.lang-item');
             if (e.key === 'Enter') {
                 e.preventDefault();
-                if (first) first.click();
-                else el('empty-ai').click();
+                const pick = best && list.querySelector('.lang-item[data-id="' + best + '"]');
+                if (pick || first) {
+                    const id = (pick || first).dataset.id;
+                    search.value = '';
+                    render();
+                    set(id);
+                } else el('empty-ai').click();
             } else if (e.key === 'ArrowDown' && first) {
                 e.preventDefault();
                 first.focus();
+            } else if (e.key === 'Escape') {
+                search.value = '';
+                render();
             }
         });
-        // Nothing matches: offer the AI prompt, pre-filled with what was typed.
-        el('empty-ai').addEventListener('click', () => {
-            o.onPromptTarget(search.value.trim());
-            set('ai');
-            close(false);
-        });
-        menu.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); return; }
-            if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key) || e.target.tagName === 'INPUT') return;
-            const items = Array.from(menu.querySelectorAll('.format-item'));
-            const i = items.indexOf(e.target);
+        list.addEventListener('keydown', (e) => {
+            const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+            if (!step) return;
+            const items = Array.from(list.querySelectorAll('.lang-item'));
+            const i = items.indexOf(document.activeElement);
             if (i < 0) return;
             e.preventDefault();
-            const step = { ArrowDown: 2, ArrowUp: -2, ArrowRight: 1, ArrowLeft: -1 }[e.key];
             const next = items[i + step];
-            if (next) next.focus(); else if (step < 0) search.focus();
+            if (next) { next.focus(); next.click(); } else if (step < 0) search.focus();
         });
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('#' + o.prefix + '-picker')) close(false);
+        // Nothing matches: switch to the AI prompt, pre-filled with the search.
+        el('empty-ai').addEventListener('click', () => {
+            o.onPromptTarget(search.value.trim());
+            search.value = '';
+            render();
+            set('ai');
         });
-        return { get: () => current, set, open, close, renderQuick };
+        render();
+        return { get: () => current, set, focusSearch: () => { search.focus(); search.select(); } };
     }
 
     // ------------------------------------------------------------------
@@ -763,9 +798,8 @@
         meta.append(file, ' · ' + formatBytes(new Blob([text]).size) + ' · ' + text.split('\n').length + ' lines');
         $('code-hint').textContent = f.usage;
     }
-    const formatPicker = createPicker({
-        prefix: 'format', tab: 'code', items: F, storeKey: 'format', recentKey: 'recentFormats',
-        defaults: ['svg', 'react', 'vue', 'svelte'],
+    const formatList = createLangList({
+        prefix: 'format', items: F, storeKey: 'format', fallback: 'svg',
         onChange: (id) => {
             state.format = id;
             renderCode();
@@ -807,9 +841,8 @@
         $('mcp-cmd').textContent = 'claude mcp add --transport http svg-recolor ' + SITE + '/mcp';
         $('llms-url').textContent = SITE + '/llms.txt';
     }
-    const snippetPicker = createPicker({
-        prefix: 'snippet', tab: 'api', items: S, storeKey: 'snippet', recentKey: 'recentSnippets',
-        defaults: ['curl', 'fetch', 'requests', 'ai'],
+    const snippetList = createLangList({
+        prefix: 'snippet', items: S, storeKey: 'snippet', fallback: 'curl',
         onChange: (id) => {
             state.snippet = id;
             updateSnippet();
@@ -831,8 +864,6 @@
         $$('.ws-tools').forEach((el) => { el.hidden = el.dataset.for !== tab; });
         if (tab === 'code') renderCode();
         if (tab === 'api') updateSnippet();
-        if (tab !== 'code') formatPicker.close(false);
-        if (tab !== 'api') snippetPicker.close(false);
         syncCopyButton();
         syncDownload();
     }
@@ -932,7 +963,10 @@
         else if (key === 'p') setTab('preview');
         else if (key === 'e') setTab('code');
         else if (key === 'a') setTab('api');
-        else if (key === 'f') (state.tab === 'api' ? snippetPicker : formatPicker).open();
+        else if (key === 'f') {
+            if (state.tab === 'preview') setTab('code');
+            (state.tab === 'api' ? snippetList : formatList).focusSearch();
+        }
         else if (key === 'v') setView(stage.dataset.view === 'slider' ? 'side' : 'slider');
         else if (key === 'b') { const order = ['checker', 'light', 'dark']; setBg(order[(order.indexOf(stage.dataset.bg) + 1) % 3]); }
         else if (e.key === '?') openShortcuts();
@@ -950,16 +984,14 @@
         if (!Number.isNaN(v)) $('adj-' + k).value = Math.max(-lim, Math.min(lim, v));
     });
     syncAdjust(false);
-    if (state.adj.hue || state.adj.saturation || state.adj.lightness) $('finetune').open = true;
     setMode(MODES[start.get('mode')] ? start.get('mode') : 'tint', false);
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));
     renderRecent();
-    state.format = formatPicker.get();
-    state.snippet = snippetPicker.get();
-    formatPicker.renderQuick();
-    snippetPicker.renderQuick();
+    state.format = formatList.get();
+    state.snippet = snippetList.get();
     updateSnippet();
+    scheduleThumbs(0);
     syncCopyButton();
     if (start.get('url')) {
         showSourcePicker('link');
