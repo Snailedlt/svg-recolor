@@ -1,0 +1,12 @@
+{
+    "name": "svg-recolor/blade-tests",
+    "description": "Renders the Laravel Blade code format with the real Blade engine.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.2",
+        "illuminate/view": "^11.0",
+        "illuminate/filesystem": "^11.0",
+        "illuminate/events": "^11.0"
+    }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "svg-recolor-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser tests for the editor. Start the server, then: BASE_URL=http://127.0.0.1:8000 npm test",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "axe-core": "4.10.2",
+    "playwright": "1.49.1"
+  }
+}

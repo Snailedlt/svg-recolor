@@ -1,0 +1,2 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" style="color: tomato"><defs><linearGradient id="abc"><stop stop-color="rgb(255 0 0 / 50%)"/><stop offset="1" style="stop-color:hsl(120,100%,25%)"/><stop stop-color="hsla(200deg 50% 40% / .3)"/></linearGradient></defs><rect fill="url(#abc)" stroke="#F06"/><circle fill="currentColor" stroke="RebeccaPurple"/><use href="#abc"/><path fill="#abcd" stroke="rgba(10%, 20%, 30%, 0.125)"/><text fill="Red">#fff and #123456</text></svg>
