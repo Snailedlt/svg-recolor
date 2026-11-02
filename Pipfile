@@ -14,18 +14,18 @@ colorize = "python colorize_svg.py" # make sure to run this in a sh, bash or zsh
 lint = "ruff check"
 
 [packages]
-requests = "==2.32.3"
-uvicorn = {extras = ["standard"], version = "0.115.6"}
-# pytest = "==8.3.3"
-httpx = "==0.28.0"
-ruff = "==0.8.1"
-# fastapi-analytics = "==1.2.2"
-python-dotenv = "==1.0.1"
-pydantic-settings = "==2.6.1"
-fastapi = {extras = ["standard"], version = "*"}
+# What the app imports at runtime (Vercel installs only this section).
+fastapi = "*"
+python-multipart = "*"
+httpx = "*"
 sentry-sdk = {extras = ["fastapi"], version = "*"}
+uvicorn = "*"
 
 [dev-packages]
+# `pipenv run dev` / `start` (fastapi dev / fastapi run) and the checks.
+fastapi-cli = {extras = ["standard"], version = "*"}
+ruff = "*"
+pytest = "*"
 
 [requires]
 python_version = "3.12"

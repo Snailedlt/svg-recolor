@@ -30,8 +30,8 @@ jobs:
       - name: Install the locked dependencies
         run: |
           pip install pipenv
-          pipenv requirements > requirements.lock.txt
-          pip install -r requirements.lock.txt pytest tree-sitter-language-pack
+          pipenv requirements --dev > requirements.lock.txt
+          pip install -r requirements.lock.txt tree-sitter-language-pack
       - name: Lint
         run: ruff check .
       - name: Test

@@ -469,9 +469,8 @@ pre.code {
     font-family: var(--mono); font-size: 0.8rem; line-height: 1.65; font-variant-ligatures: none; tab-size: 2;
 }
 pre.code.fill { flex: 1; min-height: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-pre.code .c { color: #6b7286; }
 
-/* Code blocks: a Copy button in the corner, and syntax colors (highlight.js).
+/* Code blocks: a header bar with Copy, and the syntax colors for static/highlight.js (.t-*).
    The code background is dark in both themes, so one palette serves both;
    every color passes WCAG AA (4.5:1) on --code-bg. */
 .code-box {
