@@ -234,8 +234,9 @@ pipenv run colorize path/to/input.svg path/to/output.svg --color "255,0,0"
 | `server/` | `common.py` (shared helpers, cache policy), `fetching.py` (safe link downloads), `agents.py` (`/llms.txt`, `/mcp`) |
 | `main.html`, `static/` | The editor: `engine.js` (browser twin of the engine), `formats.js` (code formats), `snippets.js` (API examples), `icons.js`, `app.js`, `app.css` |
 | `colorize_svg.py` | CLI |
-| `tests/` | pytest suite, plus `tests/js` for the browser scripts |
+| `tests/` | pytest suite; `tests/js` (browser scripts), `tests/php` (Blade), `tests/live` (snippets run in their languages), `tests/e2e` (browser) |
 | `showcase/` | Builds a standalone demo page of the editor |
+| `docs/screenshots/` | Before/after screenshots |
 
 ### Tests
 
@@ -256,7 +257,15 @@ cd tests/php && composer install && node generate.mjs && php blade-test.php   # 
 bash tests/live/run.sh   # runs the API snippets in their real languages against a local server
 ```
 
-CI runs all four on every push and pull request (`.github/workflows/ci.yml`), using the versions in `Pipfile.lock`.
+```sh
+cd tests/e2e && npm ci && npx playwright install chromium
+BASE_URL=http://127.0.0.1:8000 npm test   # browser tests: editor flows, axe accessibility, CSP (server must be running)
+```
+
+`tests/test_syntax.py` parses the Swift, Dart/Flutter and PowerShell output with tree-sitter grammars
+(`pip install tree-sitter-language-pack`); those languages have no compiler in CI, so this checks syntax only.
+
+CI runs all of these on every push and pull request (`.github/workflows/ci.yml`), using the versions in `Pipfile.lock`.
 `tests/test_parity.py` keeps `static/engine.js` and `recolor.py` byte-for-byte identical; if you change one, change the other.
 
 ### Configuration

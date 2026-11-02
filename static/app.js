@@ -45,7 +45,7 @@
     };
 
     const state = {
-        doc: null, // { name, size, norm, palette: [[hex, count]], fromUrl }
+        doc: null, // { name, size, text, norm, palette: [[hex, count]], fromUrl, source: file|link|code|example }
         result: null, // { svg, filename, palette: [{from, to, count}] }
         mode: 'colorize',
         color: '#FF0066',
@@ -285,32 +285,71 @@
     // ------------------------------------------------------------------
     // Source: file, paste, drop, link, example
     // ------------------------------------------------------------------
+    // Three ways in: a file, a link, or SVG code. "Change" reopens them on the
+    // source used last (and pre-fills the code), with a way back to the current SVG.
+    const SOURCES = ['file', 'link', 'code'];
+    let codeName = null; // keeps the file name when editing the current SVG as code
     function showSource(kind) {
-        $('source-file').hidden = kind !== 'file';
-        $('source-link').hidden = kind !== 'link';
+        SOURCES.forEach((k) => { $('source-' + k).hidden = k !== kind; });
         $$('#source-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.source === kind)));
+    }
+    function focusSource(kind) {
+        if (kind === 'link') $('url-input').select();
+        else if (kind === 'code') $('code-input').focus();
+        else fileInput.focus();
     }
     function showSourcePicker(kind) {
         $('file-chip').hidden = true;
         $('source-tabs').hidden = false;
         $('example-row').hidden = false;
+        $('source-cancel').hidden = !state.doc;
+        $('paste-hint').hidden = !!state.doc;
         showSource(kind);
+    }
+    function hideSourcePicker() {
+        SOURCES.forEach((k) => { $('source-' + k).hidden = true; });
+        $('source-tabs').hidden = true;
+        $('example-row').hidden = true;
+        $('source-cancel').hidden = true;
+        $('paste-hint').hidden = false;
+        $('file-chip').hidden = false;
     }
     $$('#source-tabs button').forEach((b) => b.addEventListener('click', () => {
         showSource(b.dataset.source);
-        if (b.dataset.source === 'link') $('url-input').focus();
+        focusSource(b.dataset.source);
     }));
     $('change-file').addEventListener('click', () => {
-        showSourcePicker(state.doc && state.doc.fromUrl ? 'link' : 'file');
-        if (state.doc && state.doc.fromUrl) $('url-input').select(); else fileInput.click();
+        const kind = state.doc && SOURCES.includes(state.doc.source) ? state.doc.source : 'file';
+        if (state.doc) {
+            $('code-input').value = state.doc.text;
+            codeName = state.doc.name;
+            $('code-input').setSelectionRange(0, 0); // start at the top, not the end
+            $('code-input').scrollTop = 0;
+            $('code-input-hint').textContent = 'This is the current SVG. Edit it, then apply.';
+        }
+        showSourcePicker(kind);
+        focusSource(kind);
+    });
+    $('source-cancel').addEventListener('click', () => { hideSourcePicker(); $('change-file').focus(); });
+
+    function useCode() {
+        const text = $('code-input').value.trim();
+        if (!text) return showError('Paste or type some SVG markup first.');
+        const name = codeName || 'pasted.svg';
+        loadText(text, name, new Blob([text]).size, null, 'code');
+    }
+    $('code-use').addEventListener('click', useCode);
+    $('code-input').addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); useCode(); }
     });
 
-    async function loadText(text, name, size, fromUrl) {
+    async function loadText(text, name, size, fromUrl, source) {
         clearError();
         if (size > MAX_BYTES) return showError('This file is ' + formatBytes(size) + '. The limit is 2 MB; try optimizing it with SVGO first.');
         if (!/<svg[\s>]/i.test(text)) return showError('That doesn\'t look like an SVG: no <svg> element was found.');
         const norm = Engine.normalize(text);
-        state.doc = { name, size, norm, palette: Engine.palette(norm), fromUrl: fromUrl || null };
+        source = source || (fromUrl ? 'link' : 'file');
+        state.doc = { name, size, text, norm, palette: Engine.palette(norm), fromUrl: fromUrl || null, source };
         state.result = null;
 
         if (originalUrl) URL.revokeObjectURL(originalUrl);
@@ -318,12 +357,9 @@
         renderImage($('preview-container'), originalUrl, 'Original ' + name);
         $('file-thumb').src = originalUrl;
         $('file-name').textContent = name;
-        $('file-size').textContent = formatBytes(size) + ' · ' + state.doc.palette.length + ' colors' + (fromUrl ? ' · from link' : '');
-        $('file-chip').hidden = false;
-        $('source-file').hidden = true;
-        $('source-link').hidden = true;
-        $('source-tabs').hidden = true;
-        $('example-row').hidden = true;
+        const from = { link: ' · from link', code: ' · from code' }[source] || '';
+        $('file-size').textContent = formatBytes(size) + ' · ' + state.doc.palette.length + ' colors' + from;
+        hideSourcePicker();
         if (fromUrl) $('url-input').value = fromUrl;
         updateSnippet();
         syncPageUrl();
@@ -357,13 +393,13 @@
     });
     document.addEventListener('paste', (e) => {
         const t = e.target;
-        if (t === hexInput || t === $('url-input')) return;
+        if (t === hexInput || t === $('url-input') || t === $('code-input')) return;
         const data = e.clipboardData;
         if (!data) return;
         const file = Array.from(data.files || []).find((f) => /svg/i.test(f.type) || /\.svg$/i.test(f.name));
         if (file) { e.preventDefault(); loadFile(file); return; }
         const text = data.getData('text/plain');
-        if (text && /<svg[\s>]/i.test(text)) { e.preventDefault(); loadText(text, 'pasted.svg', new Blob([text]).size, null); return; }
+        if (text && /<svg[\s>]/i.test(text)) { e.preventDefault(); $('code-input').value = text; codeName = null; loadText(text, 'pasted.svg', new Blob([text]).size, null, 'code'); return; }
         if (text && /^https?:\/\/\S+$/i.test(text.trim()) && !(t && /^(INPUT|TEXTAREA)$/.test(t.tagName))) {
             e.preventDefault();
             showSourcePicker('link');
@@ -404,7 +440,7 @@
             const res = await fetch('/static/examples/python.svg');
             if (!res.ok) throw new Error();
             const text = await res.text();
-            loadText(text, 'python.svg', new Blob([text]).size, null);
+            loadText(text, 'python.svg', new Blob([text]).size, null, 'example');
         } catch (e) {
             showError('Could not load the example file.');
         }

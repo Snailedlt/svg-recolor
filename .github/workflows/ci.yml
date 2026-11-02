@@ -30,7 +30,7 @@ jobs:
         run: |
           pip install pipenv
           pipenv requirements > requirements.lock.txt
-          pip install -r requirements.lock.txt pytest
+          pip install -r requirements.lock.txt pytest tree-sitter-language-pack
       - name: Lint
         run: ruff check .
       - name: Test
@@ -118,3 +118,36 @@ jobs:
         env:
           DOTNET_CLI_TELEMETRY_OPTOUT: "1"
           DOTNET_NOLOGO: "1"
+
+  e2e:
+    name: Browser tests (editor flows, accessibility, CSP)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the app
+        run: |
+          pip install pipenv
+          pipenv requirements > requirements.lock.txt
+          pip install -r requirements.lock.txt
+      - name: Install browser test tools
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Start the server
+        run: |
+          SENTRY_DSN= RATE_LIMIT_WORK=0 RATE_LIMIT_MAP=0 python -m uvicorn main:app --port 8000 &
+          for i in $(seq 50); do curl -sf http://127.0.0.1:8000/api/modes >/dev/null && break; sleep 0.2; done
+      - name: Run browser tests
+        working-directory: tests/e2e
+        run: npm test
+        env:
+          BASE_URL: http://127.0.0.1:8000

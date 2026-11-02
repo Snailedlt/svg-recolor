@@ -93,10 +93,6 @@ def build() -> str:
     body = replace(body, "                                Download\n                            </a>", "                                Download\n                            </span>")
     body = replace(body, '<div class="app-grid">', '''<div class="demo-note" role="note"><span class="tag">Demo</span><span>A working copy of the editor. Here the <b>whole recolor runs in your browser</b>; on the live site only the palette goes to the server. Links and downloads need the live site.</span></div>
                 <div class="app-grid">''')
-    before = data_uri(HERE / "assets/before.png", 900, crop_height=1500)
-    after = data_uri(HERE / "assets/after.png", 1100)
-    section = (HERE / "before-after.html").read_text(encoding="utf-8").replace("{before}", before).replace("{after}", after)
-    body = replace(body, '            <section class="more" id="agents">', section + '            <section class="more" id="agents">')
 
     libs = "".join(f"\n<script>\n{read('static/' + name)}\n</script>" for name in ("engine.js", "icons.js", "formats.js", "snippets.js"))
     body, count = re.subn(
