@@ -27,7 +27,7 @@
         adjust: { label: 'Adjust', color: false, desc: 'Keeps the colors. Use Fine-tune to shift hue, saturation and lightness.' },
     };
     const MODE_KEYS = Object.keys(MODES);
-    const FORMATS = { svg: 'SVG', jsx: 'React', css: 'CSS', datauri: 'data URI', base64: 'Base64' };
+    const F = window.SvgFormats; // code formats, see formats.js
     const NAMED = {"aliceblue":"f0f8ff","antiquewhite":"faebd7","aqua":"00ffff","aquamarine":"7fffd4","azure":"f0ffff","beige":"f5f5dc","bisque":"ffe4c4","black":"000000","blanchedalmond":"ffebcd","blue":"0000ff","blueviolet":"8a2be2","brown":"a52a2a","burlywood":"deb887","cadetblue":"5f9ea0","chartreuse":"7fff00","chocolate":"d2691e","coral":"ff7f50","cornflowerblue":"6495ed","cornsilk":"fff8dc","crimson":"dc143c","cyan":"00ffff","darkblue":"00008b","darkcyan":"008b8b","darkgoldenrod":"b8860b","darkgray":"a9a9a9","darkgreen":"006400","darkgrey":"a9a9a9","darkkhaki":"bdb76b","darkmagenta":"8b008b","darkolivegreen":"556b2f","darkorange":"ff8c00","darkorchid":"9932cc","darkred":"8b0000","darksalmon":"e9967a","darkseagreen":"8fbc8f","darkslateblue":"483d8b","darkslategray":"2f4f4f","darkslategrey":"2f4f4f","darkturquoise":"00ced1","darkviolet":"9400d3","deeppink":"ff1493","deepskyblue":"00bfff","dimgray":"696969","dimgrey":"696969","dodgerblue":"1e90ff","firebrick":"b22222","floralwhite":"fffaf0","forestgreen":"228b22","fuchsia":"ff00ff","gainsboro":"dcdcdc","ghostwhite":"f8f8ff","gold":"ffd700","goldenrod":"daa520","gray":"808080","green":"008000","greenyellow":"adff2f","grey":"808080","honeydew":"f0fff0","hotpink":"ff69b4","indianred":"cd5c5c","indigo":"4b0082","ivory":"fffff0","khaki":"f0e68c","lavender":"e6e6fa","lavenderblush":"fff0f5","lawngreen":"7cfc00","lemonchiffon":"fffacd","lightblue":"add8e6","lightcoral":"f08080","lightcyan":"e0ffff","lightgoldenrodyellow":"fafad2","lightgray":"d3d3d3","lightgreen":"90ee90","lightgrey":"d3d3d3","lightpink":"ffb6c1","lightsalmon":"ffa07a","lightseagreen":"20b2aa","lightskyblue":"87cefa","lightslategray":"778899","lightslategrey":"778899","lightsteelblue":"b0c4de","lightyellow":"ffffe0","lime":"00ff00","limegreen":"32cd32","linen":"faf0e6","magenta":"ff00ff","maroon":"800000","mediumaquamarine":"66cdaa","mediumblue":"0000cd","mediumorchid":"ba55d3","mediumpurple":"9370db","mediumseagreen":"3cb371","mediumslateblue":"7b68ee","mediumspringgreen":"00fa9a","mediumturquoise":"48d1cc","mediumvioletred":"c71585","midnightblue":"191970","mintcream":"f5fffa","mistyrose":"ffe4e1","moccasin":"ffe4b5","navajowhite":"ffdead","navy":"000080","oldlace":"fdf5e6","olive":"808000","olivedrab":"6b8e23","orange":"ffa500","orangered":"ff4500","orchid":"da70d6","palegoldenrod":"eee8aa","palegreen":"98fb98","paleturquoise":"afeeee","palevioletred":"db7093","papayawhip":"ffefd5","peachpuff":"ffdab9","peru":"cd853f","pink":"ffc0cb","plum":"dda0dd","powderblue":"b0e0e6","purple":"800080","rebeccapurple":"663399","red":"ff0000","rosybrown":"bc8f8f","royalblue":"4169e1","saddlebrown":"8b4513","salmon":"fa8072","sandybrown":"f4a460","seagreen":"2e8b57","seashell":"fff5ee","sienna":"a0522d","silver":"c0c0c0","skyblue":"87ceeb","slateblue":"6a5acd","slategray":"708090","slategrey":"708090","snow":"fffafa","springgreen":"00ff7f","steelblue":"4682b4","tan":"d2b48c","teal":"008080","thistle":"d8bfd8","tomato":"ff6347","turquoise":"40e0d0","violet":"ee82ee","wheat":"f5deb3","white":"ffffff","whitesmoke":"f5f5f5","yellow":"ffff00","yellowgreen":"9acd32"};
 
     // ------------------------------------------------------------------
@@ -143,7 +143,7 @@
         color: '#FF0066',
         adj: { hue: 0, saturation: 0, lightness: 0 },
         tab: 'preview',
-        format: 'svg',
+        format: 'svg', // set from storage at start
         snippet: 'curl',
     };
     const mapCache = new Map();
@@ -572,13 +572,10 @@
         if (resultUrl) URL.revokeObjectURL(resultUrl);
         resultUrl = URL.createObjectURL(new Blob([r.svg], { type: 'image/svg+xml' }));
         renderImage($('result-container'), resultUrl, 'Recolored ' + state.doc.name);
-        downloadBtn.href = resultUrl;
-        downloadBtn.download = r.filename;
-        downloadBtn.setAttribute('aria-disabled', 'false');
-        downloadBtn.tabIndex = 0;
         renderPalette(r.palette);
         if (state.tab === 'code') renderCode();
         syncCopyButton();
+        syncDownload();
     }
     function renderPalette(entries) {
         const list = $('palette-list');
@@ -599,55 +596,148 @@
     // ------------------------------------------------------------------
     // Code tab: output formats
     // ------------------------------------------------------------------
-    function toJsx(svg) {
-        let out = svg.replace(/<\?xml[\s\S]*?\?>/g, '').replace(/<!DOCTYPE[\s\S]*?>/gi, '').replace(/<!--[\s\S]*?-->/g, '').trim();
-        const camel = (n) => n.replace(/[-:]([a-z])/g, (m, c) => c.toUpperCase());
-        out = out.replace(/<([a-zA-Z][\w:-]*)((?:\s+[\w:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/g, (tag, name, attrs, selfClose) => {
-            const fixed = attrs.replace(/([\w:-]+)\s*=\s*("[^"]*"|'[^']*')/g, (a, key, val) => {
-                if (key === 'class') return 'className=' + val;
-                if (key === 'style') {
-                    const obj = val.slice(1, -1).split(';').map((d) => d.trim()).filter(Boolean).map((d) => {
-                        const i = d.indexOf(':');
-                        return i < 0 ? '' : JSON.stringify(camel(d.slice(0, i).trim())) + ': ' + JSON.stringify(d.slice(i + 1).trim());
-                    }).filter(Boolean).join(', ');
-                    return 'style={{ ' + obj + ' }}';
-                }
-                if (/^(data|aria)-/.test(key) || key === 'xmlns' || key.startsWith('xmlns:')) return key + '=' + val;
-                return camel(key) + '=' + val;
-            });
-            return '<' + name + fixed + (selfClose ? ' />' : '>');
-        });
-        out = out.replace(/<svg\b/, '<svg {...props}');
-        return 'export default function RecoloredIcon(props) {\n  return (\n' + out.split('\n').map((l) => '    ' + l).join('\n') + '\n  );\n}\n';
+    let codeCache = { key: null, text: '' };
+    function codeFor(id) {
+        if (!state.result) return '';
+        const key = id + '\u0000' + state.result.svg;
+        if (codeCache.key !== key) codeCache = { key, text: F.convert(id, state.result.svg) };
+        return codeCache.text;
     }
-    function formatResult(kind) {
-        const svg = state.result ? state.result.svg : '';
-        const uri = () => 'data:image/svg+xml,' + encodeURIComponent(svg.replace(/\s*\n\s*/g, ' ').trim());
-        if (kind === 'datauri') return uri();
-        if (kind === 'css') return '.icon {\n  background-image: url("' + uri() + '");\n  background-repeat: no-repeat;\n  background-size: contain;\n}';
-        if (kind === 'base64') return btoa(unescape(encodeURIComponent(svg)));
-        if (kind === 'jsx') return toJsx(svg);
-        return svg;
+    function codeFileName(id) {
+        const f = F.get(id);
+        if (id === 'svg') return state.result ? state.result.filename : 'icon.svg';
+        return f.file.split('/').pop();
     }
     function renderCode() {
         const view = $('code-view');
+        const f = F.get(state.format);
         if (!state.result) {
-            view.textContent = 'Load an SVG to see its recolored code here.';
+            view.textContent = 'Load an SVG to see it as ' + f.label + ' code here.';
             $('code-meta').textContent = '';
             $('code-hint').textContent = '';
             return;
         }
-        const text = formatResult(state.format);
+        const text = codeFor(state.format);
         view.textContent = text.length > CODE_VIEW_LIMIT ? text.slice(0, CODE_VIEW_LIMIT) + '\n\n… shortened in this view. Copy and Download include everything.' : text;
-        $('code-meta').textContent = FORMATS[state.format] + ' · ' + formatBytes(new Blob([text]).size) + ' · ' + text.split('\n').length + ' lines';
-        $('code-hint').textContent = 'Ctrl+Shift+C copies';
+        const meta = $('code-meta');
+        meta.replaceChildren();
+        const file = document.createElement('span');
+        file.className = 'file';
+        file.textContent = f.file;
+        meta.append(file, ' · ' + formatBytes(new Blob([text]).size) + ' · ' + text.split('\n').length + ' lines');
+        $('code-hint').textContent = f.usage;
     }
-    $$('#format-tabs button').forEach((b) => b.addEventListener('click', () => {
-        state.format = b.dataset.format;
-        $$('#format-tabs button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+
+    // Format picker: recent formats as icon buttons, plus a searchable menu.
+    function setFormat(id, fromMenu) {
+        if (!F.has(id)) id = 'svg';
+        state.format = id;
+        store.set('format', id);
+        const recent = [id].concat(store.get('recentFormats', ['svg', 'react', 'vue', 'svelte']).filter((x) => x !== id && F.has(x))).slice(0, 4);
+        store.set('recentFormats', recent);
+        syncFormatButton();
+        if (!fromMenu) renderQuickFormats();
         renderCode();
         syncCopyButton();
-    }));
+        syncDownload();
+    }
+    function syncFormatButton() {
+        const f = F.get(state.format);
+        $('format-btn-icon').innerHTML = F.icon(f, 16);
+        $('format-btn-label').textContent = f.label;
+        $$('.format-item, #quick-formats button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.format === state.format)));
+    }
+    function renderQuickFormats() {
+        const box = $('quick-formats');
+        box.replaceChildren();
+        store.get('recentFormats', ['svg', 'react', 'vue', 'svelte']).filter((id) => F.has(id)).forEach((id) => {
+            const f = F.get(id);
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.dataset.format = id;
+            b.title = f.label;
+            b.setAttribute('aria-label', f.label);
+            b.innerHTML = F.icon(f, 15);
+            b.addEventListener('click', () => setFormat(id, true));
+            box.appendChild(b);
+        });
+        syncFormatButton();
+    }
+    function renderFormatMenu(filter) {
+        const q = (filter || '').trim().toLowerCase();
+        const groups = $('format-groups');
+        groups.replaceChildren();
+        let shown = 0;
+        F.groups.forEach((g) => {
+            const items = F.list.filter((f) => f.group === g && (!q || (f.label + ' ' + f.id + ' ' + f.group + ' ' + f.file).toLowerCase().includes(q)));
+            if (!items.length) return;
+            const section = document.createElement('div');
+            section.className = 'format-group';
+            const h = document.createElement('h3');
+            h.textContent = g;
+            const grid = document.createElement('div');
+            grid.className = 'format-grid';
+            items.forEach((f) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'format-item';
+                b.dataset.format = f.id;
+                b.title = f.file;
+                b.innerHTML = F.icon(f, 16);
+                const label = document.createElement('span');
+                label.textContent = f.label;
+                b.appendChild(label);
+                b.addEventListener('click', () => { setFormat(f.id); closeFormatMenu(true); });
+                grid.appendChild(b);
+                shown++;
+            });
+            section.append(h, grid);
+            groups.appendChild(section);
+        });
+        $('format-empty').hidden = shown > 0;
+        syncFormatButton();
+    }
+    function openFormatMenu() {
+        if (state.tab !== 'code') setTab('code');
+        renderFormatMenu('');
+        $('format-search').value = '';
+        $('format-menu').hidden = false;
+        $('format-btn').setAttribute('aria-expanded', 'true');
+        $('format-search').focus();
+    }
+    function closeFormatMenu(focusButton) {
+        if ($('format-menu').hidden) return;
+        $('format-menu').hidden = true;
+        $('format-btn').setAttribute('aria-expanded', 'false');
+        if (focusButton) $('format-btn').focus();
+    }
+    $('format-btn').addEventListener('click', () => ($('format-menu').hidden ? openFormatMenu() : closeFormatMenu(false)));
+    $('format-search').addEventListener('input', (e) => renderFormatMenu(e.target.value));
+    $('format-search').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const first = $('format-groups').querySelector('.format-item');
+            if (first) first.click();
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const first = $('format-groups').querySelector('.format-item');
+            if (first) first.focus();
+        }
+    });
+    $('format-menu').addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeFormatMenu(true); return; }
+        if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key) || e.target.tagName === 'INPUT') return;
+        const items = $$('#format-groups .format-item');
+        const i = items.indexOf(e.target);
+        if (i < 0) return;
+        e.preventDefault();
+        const step = { ArrowDown: 2, ArrowUp: -2, ArrowRight: 1, ArrowLeft: -1 }[e.key];
+        const next = items[i + step];
+        if (next) next.focus(); else if (step < 0) $('format-search').focus();
+    });
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.format-picker')) closeFormatMenu(false);
+    });
 
     // ------------------------------------------------------------------
     // API tab: snippets for the current settings
@@ -691,7 +781,9 @@
         $$('.ws-tools').forEach((el) => { el.hidden = el.dataset.for !== tab; });
         if (tab === 'code') renderCode();
         if (tab === 'api') updateSnippet();
+        if (tab !== 'code') closeFormatMenu(false);
         syncCopyButton();
+        syncDownload();
     }
     $$('.tab').forEach((t) => t.addEventListener('click', () => setTab(t.dataset.tab)));
     $$('.tab').forEach((t, i, all) => t.addEventListener('keydown', (e) => {
@@ -707,21 +799,34 @@
             $('copy-label').textContent = 'Copy snippet';
             btn.disabled = false;
         } else {
-            $('copy-label').textContent = 'Copy ' + (state.tab === 'code' ? FORMATS[state.format] : 'SVG');
+            $('copy-label').textContent = 'Copy ' + (state.tab === 'code' ? F.get(state.format).label : 'SVG');
             btn.disabled = !state.result;
         }
     }
     function copyCurrent() {
         if (state.tab === 'api') return copyText($('snippet').textContent, 'Snippet');
         if (!state.result) return;
-        const kind = state.tab === 'code' ? state.format : 'svg';
-        copyText(formatResult(kind), FORMATS[kind]);
+        const id = state.tab === 'code' ? state.format : 'svg';
+        copyText(codeFor(id), F.get(id).label);
+    }
+    // Download follows the view: the SVG file, or the code file in the Code tab.
+    let downloadUrl = null;
+    function syncDownload() {
+        if (!state.result) return;
+        const id = state.tab === 'code' ? state.format : 'svg';
+        if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+        downloadUrl = id === 'svg' ? null : URL.createObjectURL(new Blob([codeFor(id)], { type: 'text/plain' }));
+        downloadBtn.href = downloadUrl || resultUrl;
+        downloadBtn.download = codeFileName(id);
+        downloadBtn.title = 'Download ' + downloadBtn.download + ' (Ctrl+S)';
+        downloadBtn.setAttribute('aria-disabled', 'false');
+        downloadBtn.tabIndex = 0;
     }
     $('copy-btn').addEventListener('click', copyCurrent);
     $$('[data-copy-from]').forEach((b) => b.addEventListener('click', () => copyText($(b.dataset.copyFrom).textContent, 'Command')));
     downloadBtn.addEventListener('click', (e) => {
         if (!state.result) { e.preventDefault(); return; }
-        toast('Downloading ' + state.result.filename);
+        toast('Downloading ' + downloadBtn.download);
     });
 
     function setBg(bg) {
@@ -776,6 +881,7 @@
         else if (key === 'p') setTab('preview');
         else if (key === 'e') setTab('code');
         else if (key === 'a') setTab('api');
+        else if (key === 'f') openFormatMenu();
         else if (key === 'v') setView(stage.dataset.view === 'slider' ? 'side' : 'slider');
         else if (key === 'b') { const order = ['checker', 'light', 'dark']; setBg(order[(order.indexOf(stage.dataset.bg) + 1) % 3]); }
         else if (e.key === '?') openShortcuts();
@@ -798,6 +904,8 @@
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));
     renderRecent();
+    state.format = F.has(store.get('format', 'svg')) ? store.get('format', 'svg') : 'svg';
+    renderQuickFormats();
     updateSnippet();
     syncCopyButton();
     if (start.get('url')) {

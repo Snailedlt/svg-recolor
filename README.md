@@ -125,7 +125,15 @@ The service is built to stay cheap under load:
 ### Website tips
 
 - The page URL keeps your settings (`?mode=colorize&color=ff0066&url=...`), so you can bookmark or share a setup. Opening a link with `url=` loads that SVG.
-- Everything fits on one screen: settings on the left, and Preview, Code (SVG, React, CSS, data URI, Base64) and API tabs on the right, with Share, Copy and Download always visible.
+- Everything fits on one screen: settings on the left, and Preview, Code and API tabs on the right, with Share, Copy and Download always visible.
+- The **Code** tab turns the result into ready-to-paste code for 23 targets, and Download saves it with the right file name:
+  - Basics: SVG, HTML `<img>`, CSS, Tailwind, data URI, Base64, Markdown
+  - JavaScript: React, React (TS), React Native, Vue, Svelte, Angular, Solid, Astro, Lit, Web Component
+  - Python: Python, Streamlit, Django / Jinja
+  - More: Laravel Blade, Flutter, Blazor
+
+  Press <kbd>F</kbd> to search formats. Formats are defined in [`static/formats.js`](static/formats.js); adding one is a single entry.
+  SVGs with embedded CSS or braces are inserted as a string for the template languages that would otherwise interpret them.
 - Compare before and after side by side or with a slider.
 - Press <kbd>?</kbd> for keyboard shortcuts: <kbd>1</kbd>-<kbd>6</kbd> pick a mode, <kbd>P</kbd>/<kbd>E</kbd>/<kbd>A</kbd> switch tabs, <kbd>Ctrl</kbd>+<kbd>S</kbd> downloads, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> copies.
 
@@ -206,3 +214,7 @@ If you wish to run the CLI without downloading the required dependencies to a se
 pipenv update
 pipenv run colorize path/to/input.svg path/to/output.svg --color "255,0,0"
 ```
+
+## Credits
+
+Framework icons in the Code tab are from [Simple Icons](https://simpleicons.org) (CC0).

@@ -229,12 +229,18 @@
                                 </div>
                             </div>
                             <div class="ws-tools" data-for="code" hidden>
-                                <div class="segmented" role="group" aria-label="Code format" id="format-tabs">
-                                    <button type="button" data-format="svg" aria-pressed="true">SVG</button>
-                                    <button type="button" data-format="jsx" aria-pressed="false">React</button>
-                                    <button type="button" data-format="css" aria-pressed="false">CSS</button>
-                                    <button type="button" data-format="datauri" aria-pressed="false">Data URI</button>
-                                    <button type="button" data-format="base64" aria-pressed="false">Base64</button>
+                                <div class="quick-formats" id="quick-formats" role="group" aria-label="Recent formats"></div>
+                                <div class="format-picker">
+                                    <button type="button" class="btn btn-ghost btn-sm" id="format-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="format-menu" title="Choose a format (F)">
+                                        <span id="format-btn-icon" class="fi-wrap"></span><span id="format-btn-label">SVG</span>
+                                        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                                    </button>
+                                    <div class="format-menu" id="format-menu" role="dialog" aria-label="Choose a code format" hidden>
+                                        <label for="format-search" class="sr-only">Search formats</label>
+                                        <input id="format-search" class="text-field" type="search" placeholder="Search formats" autocomplete="off" spellcheck="false">
+                                        <div id="format-groups"></div>
+                                        <p class="format-empty" id="format-empty" hidden>No format matches. <a href="https://github.com/Snailedlt/svg-recolor/issues/new?title=Code%20format%20request" target="_blank" rel="noopener">Request one</a></p>
+                                    </div>
                                 </div>
                             </div>
                             <div class="ws-tools" data-for="api" hidden>
@@ -384,6 +390,7 @@
                 <dt><kbd>Ctrl</kbd> <kbd>V</kbd></dt><dd>Paste an SVG file or SVG code</dd>
                 <dt><kbd>C</kbd></dt><dd>Edit the color</dd>
                 <dt><kbd>P</kbd> <kbd>E</kbd> <kbd>A</kbd></dt><dd>Preview, Code or API tab</dd>
+                <dt><kbd>F</kbd></dt><dd>Choose a code format (React, Vue, Svelte, Python…)</dd>
                 <dt><kbd>V</kbd> / <kbd>B</kbd></dt><dd>Side by side or slider / cycle the background</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>Enter</kbd></dt><dd>Recolor now</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>S</kbd></dt><dd>Download the result</dd>
@@ -395,6 +402,7 @@
         <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
         <script>window.SVG_RECOLOR = { engineVersion: '__ENGINE_VERSION__' };</script>
+        <script src="/static/formats.js?v=__FORMATS_JS_V__" defer></script>
         <script src="/static/app.js?v=__APP_JS_V__" defer></script>
     </body>
 </html>
