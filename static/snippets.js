@@ -27,6 +27,8 @@
             code: (c) => '# Recolor a linked SVG (cached, safe to hotlink)\n' + c.getUrl },
         { id: 'html', lang: 'markup', label: 'HTML <img>', group: 'Command line', icon: 'html5',
             code: (c) => '<\!-- Use the API directly as an image -->\n<img src="' + c.getUrl + '" alt="">' },
+        { id: 'markdown', lang: 'md', label: 'Markdown', group: 'Command line', icon: 'markdown', keywords: 'readme github gitlab md docs',
+            code: (c) => '<\!-- README.md: GitHub, GitLab and most Markdown renderers load the image from this URL -->\n![Recolored icon](' + c.getUrl + ')' },
 
         // JavaScript
         { id: 'fetch', lang: 'js', label: 'fetch (browser)', group: 'JavaScript', icon: 'javascript',

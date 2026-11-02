@@ -97,6 +97,28 @@ test('code and API lists: search, best match and AI prompt fallback', async () =
     assert.equal(await page.textContent('#copy-label'), 'Copy prompt');
 });
 
+test('the SVG code field is highlighted, larger and expandable', async () => {
+    const { page, problems } = await open();
+    await page.click('#try-example');
+    await page.waitForSelector('#file-chip:not([hidden])');
+    await page.click('#change-file');
+    await page.click('[data-source="code"]');
+    await page.locator('#code-hl .t-t').first().waitFor();
+    assert.equal(await page.textContent('#code-hl'), (await page.inputValue('#code-input')) + '\n', 'highlight mirrors the text');
+    assert.ok((await page.locator('#code-input').boundingBox()).height >= 200, 'at least 200px tall');
+    await page.fill('#code-input', '<svg><rect fill="red"/></svg>');
+    await page.locator('#code-hl', { hasText: /^<svg><rect fill="red"\/><\/svg>\n$/ }).waitFor();
+    assert.equal(await page.locator('#code-hl .t-a').count(), 1, 'one attribute, highlighted');
+    await page.click('#code-expand');
+    assert.equal(await page.getAttribute('#code-expand', 'aria-pressed'), 'true');
+    const big = await page.locator('#code-input').boundingBox();
+    assert.ok(big.width > 900 && big.height > 450, 'expanded fills most of the window');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getAttribute('#code-expand', 'aria-pressed'), 'false');
+    assert.equal(await page.isVisible('#source-code'), true, 'Esc only shrinks the editor');
+    assert.deepEqual(problems, []);
+});
+
 test('code blocks are highlighted and copy their full text', async () => {
     const { page, problems } = await open();
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });

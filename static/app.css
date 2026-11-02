@@ -189,8 +189,38 @@ body.dragging::after {
 }
 .text-field:focus { outline: none; border-color: var(--pick); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pick) 25%, transparent); }
 .field-hint { color: var(--text-faint); font-size: 0.76rem; margin: 6px 0 0; }
-.code-input { width: 100%; margin-top: 8px; resize: vertical; min-height: 96px; max-height: 260px; font-family: var(--mono); font-size: 0.76rem; line-height: 1.5; }
+/* SVG code field: a transparent textarea over a highlighted <pre> (see app.js) */
+.code-editor {
+    position: relative; margin-top: 8px; border-radius: var(--radius-sm);
+    background: var(--code-bg); border: 1px solid var(--code-border);
+}
+.code-editor:focus-within { border-color: var(--pick); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pick) 25%, transparent); }
+.code-editor > .code-input, .code-editor > .code-editor-hl {
+    margin: 0; padding: 10px 12px; border: 0; border-radius: inherit;
+    font-family: var(--mono); font-size: 0.76rem; line-height: 1.55; font-variant-ligatures: none; letter-spacing: normal;
+    tab-size: 2; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal;
+}
+.code-editor > .code-editor-hl { position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: var(--code-text); }
+.code-editor > .code-input {
+    position: relative; display: block; width: 100%; height: 220px; min-height: 140px; max-height: 70vh; resize: vertical;
+    background: transparent; color: transparent; caret-color: #fff; outline: none; overflow: auto;
+}
+.code-editor > .code-input::placeholder { color: #8a92a6; }
+.code-editor > .code-input::selection { background: rgba(110, 150, 255, 0.35); }
 .code-input-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.code-input-btns { display: flex; gap: 6px; flex: none; }
+.btn-icon { padding-left: 8px; padding-right: 8px; }
+.btn-icon svg { width: 15px; height: 15px; }
+/* Expanded: the same editor as a large overlay */
+.code-panel.expanded {
+    position: fixed; inset: 5vh max(16px, 5vw); z-index: 60; display: flex; flex-direction: column;
+    padding: 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border);
+    box-shadow: 0 0 0 100vmax rgba(5, 7, 12, 0.62), 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+.code-panel.expanded .code-editor { flex: 1; min-height: 0; margin-top: 0; display: flex; }
+.code-panel.expanded .code-input { height: auto; flex: 1; max-height: none; resize: none; font-size: 0.84rem; }
+.code-panel.expanded .code-editor-hl { font-size: 0.84rem; }
+body.code-expanded { overflow: hidden; }
 .code-input-row .field-hint { margin: 0; }
 .section-title .link-btn.aside { font-size: 0.78rem; }
 .file-chip {
@@ -413,7 +443,7 @@ pre.code .c { color: #6b7286; }
 .code-box { position: relative; display: flex; flex-direction: column; min-width: 0; }
 .code-box.fill { flex: 1; min-height: 0; }
 .code-box > pre.code { flex: 1; }
-.code-box > pre.code:not(.fill) { padding-right: 84px; }
+.code-box > pre.code { padding-right: 84px; } /* room for the Copy button */
 .copy-chip {
     position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; gap: 6px;
     padding: 5px 10px; border-radius: 7px; border: 1px solid var(--code-border);

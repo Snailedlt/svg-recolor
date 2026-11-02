@@ -153,8 +153,8 @@ How:
   - Python: Python, Streamlit, Django / Jinja
   - More: Laravel Blade, Flutter, Blazor
 
-- The **API** tab turns your settings into a ready-to-run request in 20 languages and clients: curl, HTTPie, PowerShell,
-  a hotlink URL, HTML, fetch, Node.js, axios, Python requests and httpx, Go, Rust, Java, Kotlin, C#, PHP, Ruby, Swift,
+- The **API** tab turns your settings into a ready-to-run request in 21 languages and clients: curl, HTTPie, PowerShell,
+  a hotlink URL, HTML, Markdown (for READMEs), fetch, Node.js, axios, Python requests and httpx, Go, Rust, Java, Kotlin, C#, PHP, Ruby, Swift,
   Dart, plus MCP setup.
 - Need something else? Pick **AI prompt** in either tab (or search for your language) and type a language or framework.
   You get a prompt to paste into ChatGPT, Claude, Copilot or any AI agent: for the Code tab it includes the recolored SVG,

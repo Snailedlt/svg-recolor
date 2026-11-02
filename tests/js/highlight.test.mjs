@@ -78,6 +78,17 @@ test('code: keywords, literals, functions, comments', () => {
     assert.equal(tokenOf(swift, '#if')[0], 't-k');
 });
 
+test('markdown: headings, images, links and code', () => {
+    const toks = H.tokens('# Title\n\n![Icon](https://x/a.svg) and [docs](https://x) with `code`\n<!-- c -->\n- item', 'md');
+    assert.equal(tokenOf(toks, '# Title')[0], 't-k');
+    assert.equal(tokenOf(toks, '![Icon]')[0], 't-a');
+    assert.equal(tokenOf(toks, '(https://x/a.svg)')[0], 't-s');
+    assert.equal(tokenOf(toks, '`code`')[0], 't-s');
+    assert.equal(tokenOf(toks, '<!-- c -->')[0], 't-c');
+    assert.equal(tokenOf(toks, '-')[0], 't-v');
+    assert.equal(H.langFor('icon.md'), 'md');
+});
+
 test('unknown languages and empty input are plain', () => {
     assert.deepEqual(H.tokens('a < b', 'text'), [['', 'a < b']]);
     assert.deepEqual(H.tokens('', 'js'), []);

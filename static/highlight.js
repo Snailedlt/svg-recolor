@@ -137,12 +137,27 @@
         ['t-n', /-?\d*\.?\d+(?:%|[a-z]+)?\b/iy],
         ['t-t', /[.#]?[A-Za-z][\w-]*(?=[^{};]*\{)/y],
     ];
-    function css(text, out, start, end) {
+    function css(text, out, start, end) { return simple(text, out, start, end, CSS_RULES); }
+
+    // ------------------------------------------------------------------
+    // Markdown: headings, links and images, code, emphasis, HTML comments
+    // ------------------------------------------------------------------
+    const MD_RULES = [
+        ['t-c', /<!--[\s\S]*?(?:-->|$)/y],
+        ['t-s', /```[\s\S]*?(?:```|$)|`[^`\n]*`/y],
+        ['t-k', /(?<=^|\n)#{1,6}[ \t][^\n]*/y],
+        ['t-a', /!?\[[^\]\n]*\]/y],
+        ['t-s', /(?<=\])\([^)\s]*(?:\s+"[^"\n]*")?\)/y],
+        ['t-k', /\*\*[^*\n]+\*\*|__[^_\n]+__/y],
+        ['t-v', /(?<=^|\n)[ \t]*(?:[-*+]|\d+\.)(?=[ \t])/y],
+    ];
+
+    function simple(text, out, start, end, rules) {
         let i = start;
         let plain = '';
         while (i < end) {
             let hit = null;
-            for (const [cls, re] of CSS_RULES) {
+            for (const [cls, re] of rules) {
                 const s = at(re, text, i);
                 if (s && i + s.length <= end) { hit = [cls, s]; break; }
             }
@@ -261,6 +276,7 @@
             }
             markup(text, out, i, end, { braces: lang === 'svelte' || lang === 'astro', at: lang === 'blade' || lang === 'razor' });
         } else if (lang === 'css') css(text, out, 0, end);
+        else if (lang === 'md') simple(text, out, 0, end, MD_RULES);
         else if (LANGS[lang]) code(text, lang, out, 0, end);
         else out.push(['', text]);
         return out;
@@ -280,7 +296,7 @@
 
     const BY_EXT = {
         svg: 'markup', html: 'markup', xml: 'markup', vue: 'vue', svelte: 'svelte', astro: 'astro', razor: 'razor',
-        css: 'css', js: 'js', jsx: 'js', ts: 'js', tsx: 'js', mjs: 'js', py: 'py', dart: 'dart', go: 'go', rs: 'rust',
+        css: 'css', md: 'md', markdown: 'md', js: 'js', jsx: 'js', ts: 'js', tsx: 'js', mjs: 'js', py: 'py', dart: 'dart', go: 'go', rs: 'rust',
         java: 'java', kt: 'kotlin', cs: 'cs', php: 'php', rb: 'ruby', swift: 'swift', sh: 'sh', ps1: 'ps',
     };
     function langFor(fileName) {
@@ -289,7 +305,7 @@
         return BY_EXT[name.split('.').pop()] || 'text';
     }
 
-    const api = { render, tokens, langFor, languages: Object.keys(LANGS).concat(['markup', 'vue', 'svelte', 'astro', 'blade', 'razor', 'css']) };
+    const api = { render, tokens, langFor, languages: Object.keys(LANGS).concat(['markup', 'vue', 'svelte', 'astro', 'blade', 'razor', 'css', 'md']) };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     root.SvgHighlight = api;
 })(typeof window !== 'undefined' ? window : globalThis);

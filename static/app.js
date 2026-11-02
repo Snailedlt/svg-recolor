@@ -371,10 +371,11 @@
     $('change-file').addEventListener('click', () => {
         const kind = state.doc && SOURCES.includes(state.doc.source) ? state.doc.source : 'file';
         if (state.doc) {
-            $('code-input').value = state.doc.text;
+            setCodeInput(state.doc.text);
             codeName = state.doc.name;
             $('code-input').setSelectionRange(0, 0); // start at the top, not the end
             $('code-input').scrollTop = 0;
+            syncCodeScroll();
             $('code-input-hint').textContent = 'This is the current SVG. Edit it, then apply.';
         }
         showSourcePicker(kind);
@@ -382,9 +383,48 @@
     });
     $('source-cancel').addEventListener('click', () => { hideSourcePicker(); $('change-file').focus(); });
 
+    // SVG code field: the textarea's text is transparent and a highlighted copy sits
+    // underneath, scrolled in step, so typing, selection and undo stay native.
+    const codeInput = $('code-input');
+    const codeHl = $('code-hl');
+    let hlFrame = 0;
+    function syncCodeScroll() {
+        codeHl.scrollTop = codeInput.scrollTop;
+        codeHl.scrollLeft = codeInput.scrollLeft;
+    }
+    function syncCodeEditor() {
+        cancelAnimationFrame(hlFrame);
+        hlFrame = requestAnimationFrame(() => {
+            showCode(codeHl, codeInput.value + '\n', 'markup'); // the newline keeps a trailing empty line visible
+            // Match the textarea's text width when it shows a scrollbar.
+            codeHl.style.paddingRight = (12 + codeInput.offsetWidth - codeInput.clientWidth) + 'px';
+            syncCodeScroll();
+        });
+    }
+    function setCodeInput(text) { codeInput.value = text; syncCodeEditor(); }
+    codeInput.addEventListener('input', syncCodeEditor);
+    codeInput.addEventListener('scroll', syncCodeScroll);
+    if (window.ResizeObserver) new ResizeObserver(syncCodeEditor).observe(codeInput);
+
+    function setCodeExpanded(on) {
+        $('code-panel').classList.toggle('expanded', on);
+        document.body.classList.toggle('code-expanded', on);
+        const btn = $('code-expand');
+        btn.setAttribute('aria-pressed', String(on));
+        btn.setAttribute('aria-label', on ? 'Shrink the editor' : 'Expand the editor');
+        btn.title = on ? 'Shrink the editor (Esc)' : 'Expand the editor (Esc to close)';
+        codeInput.focus();
+        syncCodeEditor();
+    }
+    $('code-expand').addEventListener('click', () => setCodeExpanded(!$('code-panel').classList.contains('expanded')));
+    $('code-panel').addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && $('code-panel').classList.contains('expanded')) { e.preventDefault(); e.stopPropagation(); setCodeExpanded(false); }
+    });
+
     function useCode() {
         const text = $('code-input').value.trim();
         if (!text) return showError('Paste or type some SVG markup first.');
+        if ($('code-panel').classList.contains('expanded')) setCodeExpanded(false);
         const name = codeName || 'pasted.svg';
         loadText(text, name, new Blob([text]).size, null, 'code');
     }
@@ -449,7 +489,7 @@
         const file = Array.from(data.files || []).find((f) => /svg/i.test(f.type) || /\.svg$/i.test(f.name));
         if (file) { e.preventDefault(); loadFile(file); return; }
         const text = data.getData('text/plain');
-        if (text && /<svg[\s>]/i.test(text)) { e.preventDefault(); $('code-input').value = text; codeName = null; loadText(text, 'pasted.svg', new Blob([text]).size, null, 'code'); return; }
+        if (text && /<svg[\s>]/i.test(text)) { e.preventDefault(); setCodeInput(text); codeName = null; loadText(text, 'pasted.svg', new Blob([text]).size, null, 'code'); return; }
         if (text && /^https?:\/\/\S+$/i.test(text.trim()) && !(t && /^(INPUT|TEXTAREA)$/.test(t.tagName))) {
             e.preventDefault();
             showSourcePicker('link');
@@ -863,9 +903,12 @@
         const sn = S.get(state.snippet);
         $('api-prompt-bar').hidden = !sn.prompt;
         showCode($('snippet'), S.build(state.snippet, snippetContext()), sn.lang);
+        const code = $('snippet').textContent;
         $('api-hint').textContent = sn.prompt
             ? 'Paste this into ChatGPT, Claude, Copilot or any AI agent.'
-            : 'Uses your current settings. No API key needed.';
+            : code.includes('example.com%2Ficon.svg')
+                ? 'Links need a public SVG: replace example.com/icon.svg with yours, or load your SVG from a link.'
+                : 'Uses your current settings. No API key needed.';
         showCode($('mcp-cmd'), 'claude mcp add --transport http svg-recolor ' + SITE + '/mcp', 'sh');
         $('llms-url').textContent = SITE + '/llms.txt';
     }

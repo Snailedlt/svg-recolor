@@ -16,7 +16,7 @@ for (const s of S.list) {
         const code = S.build(s.id, ctx);
         assert.ok(!/undefined|NaN|\[object Object\]/.test(code));
         assert.ok(code.includes('svg-recolor.example'), 'uses the site URL');
-        if (!['link', 'html', 'mcp', 'httpie', 'fetch'].includes(s.id)) assert.ok(code.includes('icon.svg'), 'reads the input file');
+        if (!['link', 'html', 'markdown', 'mcp', 'httpie', 'fetch'].includes(s.id)) assert.ok(code.includes('icon.svg'), 'reads the input file');
     });
 }
 
