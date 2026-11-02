@@ -301,9 +301,13 @@ CI runs all of these on every push and pull request (`.github/workflows/ci.yml`)
 
 ### Deploying (Vercel)
 
-- `vercel.json` routes everything to `main.py`; the CDN caches responses that send `s-maxage`
-  (the page, static files, docs, linked SVGs and `/api/map-colors?v=...`). After a deploy, a repeated
-  `/api/map-colors` request should answer with `x-vercel-cache: HIT`.
+- The deployment is configured in the repo, not the dashboard: `vercel.json` selects Vercel's FastAPI preset,
+  which finds `app` in `main.py`, sends every request to it, and serves `/static/*` straight from the CDN
+  (no function call). Because the app doesn't see those requests, `vercel.json` sets their cache headers;
+  `tests/test_deploy.py` checks they match the app's. `.vercelignore` keeps the upload to what the app needs.
+- The CDN also caches app responses that send `s-maxage` (the page, docs, linked SVGs and
+  `/api/map-colors?v=...`). After a deploy, a repeated `/api/map-colors` request should answer with
+  `x-vercel-cache: HIT`.
 - Submodules must be checked out: `submodules/svgray/.svgray.py` is imported at runtime.
 - `svgshift-linux.exe` is a static binary (`scripts/build-svgshift.sh`), so it runs whatever the host's glibc
   version is. It is committed as executable. If a platform drops the bit, the engine copies it to a temp folder
@@ -314,8 +318,10 @@ CI runs all of these on every push and pull request (`.github/workflows/ci.yml`)
 - CI tests Python 3.12 and 3.13.
 - `/api/health` runs both tools on one color and reports the Python version, libc and any error, uncached.
   If the tools fail, the page still loads and the browser fetches the style thumbnails itself.
-- The app rate-limits per IP in memory (see Configuration). On serverless that is per instance, so also add an edge rule
-  (for example a Vercel Firewall rate limit on `/api/*` and `/mcp`).
+- The app rate-limits per IP in memory (see Configuration). On serverless that is per instance, so also add a
+  Vercel Firewall rate-limit rule on `/api/*` and `/mcp` (skip the `github-camo` user agent so README images
+  keep working). Rate limits can't be set in `vercel.json` (it only supports deny and challenge rules), so
+  this one rule lives in the dashboard.
 
 ### Showcase page
 

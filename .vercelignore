@@ -1,6 +1,16 @@
+# Not needed by the deployed app (main.py). Keep: main.py, main.html, recolor.py,
+# server/, static/, svgshift-linux.exe, submodules/svgray, submodules/svgshift
+# (the engine compiles it if the binary can't run), Pipfile, Pipfile.lock.
 logo
 tests
 showcase
+docs
+scripts
+example-input-svgs
+website_screenshot.png
+svgshift-windows.exe
+colorize_svg_old.bash
+submodules/argparse-bash
 node_modules
 .github
 .pytest_cache

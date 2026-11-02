@@ -10,6 +10,9 @@
  *   SvgHighlight.render(preElement, text, lang)
  *   SvgHighlight.tokens(text, lang)  -> [[className | '', text], ...]
  *   SvgHighlight.langFor(fileName)   -> language id for a file name
+ *
+ * This is the site's only highlighter: the Code and API tabs, the SVG code field,
+ * the agents section and the showcase all use it. Token colors (.t-*) are in app.css.
  */
 (function (root) {
     'use strict';
