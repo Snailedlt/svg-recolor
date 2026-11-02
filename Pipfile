@@ -18,12 +18,11 @@ lint = "ruff check"
 fastapi = "*"
 python-multipart = "*"
 httpx = "*"
-sentry-sdk = {extras = ["fastapi"], version = "*"}
 uvicorn = "*"
 
 [dev-packages]
 # `pipenv run dev` / `start` (fastapi dev / fastapi run) and the checks.
-fastapi-cli = {extras = ["standard"], version = "*"}
+fastapi-cli = "*"
 ruff = "*"
 pytest = "*"
 

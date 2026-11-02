@@ -14,7 +14,7 @@ def test_vercel_installs_the_locked_dependencies():
     if pyproject.exists():
         assert "dependencies" in pyproject.read_text(), "pyproject.toml would hide Pipfile.lock from Vercel"
     lock = json.loads((ROOT / "Pipfile.lock").read_text())
-    assert {"fastapi", "httpx", "sentry-sdk", "python-multipart"} <= set(lock["default"])
+    assert {"fastapi", "httpx", "python-multipart", "uvicorn"} <= set(lock["default"])
 
 
 def test_svgshift_binary_is_executable_and_static():

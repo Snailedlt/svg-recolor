@@ -1,0 +1,84 @@
+# Checks the live site every hour. When it is down, it opens one issue (GitHub
+# notifies you about it); when it is back up, it comments and closes the issue.
+# Nothing else is sent while it stays down.
+name: Uptime
+
+on:
+  schedule:
+    - cron: "17 * * * *"   # hourly, off the top of the hour
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+env:
+  SITE_URL: ${{ vars.SITE_URL || 'https://svg-recolor.jorgenkh.no' }}
+  ISSUE_TITLE: "Site down: svg-recolor"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the page and /api/health
+        id: check
+        run: |
+          set -u
+          ok=false
+          # Up to three tries, 20 s apart, so one cold start or blip isn't an outage.
+          for attempt in 1 2 3; do
+            page=$(curl -s -o page.html -w '%{http_code}' --max-time 30 "$SITE_URL/") || page=000
+            health=$(curl -s -o health.json -w '%{http_code}' --max-time 30 "$SITE_URL/api/health") || health=000
+            if [ "$page" = 200 ] && grep -q '<title>' page.html && [ "$health" = 200 ] \
+               && python3 -c 'import json,sys; sys.exit(0 if json.load(open("health.json")).get("ok") else 1)' 2>/dev/null; then
+              ok=true; break
+            fi
+            echo "Attempt $attempt: page HTTP $page, health HTTP $health"
+            [ "$attempt" = 3 ] || sleep 20
+          done
+          {
+            echo "ok=$ok"
+            echo "page=$page"
+            echo "health=$health"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "body<<HEALTH_EOF"
+            head -c 2000 health.json 2>/dev/null || true
+            echo
+            echo "HEALTH_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "### $SITE_URL: $([ "$ok" = true ] && echo up || echo DOWN)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or close the outage issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OK: ${{ steps.check.outputs.ok }}
+          PAGE: ${{ steps.check.outputs.page }}
+          HEALTH: ${{ steps.check.outputs.health }}
+          HEALTH_BODY: ${{ steps.check.outputs.body }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          open=$(gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number --jq '.[0].number // empty')
+          now=$(date -u '+%Y-%m-%d %H:%M UTC')
+          if [ "$OK" = true ]; then
+            if [ -n "$open" ]; then
+              gh issue close "$open" --comment "Back up at $now ([check]($RUN_URL))."
+            fi
+            exit 0
+          fi
+          if [ -z "$open" ]; then
+            printf '%s\n' \
+              "The uptime check failed at $now ([run]($RUN_URL))." "" \
+              "- Page: HTTP $PAGE" \
+              "- /api/health: HTTP $HEALTH" "" \
+              '```json' "$HEALTH_BODY" '```' "" \
+              "Check the Vercel deployment and the Logs tab. This issue closes itself when the site is back." > body.md
+            gh issue create --title "$ISSUE_TITLE" --body-file body.md
+            exit 1   # a red run the first time; later runs stay quiet until it recovers
+          fi
+          echo "Still down; issue #$open is already open."

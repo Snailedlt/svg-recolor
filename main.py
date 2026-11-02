@@ -2,6 +2,7 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import subprocess
@@ -9,7 +10,6 @@ import zipfile
 from pathlib import Path
 from typing import Annotated, Literal, Optional
 
-import sentry_sdk
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import (
@@ -45,19 +45,9 @@ from server.common import (
 from server.fetching import fetch_svg
 from server.ratelimit import rate_limit_middleware
 
-# Error and performance monitoring. Configured by environment variables so tests
-# and local runs stay quiet, and production samples traces instead of recording all.
-#   SENTRY_DSN                  set to "" to disable (defaults to the project's DSN)
-#   SENTRY_TRACES_SAMPLE_RATE   share of requests traced (default 0: errors only, cheapest)
-#   SENTRY_PROFILING            "1" to enable continuous profiling (default off)
-sentry_sdk.init(
-    dsn=os.environ.get(
-        "SENTRY_DSN",
-        "https://98b39a4523a365e1bbc2639fbb075633@o4508424099856384.ingest.de.sentry.io/4508424101363792",
-    ),
-    traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0")),
-    _experiments={"continuous_profiling_auto_start": os.environ.get("SENTRY_PROFILING") == "1"},
-)
+# Errors are logged to stderr, which Vercel shows in the project's Logs tab. The
+# uptime check (.github/workflows/uptime.yml) is what tells you when the site breaks.
+log = logging.getLogger("svg_recolor")
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -192,7 +182,7 @@ _bundle_cache: Optional[tuple[str, str]] = None
 # Scripts served as one bundle (/assets/app.js) to save requests. Order matters.
 BUNDLE = ("engine.js", "icons.js", "formats.js", "snippets.js", "highlight.js", "app.js")
 # Small images inlined into the page as data: URIs, saving a request each.
-INLINE_IMAGES = ("/static/logo-56.webp", "/static/avatar-48.webp")
+INLINE_IMAGES = ("/static/logo.svg", "/static/avatar-48.webp")
 
 
 def _bundle() -> tuple[str, str]:
@@ -207,16 +197,16 @@ def _bundle() -> tuple[str, str]:
 def _page_config() -> str:
     """window.SVG_RECOLOR: the engine version, plus the sample image's colors in
     every style, so the style thumbnails need no API call on page load."""
-    sample = (BASE_DIR / "static" / "examples" / "sample.svg").read_text(encoding="utf-8").strip()
+    sample = (BASE_DIR / "static" / "logo.svg").read_text(encoding="utf-8").strip()
     colors = list(engine.extract_palette(engine.normalize_svg(sample)))
     seed = {}
     try:
         for mode, info in engine.MODES.items():
             key = ("color=ff0066&" if info["uses_color"] else "") + f"mode={mode}"
             seed[key] = engine.map_colors(colors, engine.Options(mode=mode, color="ff0066"))
-    except Exception as e:  # noqa: BLE001 - the page must load even if the tools can't run
+    except Exception:  # the page must load even if the tools can't run
         # Without the seed the browser fetches the thumbnails itself; /api/health says why.
-        sentry_sdk.capture_exception(e)
+        log.exception("Could not precompute the style thumbnails")
         seed = {}
     config = {"engineVersion": engine.ENGINE_VERSION, "sample": sample, "seed": seed}
     return json.dumps(config, separators=(",", ":")).replace("</", "<\\/")
@@ -236,7 +226,8 @@ def _landing_html() -> str:
         html = html.replace("/assets/app.js?v=__HASH__", f"/assets/app.js?v={_bundle()[1]}")
         for path in INLINE_IMAGES:
             data = base64.b64encode((BASE_DIR / path.lstrip("/")).read_bytes()).decode()
-            html = html.replace(f'src="{path}"', f'src="data:image/webp;base64,{data}"')
+            mime = "image/svg+xml" if path.endswith(".svg") else "image/webp"
+            html = html.replace(f'src="{path}"', f'src="data:{mime};base64,{data}"')
         _landing_cache = html.replace("__CONFIG__", _page_config())
     return _landing_cache
 
@@ -291,10 +282,25 @@ async def health():
 
 
 @app.get("/robots.txt", include_in_schema=False)
-async def robots_txt():
+async def robots_txt(request: Request):
     # Keep crawlers on the page and off the API, which would only burn function time.
-    body = "User-agent: *\nAllow: /$\nAllow: /llms.txt\nAllow: /static/\nDisallow: /api\nDisallow: /mcp\nDisallow: /colorize\nDisallow: /docs\nDisallow: /redoc\n"
+    body = (
+        "User-agent: *\nAllow: /$\nAllow: /llms.txt\nAllow: /static/\n"
+        "Disallow: /api\nDisallow: /mcp\nDisallow: /colorize\nDisallow: /docs\nDisallow: /redoc\n"
+        f"\nSitemap: {base_url(request)}/sitemap.xml\n"
+    )
     return PlainTextResponse(body, headers={"Cache-Control": CACHE_DOCS})
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml(request: Request):
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"  <url><loc>{base_url(request)}/</loc><changefreq>monthly</changefreq><priority>1.0</priority></url>\n"
+        "</urlset>\n"
+    )
+    return Response(body, media_type="application/xml", headers={"Cache-Control": CACHE_DOCS})
 
 
 # --------------------------------------------------------------------------
@@ -472,7 +478,7 @@ async def _map_response(colors: list[str], opts_by_mode: dict[str, engine.Option
     except engine.RecolorError as e:
         bad_request(e)
     except (RuntimeError, OSError, subprocess.SubprocessError) as e:
-        sentry_sdk.capture_exception(e)
+        log.exception("Recolor tools failed")
         raise HTTPException(status_code=500, detail=f"Error processing the colors: {e}")
     headers = {"Access-Control-Allow-Origin": "*"}
     if cache:

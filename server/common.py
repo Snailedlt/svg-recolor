@@ -1,17 +1,19 @@
 """Shared helpers for the HTTP API: options, responses, cache policy."""
 
+import logging
 import re
 import subprocess
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
-import sentry_sdk
 from fastapi import HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
 import recolor as engine
+
+log = logging.getLogger("svg_recolor")
 
 APP_VERSION = "2.0.0"
 
@@ -72,7 +74,7 @@ async def run(svg_text: str, opts: engine.Options) -> engine.Result:
     except engine.RecolorError as e:
         bad_request(e)
     except (RuntimeError, OSError, subprocess.SubprocessError) as e:  # svgray/svgshift failed
-        sentry_sdk.capture_exception(e)
+        log.exception("Recolor tools failed")
         raise HTTPException(status_code=500, detail=f"Error processing the SVG file: {e}")
 
 

@@ -8,8 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 sys.path.insert(0, str(ROOT))
 
-# Keep tests quiet and deterministic: no Sentry, re-read main.html on each request.
-os.environ["SENTRY_DSN"] = ""
+# Keep tests deterministic: re-read main.html on each request.
 os.environ.setdefault("SVG_RECOLOR_DEV", "1")
 
 
