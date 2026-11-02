@@ -580,9 +580,8 @@
 
     async function loadExample() {
         try {
-            const res = await fetch('/static/examples/rainbow-snail.svg');
-            if (!res.ok) throw new Error();
-            const text = await res.text();
+            const { text } = await sampleReady; // the thumbnail snail, already downloaded
+            if (text === FALLBACK_SVG) throw new Error();
             loadText(text, 'rainbow-snail.svg', new Blob([text]).size, null, 'example');
         } catch (e) {
             showError('Could not load the example file.');
@@ -662,10 +661,17 @@
     // thumbnails on first load need no request.
     for (const [key, mapping] of Object.entries(CFG.seed || {})) mapCache.set(key, Object.assign({}, mapping));
 
-    // Style thumbnails: the current SVG (or a small sample) rendered in every
+    // Style thumbnails: the current SVG (or the rainbow snail) rendered in every
     // style with the current color and adjustments, so each choice shows what it does.
-    const SAMPLE_SVG = CFG.sample || '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="18" cy="19" r="13" fill="#3b82f6"/><circle cx="30" cy="19" r="13" fill="#f59e0b" fill-opacity=".9"/><circle cx="24" cy="31" r="13" fill="#10b981" fill-opacity=".9"/><circle cx="24" cy="24" r="4" fill="#ffffff"/><path d="M6 44h36" stroke="#1f2937" stroke-width="3"/></svg>';
-    const SAMPLE = (function () { const norm = Engine.normalize(SAMPLE_SVG); return { norm, palette: Engine.palette(norm) }; })();
+    // The page carries the snail's colors (CFG.seed) and a cached URL for the file
+    // itself, so the first thumbnails cost one CDN file and no API call.
+    const FALLBACK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="18" cy="19" r="13" fill="#3b82f6"/><circle cx="30" cy="19" r="13" fill="#f59e0b" fill-opacity=".9"/><circle cx="24" cy="31" r="13" fill="#10b981" fill-opacity=".9"/><circle cx="24" cy="24" r="4" fill="#ffffff"/><path d="M6 44h36" stroke="#1f2937" stroke-width="3"/></svg>';
+    let SAMPLE = null;
+    const sampleReady = (CFG.sample ? Promise.resolve(CFG.sample)
+        : CFG.sampleUrl ? fetch(CFG.sampleUrl).then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+            : Promise.reject(new Error('no sample')))
+        .catch(() => FALLBACK_SVG)
+        .then((text) => { const norm = Engine.normalize(text); SAMPLE = { text, norm, palette: Engine.palette(norm) }; return SAMPLE; });
     let thumbTimer = null;
     let thumbId = 0;
     const thumbUrls = {};
@@ -674,7 +680,7 @@
         thumbTimer = setTimeout(renderThumbs, delay === undefined ? 450 : delay);
     }
     async function renderThumbs() {
-        const doc = state.doc && state.doc.norm.length < 250000 ? state.doc : SAMPLE;
+        const doc = state.doc && state.doc.norm.length < 250000 ? state.doc : (SAMPLE || await sampleReady);
         const colors = doc.palette.map((p) => p[0]);
         const id = ++thumbId;
         try {

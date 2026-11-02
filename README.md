@@ -171,24 +171,29 @@ How:
 Clone the repository (with submodules) and run `colorize_svg.py` with Python.
 
 ```sh
-python colorize_svg.py path/to/input.svg path/to/output.svg --color "255,0,0"
-python colorize_svg.py input.svg output.svg --color seagreen --mode colorize
-python colorize_svg.py input.svg output.svg --mode adjust --hue 45 --lightness -10
-python colorize_svg.py input.svg --palette
+python colorize_svg.py example-input-svgs/rainbow-snail.svg out.svg --color a855f7 --mode colorize
+python colorize_svg.py example-input-svgs/rainbow-snail.svg out.svg --color seagreen --mode solid
+python colorize_svg.py example-input-svgs/rainbow-snail.svg out.svg --mode grayscale
+python colorize_svg.py example-input-svgs/rainbow-snail.svg out.svg --mode adjust --hue 120
+python colorize_svg.py example-input-svgs/rainbow-snail.svg --palette
 ```
+
+| Original | Colorize `a855f7` | Solid `seagreen` | Grayscale | Adjust, hue +120° |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src="example-input-svgs/rainbow-snail.svg" width="120" alt="Rainbow snail"> | <img src="example-input-svgs/rainbow-snail-colorize.svg" width="120" alt="Colorized purple"> | <img src="example-input-svgs/rainbow-snail-solid.svg" width="120" alt="Solid sea green"> | <img src="example-input-svgs/rainbow-snail-grayscale.svg" width="120" alt="Grayscale"> | <img src="example-input-svgs/rainbow-snail-hue.svg" width="120" alt="Hue rotated"> |
 
 ### Legacy Shell Script
 
-Download `colorize_svg.sh` and run it in your terminal.
+Run `colorize_svg_old.bash` in your terminal (it needs the `argparse-bash` submodule).
 
 Example Usage:
 
 ```bash
 # Recolor the input SVG file to red and save it to the output file using RGB color values
-./colorize_svg.sh "example-input-svgs/input.svg" tmp/output.svg --color "255,0,0"
+./colorize_svg_old.bash example-input-svgs/rainbow-snail.svg tmp/output.svg --color "255,0,0"
 
 # Recolor the input SVG file to red and save it to the output file using hex color values
-./colorize_svg.sh "example-input-svgs/input.svg" tmp/output.svg --color "#FF0000"
+./colorize_svg_old.bash example-input-svgs/rainbow-snail.svg tmp/output.svg --color "#FF0000"
 ```
 
 ## Contributing
@@ -254,8 +259,9 @@ pipenv run colorize path/to/input.svg path/to/output.svg --color "255,0,0"
 | `main.py` | FastAPI app: website, recolor/palette/map-colors endpoints, cache headers |
 | `server/` | `common.py` (shared helpers, cache policy), `fetching.py` (safe link downloads), `agents.py` (`/llms.txt`, `/mcp`) |
 | `main.html`, `static/` | The editor: `engine.js` (browser twin of the engine), `formats.js` (code formats), `snippets.js` (API examples), `highlight.js` (syntax highlighting), `icons.js`, `app.js`, `app.css` |
-| `static/logo.svg` | The small snail: header logo, favicon and the style thumbnails on first load. Drawn by `scripts/make-snail.py`; `node scripts/make-icons.mjs` renders the PNG icons and `favicon.ico` from it |
-| `static/examples/rainbow-snail.svg` | "Try an example" and the link preview (`static/og-image.png`, also from `make-icons.mjs`). Traced from the original art (`logo/old-social-preview.jpg`) by `scripts/trace-snail.py` |
+| `static/examples/rainbow-snail.svg` | The style previews, "Try an example" and the link preview. Traced from the original art (`logo/old-social-preview.jpg`) by `scripts/trace-snail.py` with the svg-icons agent skill's `vectorize.js` (one path per color, 51 KB) |
+| `scripts/make-og-image.mjs` | Renders the link preview (`static/og-image.png`) with the real engine |
+| `example-input-svgs/` | The rainbow snail and CLI outputs from it (see CLI Tool) |
 | `colorize_svg.py` | CLI |
 | `tests/` | pytest suite; `tests/js` (browser scripts), `tests/php` (Blade), `tests/live` (snippets run in their languages), `tests/e2e` (browser) |
 | `showcase/` | Builds a standalone demo page of the editor |

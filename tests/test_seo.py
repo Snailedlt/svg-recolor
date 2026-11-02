@@ -65,20 +65,29 @@ def test_robots_points_to_the_sitemap(client):
     assert f"<loc>{SITE}/</loc>" in res.text
 
 
-def test_the_snail_is_the_logo_example_and_thumbnail(client):
+def test_rainbow_snail_previews_every_style(client):
     html = client.get("/").text
-    logo = (ROOT / "static/logo.svg").read_text()
-    assert "data:image/svg+xml;base64," in html  # header logo inlined
+    assert "data:image/webp;base64," in html  # header logo (the original) inlined
     config = json.loads(re.search(r"window\.SVG_RECOLOR = (\{.*?\});</script>", html).group(1).replace("<\\/", "</"))
-    assert config["sample"] == logo.strip()
+    # The thumbnails' sample is the rainbow snail: a cacheable URL, not text in every page...
+    assert config["sampleUrl"].startswith("/static/examples/rainbow-snail.svg?v=")
+    assert "sample" not in config
+    # ...with its colors already recolored in all six styles, so first load needs no API call.
+    assert len(config["seed"]) == 6
+    import recolor as r
+
+    snail = (ROOT / "static/examples/rainbow-snail.svg").read_text()
+    colors = set(r.extract_palette(r.normalize_svg(snail)))
+    assert all(set(m) == colors for m in config["seed"].values())
+    res = client.get(config["sampleUrl"])
+    assert res.status_code == 200 and "immutable" in res.headers["cache-control"]
 
 
-def test_rainbow_snail_example_scales_and_stays_small(client):
+def test_rainbow_snail_is_optimized(client):
     res = client.get("/static/examples/rainbow-snail.svg")
     assert res.status_code == 200
-    head = res.text[:300]
-    assert 'viewBox="0 0 ' in head and "<title>Rainbow snail</title>" in head
-    assert len(res.content) < 200_000  # loaded only when "Try an example" is clicked
+    assert res.text.startswith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">')
+    assert len(res.content) < 80_000  # optimized: one path per color
     import recolor as r
 
     assert 8 <= len(r.extract_palette(r.normalize_svg(res.text))) <= 30  # enough colors to show every style

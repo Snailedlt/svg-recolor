@@ -1,20 +1,30 @@
 """Traces the rainbow snail from the old link-preview image into a recolorable SVG.
 
-The art only exists as a JPG (logo/old-social-preview.jpg). This maps each pixel to a
-small fixed palette (outlines, grays and eight vivid hues), so the SVG has about 15
-colors that the recolor modes can work with, then traces it with vtracer.
+The art only exists as a JPG (logo/old-social-preview.jpg). Two steps:
 
-Run: pip install vtracer pillow && python scripts/trace-snail.py
+1. This script maps each pixel to a small fixed palette (outlines, grays and eight
+   vivid hues) on a transparent background, so the SVG ends up with about 15 colors
+   for the recolor modes to work with.
+2. vectorize.js from the svg-icons agent skill (devicons/devicon#2824) traces each
+   color with potrace, stacks the layers without seams, fits the result to
+   0 0 128 128 and optimizes it with SVGO: one path per color, about 50 KB.
+
+Run:
+    pip install pillow
+    python scripts/trace-snail.py --skill path/to/devicon/.claude/skills/svg-icons
+    (without --skill it only writes the classified PNG and prints the command)
 """
+import argparse
 import colorsys
-import re
+import subprocess
 import tempfile
 from pathlib import Path
 
-import vtracer
 from PIL import Image, ImageFilter
 
-SCALE, SPECK = 1.5, 8
+SCALE = 1.5
+# vectorize.js settings: trace at 512 px with light smoothing (keeps the thin lines).
+TRACE_SIZE, SMOOTH = 512, 2
 # Fixed palette: outlines, grays for the eyes and stalks, the ground, and eight vivid hues.
 PALETTE = {
     "ink": (18, 14, 28), "white": (240, 240, 245), "gray": (150, 150, 160), "darkgray": (80, 80, 92),
@@ -49,20 +59,18 @@ for y in range(im.height):
         else:
             out[x, y] = (*PALETTE[classify(R, G, B, x, y, im.height)], 255)
 rgba = rgba.filter(ImageFilter.ModeFilter(3))
-tmp = Path(tempfile.mkdtemp())
-rgba.save(tmp / 'quant.png')
-vtracer.convert_image_to_svg_py(str(tmp / 'quant.png'), str(tmp / 'raw.svg'), colormode='color', hierarchical='stacked', mode='spline',
-    filter_speckle=SPECK, color_precision=8, layer_difference=10, corner_threshold=60, length_threshold=4.0, max_iterations=10, splice_threshold=45, path_precision=1)
-s = (tmp / 'raw.svg').read_text()
-pal = list(PALETTE.values())
-def snap(m):
-    c = tuple(int(m.group(1)[i:i + 2], 16) for i in (0, 2, 4))
-    return 'fill="#%02x%02x%02x"' % min(pal, key=lambda p: sum((a - b) ** 2 for a, b in zip(p, c)))
-s = re.sub(r'fill="#([0-9A-Fa-f]{6})"', snap, s)
-# A viewBox so it scales, a title, and no generator boilerplate.
-w, h = re.search(r'width="(\d+)" height="(\d+)"', s).groups()
-s = re.sub(r'^[\s\S]*?<svg[^>]*>', f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}">\n<title>Rainbow snail</title>', s, count=1)
-out = ROOT / 'static/examples/rainbow-snail.svg'
-out.parent.mkdir(exist_ok=True)
-out.write_text(s, encoding='utf-8')
-print(f'wrote {out.relative_to(ROOT)}: {len(s) // 1024} KB, {s.count("<path")} paths, {len(set(re.findall(r"fill=.(#[0-9a-f]{6})", s)))} colors')
+args = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+args.add_argument("--skill", help="path to the svg-icons skill (with its scripts/ installed: npm install)")
+opts = args.parse_args()
+
+png = Path(tempfile.mkdtemp()) / "rainbow-snail-classified.png"
+rgba.save(png)
+out = ROOT / "static/examples/rainbow-snail.svg"
+palette = ",".join("#%02x%02x%02x" % c for c in PALETTE.values())
+cmd = ["node", "vectorize.js", str(png), "--out", str(out), "--palette", palette,
+       "--size", str(TRACE_SIZE), "--smooth", str(SMOOTH)]
+if not opts.skill:
+    print(f"wrote {png}\nnow run, in <svg-icons skill>/scripts:\n  " + " ".join(f"'{c}'" if "," in c else c for c in cmd))
+else:
+    subprocess.run(cmd, cwd=Path(opts.skill) / "scripts", check=True)
+    print(f"wrote {out.relative_to(ROOT)}: {out.stat().st_size // 1024} KB")

@@ -182,7 +182,9 @@ _bundle_cache: Optional[tuple[str, str]] = None
 # Scripts served as one bundle (/assets/app.js) to save requests. Order matters.
 BUNDLE = ("engine.js", "icons.js", "formats.js", "snippets.js", "highlight.js", "app.js")
 # Small images inlined into the page as data: URIs, saving a request each.
-INLINE_IMAGES = ("/static/logo.svg", "/static/avatar-48.webp")
+INLINE_IMAGES = ("/static/logo-56.webp", "/static/avatar-48.webp")
+# The style thumbnails' sample and "Try an example".
+SAMPLE_PATH = "/static/examples/rainbow-snail.svg"
 
 
 def _bundle() -> tuple[str, str]:
@@ -195,10 +197,13 @@ def _bundle() -> tuple[str, str]:
 
 
 def _page_config() -> str:
-    """window.SVG_RECOLOR: the engine version, plus the sample image's colors in
-    every style, so the style thumbnails need no API call on page load."""
-    sample = (BASE_DIR / "static" / "logo.svg").read_text(encoding="utf-8").strip()
-    colors = list(engine.extract_palette(engine.normalize_svg(sample)))
+    """window.SVG_RECOLOR: the engine version, the sample image's URL (the rainbow
+    snail, also "Try an example") and its colors in every style, so the style
+    thumbnails need no API call on page load. The file itself is fetched from the
+    CDN with a content hash, so it isn't inlined into every page."""
+    sample_file = BASE_DIR / SAMPLE_PATH.lstrip("/")
+    data = sample_file.read_bytes()
+    colors = list(engine.extract_palette(engine.normalize_svg(data.decode("utf-8"))))
     seed = {}
     try:
         for mode, info in engine.MODES.items():
@@ -208,7 +213,8 @@ def _page_config() -> str:
         # Without the seed the browser fetches the thumbnails itself; /api/health says why.
         log.exception("Could not precompute the style thumbnails")
         seed = {}
-    config = {"engineVersion": engine.ENGINE_VERSION, "sample": sample, "seed": seed}
+    sample_url = f"{SAMPLE_PATH}?v={hashlib.sha256(data).hexdigest()[:12]}"
+    config = {"engineVersion": engine.ENGINE_VERSION, "sampleUrl": sample_url, "seed": seed}
     return json.dumps(config, separators=(",", ":")).replace("</", "<\\/")
 
 
