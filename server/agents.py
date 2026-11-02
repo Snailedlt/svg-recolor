@@ -71,7 +71,10 @@ Pick `solid` for single-color icons, `colorize` to keep shading in multi-color a
 - SVGs up to 2 MB. Links must be public http(s); private and local addresses are refused.
 - GitHub file links (github.com/.../blob/...) are converted to raw links.
 - Errors are JSON: `{{"detail": "human-readable message"}}` with status 400 (bad input),
-  413 (too large), 415 (not an SVG), 422 (invalid parameter) or 500.
+  413 (too large), 415 (not an SVG), 422 (invalid parameter), 429 (rate limited; see the
+  Retry-After header) or 500.
+- Rate limits per IP: about 60 uploads, link fetches or MCP calls per minute, and 600
+  /api/map-colors requests per minute. Cached GET responses don't count.
 """
 
 
