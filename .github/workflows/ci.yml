@@ -36,8 +36,6 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest -q
-        env:
-          SENTRY_DSN: ""
 
   javascript:
     name: JavaScript (code formats compile, API snippets)
@@ -145,7 +143,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Start the server
         run: |
-          SENTRY_DSN= RATE_LIMIT_WORK=0 RATE_LIMIT_MAP=0 python -m uvicorn main:app --port 8000 &
+          RATE_LIMIT_WORK=0 RATE_LIMIT_MAP=0 python -m uvicorn main:app --port 8000 &
           for i in $(seq 50); do curl -sf http://127.0.0.1:8000/api/modes >/dev/null && break; sleep 0.2; done
       - name: Run browser tests
         working-directory: tests/e2e

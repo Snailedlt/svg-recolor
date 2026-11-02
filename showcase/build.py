@@ -47,12 +47,12 @@ def replace(src: str, old: str, new: str) -> str:
 
 
 def build() -> str:
-    example = read("static/examples/python.svg")
+    example = read("static/examples/rainbow-snail.svg")
     js = read("static/app.js")
 
     # Server calls -> in-browser color math; demo defaults; no URL updates.
     js = replace(js, "const SITE = location.origin.startsWith('http') ? location.origin : 'https://svg-recolor.jorgenkh.no';",
-                 f"const SITE = '{SITE}';\n    const EXAMPLE_SVG = {json.dumps(example)};\n" + (HERE / "demo-color-math.js").read_text(encoding="utf-8"))
+                 f"const SITE = '{SITE}';\n    const EXAMPLE_SVG = {json.dumps(example)};\n    CFG.sample = EXAMPLE_SVG; // no server here: the thumbnail snail is inline\n" + (HERE / "demo-color-math.js").read_text(encoding="utf-8"))
     js = replace(js, "    async function fetchAllModes(colors) {", """    // Showcase: the color math runs in the browser instead of on the server.
     async function fetchAllModes(colors) {
         const shared = sharedParams();
@@ -70,13 +70,10 @@ def build() -> str:
                  "            throw new Error('This demo can\\'t download from other sites. On " + SITE.split('//')[1]
                  + " the server fetches links for you; here, upload a file or try the example.');\n"
                  "            const res = await fetch('/api/fetch?url=' + encodeURIComponent(url));")
-    js = replace(js, """            const res = await fetch('/static/examples/python.svg');
-            if (!res.ok) throw new Error();
-            const text = await res.text();""", "            const text = EXAMPLE_SVG;")
     js = replace(js, "try { history.replaceState(null, '', location.pathname + '?' + shareParams().toString() + location.hash); } catch (e) { /* ignore */ }",
                  "/* showcase: the page address is not updated */")
     js = replace(js, "    if (start.get('url')) {", """    setColor('#7C5CFF', false);
-    loadText(EXAMPLE_SVG, 'python.svg', new Blob([EXAMPLE_SVG]).size, null);
+    loadText(EXAMPLE_SVG, 'rainbow-snail.svg', new Blob([EXAMPLE_SVG]).size, null);
     if (start.get('url')) {""")
 
     html = read("main.html")

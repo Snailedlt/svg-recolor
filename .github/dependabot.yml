@@ -1,0 +1,36 @@
+# Weekly dependency updates, one grouped pull request per ecosystem. CI tests each
+# one; merge when it's green. Security fixes are also opened right away.
+version: 2
+updates:
+  - package-ecosystem: pip          # Pipfile / Pipfile.lock (what Vercel installs)
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    groups:
+      python: { patterns: ["*"] }
+    commit-message: { prefix: "chore(deps)" }
+
+  - package-ecosystem: npm          # test tooling only
+    directories: [/tests/js, /tests/e2e]
+    schedule: { interval: weekly, day: monday }
+    groups:
+      test-tools: { patterns: ["*"] }
+    commit-message: { prefix: "chore(deps)" }
+
+  - package-ecosystem: composer     # Blade rendering test
+    directory: /tests/php
+    schedule: { interval: monthly }
+    groups:
+      php: { patterns: ["*"] }
+    commit-message: { prefix: "chore(deps)" }
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    groups:
+      actions: { patterns: ["*"] }
+    commit-message: { prefix: "chore(ci)" }
+
+  - package-ecosystem: gitsubmodule  # svgray, svgshift
+    directory: /
+    schedule: { interval: monthly }
+    commit-message: { prefix: "chore(deps)" }

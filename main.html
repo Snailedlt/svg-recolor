@@ -2,36 +2,75 @@
 <html lang="en">
     <head>
         <meta charset="utf-8">
-        <title>SVG Recolor — Recolor any SVG in seconds</title>
-        <meta property="og:site_name" content="SVG Recolor">
-        <meta name="description" content="Recolor SVG icons, logos and illustrations in your browser, over a free API, or from AI agents via MCP. Six recolor modes, shading preserved.">
-        <meta name="keywords" content="svg, recolor, colorize, icons, images, graphics, tint, rgb, hex, color edit, api, mcp, svg editing">
-        <meta name="author" content="Snailedlt">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+        <title>SVG Recolor: change the colors of any SVG, free online</title>
+        <meta name="description" content="Recolor SVG icons, logos and illustrations in seconds. Six modes that keep the shading, code for 24 frameworks, and a free API and MCP server. No sign-up.">
+        <meta name="author" content="Snailedlt">
+        <meta name="robots" content="index, follow, max-image-preview:large">
+        <link rel="canonical" href="https://svg-recolor.jorgenkh.no/">
         <meta name="color-scheme" content="dark light">
-        <meta name="theme-color" content="#0f1117">
+        <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)">
+        <meta name="theme-color" content="#f5f6fa" media="(prefers-color-scheme: light)">
 
-        <!-- Favicon -->
-        <link rel="icon" type="image/png" href="/static/favicon/favicon-96x96.png?v=__HASH__" sizes="96x96" />
-        <link rel="icon" type="image/svg+xml" href="/static/favicon/favicon.svg?v=__HASH__" />
-        <link rel="apple-touch-icon" sizes="180x180" href="/static/favicon/apple-touch-icon.png?v=__HASH__" />
-        <meta name="apple-mobile-web-app-title" content="SVG Recolor" />
-        <link rel="manifest" href="/static/favicon/site.webmanifest?v=__HASH__" />
+        <!-- Icons -->
+        <link rel="icon" type="image/svg+xml" href="/static/favicon/favicon.svg?v=__HASH__">
+        <link rel="icon" type="image/png" sizes="96x96" href="/static/favicon/favicon-96x96.png?v=__HASH__">
+        <link rel="apple-touch-icon" sizes="180x180" href="/static/favicon/apple-touch-icon.png?v=__HASH__">
+        <meta name="apple-mobile-web-app-title" content="SVG Recolor">
+        <link rel="manifest" href="/static/favicon/site.webmanifest?v=__HASH__">
 
-        <!-- Facebook Meta Tags -->
-        <meta property="og:url" content="https://svg-recolor.jorgenkh.no/">
+        <!-- Link previews (Open Graph: Slack, Discord, LinkedIn, Facebook, iMessage; X reads these too) -->
         <meta property="og:type" content="website">
-        <meta property="og:title" content="SVG Recolor">
-        <meta property="og:description" content="Recolor SVG icons, logos and illustrations in your browser, over a free API, or from AI agents via MCP.">
-        <meta property="og:image" content="https://svg-recolor.jorgenkh.no/static/thumbnail.jpg">
-
-        <!-- Twitter Meta Tags -->
+        <meta property="og:site_name" content="SVG Recolor">
+        <meta property="og:locale" content="en_US">
+        <meta property="og:url" content="https://svg-recolor.jorgenkh.no/">
+        <meta property="og:title" content="SVG Recolor: recolor any SVG in seconds">
+        <meta property="og:description" content="Six recolor modes that keep the shading, code for 24 frameworks, and a free API and MCP server. No sign-up.">
+        <meta property="og:image" content="https://svg-recolor.jorgenkh.no/static/og-image.png">
+        <meta property="og:image:type" content="image/png">
+        <meta property="og:image:width" content="1200">
+        <meta property="og:image:height" content="630">
+        <meta property="og:image:alt" content="A rainbow stained-glass snail and the same snail recolored purple, next to the SVG Recolor logo">
         <meta name="twitter:card" content="summary_large_image">
-        <meta property="twitter:domain" content="svg-recolor.jorgenkh.no">
-        <meta property="twitter:url" content="https://svg-recolor.jorgenkh.no/">
-        <meta name="twitter:title" content="SVG Recolor">
-        <meta name="twitter:description" content="Recolor SVG icons, logos and illustrations in your browser, over a free API, or from AI agents via MCP.">
-        <meta name="twitter:image" content="https://svg-recolor.jorgenkh.no/static/thumbnail.jpg">
+        <meta name="twitter:title" content="SVG Recolor: recolor any SVG in seconds">
+        <meta name="twitter:description" content="Six recolor modes that keep the shading, code for 24 frameworks, and a free API and MCP server. No sign-up.">
+        <meta name="twitter:image" content="https://svg-recolor.jorgenkh.no/static/og-image.png">
+        <meta name="twitter:image:alt" content="A rainbow stained-glass snail and the same snail recolored purple, next to the SVG Recolor logo">
+
+        <!-- For search engines: what this page is -->
+        <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "SVG Recolor",
+  "url": "https://svg-recolor.jorgenkh.no/",
+  "description": "Recolor SVG icons, logos and illustrations in seconds. Six modes that keep the shading, code for 24 frameworks, and a free API and MCP server. No sign-up.",
+  "image": "https://svg-recolor.jorgenkh.no/static/og-image.png",
+  "applicationCategory": "DesignApplication",
+  "operatingSystem": "Any (runs in the browser)",
+  "browserRequirements": "Requires JavaScript",
+  "isAccessibleForFree": true,
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "featureList": [
+    "Six recolor modes: tint, colorize, hue, solid, grayscale and original with adjustments",
+    "Hue, saturation and lightness fine-tuning",
+    "Code for 24 formats and frameworks, including React, Vue, Svelte, Flutter and Tailwind",
+    "Free HTTP API and MCP server for AI agents"
+  ],
+  "author": {
+    "@type": "Person",
+    "name": "Snailedlt",
+    "url": "https://github.com/Snailedlt"
+  },
+  "sameAs": [
+    "https://github.com/Snailedlt/svg-recolor"
+  ]
+}
+        </script>
 
         <!-- For AI agents: plain-text guide to the API -->
         <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
@@ -333,6 +372,37 @@
                     </section>
                 </div>
             </div>
+
+            <section class="more" id="how">
+                <div class="wrap">
+                    <h2>How to change the colors of an SVG</h2>
+                    <p class="lead">Recolor icons, logos and illustrations without opening a design tool. Everything happens on this page.</p>
+                    <ol class="how-steps">
+                        <li><b>Add your SVG.</b> Drop a file, paste the code with Ctrl+V, or load it from a link (GitHub file pages work too).</li>
+                        <li><b>Pick a style.</b> Tint, Colorize, Hue or Solid recolor with one color; Grayscale removes it; Original keeps the colors for fine-tuning.</li>
+                        <li><b>Choose a color and fine-tune.</b> Adjust hue, saturation and lightness, and compare before and after side by side.</li>
+                        <li><b>Download or copy.</b> Get the SVG file, or code for React, Vue, Svelte, Flutter, Tailwind and 19 more formats.</li>
+                    </ol>
+                    <div class="faq">
+                        <details>
+                            <summary>Does it keep gradients and shading?</summary>
+                            <p>Yes. Colorize and Hue keep each color's lightness, so highlights, shadows and gradients survive; gradient stops are recolored one by one. Solid turns everything into exactly one color, which suits single-color icons.</p>
+                        </details>
+                        <details>
+                            <summary>Is my SVG uploaded or stored?</summary>
+                            <p>The editor works on the SVG in your browser and sends only its list of colors to the server to compute the new ones. Nothing is stored. When you load a link, the server downloads that SVG for you.</p>
+                        </details>
+                        <details>
+                            <summary>Which colors does it find?</summary>
+                            <p>Hex colors, <code>rgb()</code> and <code>hsl()</code> (with transparency), CSS color names and <code>currentColor</code>, in attributes and in <code>style</code>. Elements without a color, which browsers draw black, are recolored too.</p>
+                        </details>
+                        <details>
+                            <summary>Is it free? Can I use it in my app or README?</summary>
+                            <p>Yes. It is free and open source (MIT), with no account or API key. The <b>API</b> tab has ready-to-run code for 21 languages and a Markdown snippet that embeds a recolored icon in a README.</p>
+                        </details>
+                    </div>
+                </div>
+            </section>
 
             <section class="more" id="agents">
                 <div class="wrap">

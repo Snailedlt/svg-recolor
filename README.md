@@ -6,6 +6,7 @@
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-donate-yellow?logo=buymeacoffee)](https://buymeacoffee.com/snailedlt)
 
 [![CI](https://github.com/Snailedlt/svg-recolor/actions/workflows/ci.yml/badge.svg)](https://github.com/Snailedlt/svg-recolor/actions/workflows/ci.yml)
+[![Uptime](https://github.com/Snailedlt/svg-recolor/actions/workflows/uptime.yml/badge.svg)](https://github.com/Snailedlt/svg-recolor/actions/workflows/uptime.yml)
 
 SVG Recolor is a website, HTTP API, MCP server and CLI to recolor SVG files. It is written in Python.
 
@@ -136,8 +137,8 @@ How:
   are cached for a year; the page itself for 5 minutes in the browser and a day at the CDN (Vercel purges on deploy).
 - **No wasted invocations.** `/favicon.ico`, `/apple-touch-icon.png` and `/robots.txt` are answered and cached instead of
   404ing through the function, and `robots.txt` keeps crawlers off the API.
-- Results are cached per color and setting inside each warm instance, Sentry only reports errors by default, and the
-  per-IP rate limiter caps abuse (see Configuration).
+- Results are cached per color and setting inside each warm instance, and the per-IP rate limiter caps abuse
+  (see Configuration).
 - Bump `ENGINE_VERSION` in `recolor.py` whenever the color math changes, so cached mappings are not reused.
 
 ### Website tips
@@ -170,24 +171,29 @@ How:
 Clone the repository (with submodules) and run `colorize_svg.py` with Python.
 
 ```sh
-python colorize_svg.py path/to/input.svg path/to/output.svg --color "255,0,0"
-python colorize_svg.py input.svg output.svg --color seagreen --mode colorize
-python colorize_svg.py input.svg output.svg --mode adjust --hue 45 --lightness -10
-python colorize_svg.py input.svg --palette
+python colorize_svg.py example-input-svgs/rainbow-snail.svg out.svg --color a855f7 --mode colorize
+python colorize_svg.py example-input-svgs/rainbow-snail.svg out.svg --color seagreen --mode solid
+python colorize_svg.py example-input-svgs/rainbow-snail.svg out.svg --mode grayscale
+python colorize_svg.py example-input-svgs/rainbow-snail.svg out.svg --mode adjust --hue 120
+python colorize_svg.py example-input-svgs/rainbow-snail.svg --palette
 ```
+
+| Original | Colorize `a855f7` | Solid `seagreen` | Grayscale | Adjust, hue +120° |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src="example-input-svgs/rainbow-snail.svg" width="120" alt="Rainbow snail"> | <img src="example-input-svgs/rainbow-snail-colorize.svg" width="120" alt="Colorized purple"> | <img src="example-input-svgs/rainbow-snail-solid.svg" width="120" alt="Solid sea green"> | <img src="example-input-svgs/rainbow-snail-grayscale.svg" width="120" alt="Grayscale"> | <img src="example-input-svgs/rainbow-snail-hue.svg" width="120" alt="Hue rotated"> |
 
 ### Legacy Shell Script
 
-Download `colorize_svg.sh` and run it in your terminal.
+Run `colorize_svg_old.bash` in your terminal (it needs the `argparse-bash` submodule).
 
 Example Usage:
 
 ```bash
 # Recolor the input SVG file to red and save it to the output file using RGB color values
-./colorize_svg.sh "example-input-svgs/input.svg" tmp/output.svg --color "255,0,0"
+./colorize_svg_old.bash example-input-svgs/rainbow-snail.svg tmp/output.svg --color "255,0,0"
 
 # Recolor the input SVG file to red and save it to the output file using hex color values
-./colorize_svg.sh "example-input-svgs/input.svg" tmp/output.svg --color "#FF0000"
+./colorize_svg_old.bash example-input-svgs/rainbow-snail.svg tmp/output.svg --color "#FF0000"
 ```
 
 ## Contributing
@@ -252,7 +258,10 @@ pipenv run colorize path/to/input.svg path/to/output.svg --color "255,0,0"
 | `recolor.py` | The engine: color normalization, palette, modes, svgray/svgshift wrappers, per-color cache |
 | `main.py` | FastAPI app: website, recolor/palette/map-colors endpoints, cache headers |
 | `server/` | `common.py` (shared helpers, cache policy), `fetching.py` (safe link downloads), `agents.py` (`/llms.txt`, `/mcp`) |
-| `main.html`, `static/` | The editor: `engine.js` (browser twin of the engine), `formats.js` (code formats), `snippets.js` (API examples), `icons.js`, `app.js`, `app.css` |
+| `main.html`, `static/` | The editor: `engine.js` (browser twin of the engine), `formats.js` (code formats), `snippets.js` (API examples), `highlight.js` (syntax highlighting), `icons.js`, `app.js`, `app.css` |
+| `static/examples/rainbow-snail.svg` | The style previews, "Try an example" and the link preview. Traced from the original art (`logo/old-social-preview.jpg`) by `scripts/trace-snail.py` with the svg-icons agent skill's `vectorize.js` (one path per color, 51 KB) |
+| `scripts/make-og-image.mjs` | Renders the link preview (`static/og-image.png`) with the real engine |
+| `example-input-svgs/` | The rainbow snail and CLI outputs from it (see CLI Tool) |
 | `colorize_svg.py` | CLI |
 | `tests/` | pytest suite; `tests/js` (browser scripts), `tests/php` (Blade), `tests/live` (snippets run in their languages), `tests/e2e` (browser) |
 | `showcase/` | Builds a standalone demo page of the editor |
@@ -292,12 +301,19 @@ CI runs all of these on every push and pull request (`.github/workflows/ci.yml`)
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `SENTRY_DSN` | the project DSN | Set to an empty string to disable Sentry |
-| `SENTRY_TRACES_SAMPLE_RATE` | `0` | Share of requests traced (0 = errors only, the cheapest) |
-| `SENTRY_PROFILING` | off | `1` enables continuous profiling |
 | `SVG_RECOLOR_DEV` | off | `1` re-reads `main.html` on every request (handy while editing) |
 | `RATE_LIMIT_WORK` | `60` | Requests per minute per IP for uploads, link fetches and MCP (`0` disables) |
 | `RATE_LIMIT_MAP` | `600` | Requests per minute per IP for `/api/map-colors` (`0` disables) |
+
+### Monitoring and updates
+
+- **Uptime:** `.github/workflows/uptime.yml` checks the page and `/api/health` every hour. When the site is down it opens
+  one issue (GitHub notifies you), and closes it with a comment when the site is back. Run it by hand from the Actions
+  tab; set the repository variable `SITE_URL` to check another address. GitHub pauses scheduled workflows after 60
+  days without repository activity; re-enable it from the Actions tab if that happens.
+- **Errors:** the app logs them to stderr, which Vercel shows in the project's **Logs** tab.
+- **Dependencies:** `.github/dependabot.yml` opens one grouped update pull request per ecosystem (weekly for Python
+  and npm, monthly for Composer, Actions and submodules). CI tests each one; merge when green.
 
 ### Deploying (Vercel)
 
