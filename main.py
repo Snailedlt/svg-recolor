@@ -43,6 +43,7 @@ from server.common import (
     safe_stem,
 )
 from server.fetching import fetch_svg
+from server.head import HeadAsGetMiddleware
 from server.ratelimit import rate_limit_middleware
 
 # Errors are logged to stderr, which Vercel shows in the project's Logs tab. The
@@ -112,6 +113,10 @@ async def cache_headers(request: Request, call_next):
         elif path in ("/llms.txt", "/api", "/api/modes", "/openapi.json", "/docs", "/redoc"):
             response.headers["Cache-Control"] = CACHE_DOCS
     return response
+
+
+# Outermost, so every layer below (rate limits, compression, cache headers) sees a GET.
+app.add_middleware(HeadAsGetMiddleware)
 
 
 

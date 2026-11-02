@@ -318,3 +318,22 @@ def test_health_reports_broken_tools(client, monkeypatch):
     res = client.get("/api/health")
     assert res.status_code == 503
     assert res.json()["svgshift"]["error"] == "RuntimeError: svgshift exited with 127"
+
+
+@pytest.mark.parametrize("path", ["/", "/robots.txt", "/sitemap.xml", "/llms.txt", "/api/modes", "/api/health", "/favicon.ico", "/static/app.css"])
+def test_head_answers_like_get_without_a_body(client, path):
+    get, head = client.get(path), client.head(path)
+    assert get.status_code == 200 and head.status_code == 200, (path, head.status_code)
+    assert head.content == b""
+    assert head.headers["content-type"] == get.headers["content-type"]
+    assert head.headers.get("cache-control") == get.headers.get("cache-control")
+
+
+def test_head_on_a_missing_page_is_still_404(client):
+    assert client.head("/nope").status_code == 404
+    assert client.head("/nope").content == b""
+
+
+def test_post_only_routes_still_reject_head(client):
+    # /api/recolor/batch only takes POST: HEAD runs as GET there, which isn't allowed either.
+    assert client.head("/api/recolor/batch").status_code == 405
