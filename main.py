@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import io
 import json
@@ -12,6 +13,7 @@ import sentry_sdk
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.staticfiles import StaticFiles
 
 import recolor as engine
@@ -35,6 +37,7 @@ from server.common import (
     safe_stem,
 )
 from server.fetching import fetch_svg
+from server.ratelimit import rate_limit_middleware
 
 # Error and performance monitoring. Configured by environment variables so tests
 # and local runs stay quiet, and production samples traces instead of recording all.
@@ -97,6 +100,11 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static", html=True), name
 
 
 
+app.middleware("http")(rate_limit_middleware)
+# Compress text responses (HTML, JS, CSS, SVG, JSON). The CDN serves the compressed copy.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+
 @app.middleware("http")
 async def cache_headers(request: Request, call_next):
     response = await call_next(request)
@@ -138,7 +146,37 @@ DownloadParam = Annotated[bool, Query(description="Send as an attachment instead
 
 @app.get("/", include_in_schema=False)
 async def landing_page():
-    return HTMLResponse(content=_landing_html(), headers={"Cache-Control": CACHE_PAGE})
+    html = _landing_html()
+    return HTMLResponse(content=html, headers={"Cache-Control": CACHE_PAGE, **_page_security_headers(html)})
+
+
+def _page_security_headers(html: str) -> dict:
+    """Strict CSP for the editor: only our own scripts plus the inline ones in
+    main.html, allowed by hash. SVG previews are blob: images, so any script
+    inside an uploaded SVG can't run."""
+    inline_hashes = " ".join(
+        "'sha256-" + base64.b64encode(hashlib.sha256(body.encode()).digest()).decode() + "'"
+        for body in re.findall(r"<script>([\s\S]*?)</script>", html)
+    )
+    csp = "; ".join([
+        "default-src 'self'",
+        f"script-src 'self' {inline_hashes}",
+        "style-src 'self' 'unsafe-inline'",
+        "font-src 'self'",
+        "img-src 'self' data: blob:",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    ])
+    return {
+        "Content-Security-Policy": csp,
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "X-Frame-Options": "DENY",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+    }
 
 
 _landing_cache: str | None = None

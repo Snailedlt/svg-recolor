@@ -75,14 +75,17 @@ def build() -> str:
     head_end = html.index("</head>")
     body = html[html.index("<body>") + 6 : html.index("</body>")]
     theme_script = html[html.index("        <script>\n            // Apply the saved") : head_end]
-    fonts = re.search(r'<link rel="preconnect" href="https://fonts.googleapis.com">[\s\S]*?display=swap" rel="stylesheet">', html).group(0)
+    # The showcase is a single file, so it loads the fonts from Google Fonts instead of /static/fonts.
+    fonts = ('<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
+             '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">')
+    css = re.sub(r"@font-face \{[^}]*\}\s*", "", read("static/app.css"))
     head = (
         '<title>SVG Recolor Redesign</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n'
-        + fonts + "\n<style>\n" + read("static/app.css") + (HERE / "showcase.css").read_text(encoding="utf-8") + "</style>\n" + theme_script
+        + fonts + "\n<style>\n" + css + (HERE / "showcase.css").read_text(encoding="utf-8") + "</style>\n" + theme_script
     )
 
-    body = body.replace("/static/favicon/favicon.svg", data_uri(ROOT / "static/favicon/favicon-96x96.png", 64, fmt="PNG"))
-    body = body.replace("/static/avatar.png", data_uri(ROOT / "static/avatar.png", 64, fmt="PNG"))
+    body = replace(body, "/static/logo-56.webp", data_uri(ROOT / "static/logo-56.webp", 56, fmt="PNG"))
+    body = replace(body, "/static/avatar-48.webp", data_uri(ROOT / "static/avatar-48.webp", 48, fmt="PNG"))
     for path in ("/docs", "/redoc", "/llms.txt", "/openapi.json", "/api"):
         body = body.replace(f'href="{path}"', f'href="{SITE}{path}"')
     body = replace(body, '<h1 class="brand"><a href="/">', f'<h1 class="brand"><a href="{SITE}" target="_blank" rel="noopener">')

@@ -156,3 +156,86 @@ def test_every_fixture_recolors(client):
     for name in ("python.svg", "github.svg", "firefox.svg", "edge-cases.svg"):
         res = client.post("/api/recolor?mode=colorize&color=teal", content=fixture_svg(name), headers=SVG_CT)
         assert res.status_code == 200, name
+
+
+def test_connection_to_private_address_is_refused_even_if_dns_check_passes(monkeypatch):
+    """DNS rebinding: the name passes the pre-check but the connection lands on a
+    private address. The peer check on the open connection must still refuse it."""
+    import asyncio
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from fastapi import HTTPException
+
+    from server import fetching
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = b'<svg xmlns="http://www.w3.org/2000/svg"/>'
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setattr(fetching, "check_public_host", lambda host, port: None)  # "rebinding" passes the pre-check
+    for var in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.delenv(var, raising=False)
+    try:
+        with pytest.raises(HTTPException) as err:
+            asyncio.run(fetching.fetch_svg(f"http://127.0.0.1:{server.server_port}/x.svg"))
+        assert err.value.status_code == 400 and "private" in err.value.detail
+    finally:
+        server.shutdown()
+
+
+def test_public_fetch_path_still_works(monkeypatch):
+    """With the peer check stubbed to 'public', a local server is fetched normally,
+    proving the check is what refuses the request above."""
+    import asyncio
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from server import fetching
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = b'<svg xmlns="http://www.w3.org/2000/svg"><rect fill="red"/></svg>'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    monkeypatch.setattr(fetching, "check_public_host", lambda host, port: None)
+    monkeypatch.setattr(fetching, "is_public_ip", lambda value: True)
+    for var in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.delenv(var, raising=False)
+    try:
+        svg, name = asyncio.run(fetching.fetch_svg(f"http://127.0.0.1:{server.server_port}/icons/x.svg"))
+        assert name == "x.svg" and "<rect" in svg
+    finally:
+        server.shutdown()
+
+
+def test_page_has_strict_security_headers(client):
+    import base64
+    import hashlib
+    import re
+
+    res = client.get("/")
+    csp = res.headers["content-security-policy"]
+    assert "script-src 'self' 'sha256-" in csp and "unsafe-inline" not in csp.split("script-src")[1].split(";")[0]
+    assert "frame-ancestors 'none'" in csp and res.headers["x-frame-options"] == "DENY"
+    for body in re.findall(r"<script>([\s\S]*?)</script>", res.text):  # every inline script is allowed by hash
+        digest = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
+        assert f"'sha256-{digest}'" in csp

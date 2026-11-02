@@ -573,8 +573,8 @@
         function sync(scroll) {
             list.querySelectorAll('.lang-item').forEach((b) => {
                 const on = b.dataset.id === current;
-                b.setAttribute('aria-selected', String(on));
-                b.tabIndex = on ? 0 : -1;
+                b.setAttribute('aria-pressed', String(on));
+                b.tabIndex = on ? 0 : -1; // one tab stop; arrow keys move within the list
                 if (on && scroll) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
             });
         }
@@ -597,14 +597,19 @@
                 const items = o.items.list.filter((it) => it.group === g
                     && (!q || (it.label + ' ' + it.id + ' ' + it.group + ' ' + (it.file || '') + ' ' + (it.keywords || '')).toLowerCase().includes(q)));
                 if (!items.length) return;
+                const group = document.createElement('div');
+                group.className = 'lang-group';
+                group.setAttribute('role', 'group');
                 const h = document.createElement('h3');
+                h.id = o.prefix + '-group-' + g.toLowerCase().replace(/[^a-z]+/g, '-');
                 h.textContent = g;
-                list.appendChild(h);
+                group.setAttribute('aria-labelledby', h.id);
+                group.appendChild(h);
+                list.appendChild(group);
                 items.forEach((it) => {
                     const b = document.createElement('button');
                     b.type = 'button';
                     b.className = 'lang-item' + (it.prompt ? ' is-prompt' : '');
-                    b.setAttribute('role', 'option');
                     b.dataset.id = it.id;
                     b.title = it.file || it.label;
                     b.innerHTML = o.items.icon(it, 16);
@@ -612,7 +617,7 @@
                     label.textContent = it.label;
                     b.appendChild(label);
                     b.addEventListener('click', () => set(it.id));
-                    list.appendChild(b);
+                    group.appendChild(b);
                     shown++;
                     if (q) { const sc = score(it, q); if (sc < bestScore) { bestScore = sc; best = it.id; } }
                 });

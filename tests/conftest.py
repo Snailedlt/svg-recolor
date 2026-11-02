@@ -30,3 +30,11 @@ def client():
 @pytest.fixture
 def python_svg() -> str:
     return fixture_svg("python.svg")
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    from server.ratelimit import limiter
+
+    limiter.reset()
+    yield

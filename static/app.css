@@ -2,6 +2,22 @@
    Layout: a full-height two-panel editor (controls | workspace) above the fold,
    reference sections (agents, API) below it. */
 
+/* Self-hosted fonts (see static/fonts/README.md). Latin subset; other scripts fall back to system fonts. */
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url(/static/fonts/Inter-400-800-latin.woff2) format('woff2');
+}
+@font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 400 500;
+    font-display: swap;
+    src: url(/static/fonts/JetBrainsMono-400-500-latin.woff2) format('woff2');
+}
+
 :root {
     --bg: #0f1117;
     --bg-glow-1: rgba(255, 0, 102, 0.14);
@@ -11,8 +27,8 @@
     --border: #2a2f3e;
     --border-strong: #3a4154;
     --text: #e8eaf0;
-    --text-muted: #9aa1b2;
-    --text-faint: #6b7286;
+    --text-muted: #b2b8c6;
+    --text-faint: #9097ab; /* >= 4.5:1 on every dark surface */
     --accent-2: #7c5cff;
     --success: #3ecf8e;
     --warning: #f5a524;
@@ -40,8 +56,8 @@
     --border: #e3e6ee;
     --border-strong: #cfd4e0;
     --text: #141824;
-    --text-muted: #5a6275;
-    --text-faint: #8a91a3;
+    --text-muted: #474e60;
+    --text-faint: #646b7c; /* >= 4.5:1 on every light surface */
     --danger-bg: rgba(255, 92, 122, 0.08);
     --checker-a: #eceef4;
     --checker-b: #ffffff;
@@ -220,9 +236,9 @@ body.dragging::after {
 .style kbd { position: absolute; top: 3px; right: 3px; font-size: 0.6rem; padding: 0 4px; opacity: .8; }
 .mode-desc { color: var(--text-muted); font-size: 0.8rem; margin: 0; }
 
-.sliders { display: flex; flex-direction: column; gap: 4px; }
+.sliders { display: flex; flex-direction: column; gap: 6px; }
 .slider-row { display: grid; grid-template-columns: 74px 1fr 44px; gap: 8px; align-items: center; font-size: 0.8rem; color: var(--text-muted); cursor: pointer; }
-.slider-row input[type="range"] { width: 100%; accent-color: var(--pick); margin: 0; }
+.slider-row input[type="range"] { width: 100%; height: 24px; accent-color: var(--pick); margin: 0; } /* 24px touch target */
 .slider-row output { font-family: var(--mono); font-size: 0.75rem; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Color */
@@ -396,16 +412,17 @@ pre.code .c { color: #6b7286; }
 .lang-nav { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); padding: 10px 6px 10px 10px; gap: 8px; }
 .lang-search { flex: none; padding: 7px 10px; font-size: 0.82rem; }
 .lang-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: 1px; padding-right: 4px; }
+.lang-group { display: flex; flex-direction: column; gap: 1px; }
 .lang-list h3 { margin: 10px 0 3px 8px; font-size: 0.66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
-.lang-list h3:first-child { margin-top: 2px; }
+.lang-group:first-child h3 { margin-top: 2px; }
 .lang-item {
     display: flex; align-items: center; gap: 9px; padding: 6px 8px; border: 0; border-radius: 7px; background: none; cursor: pointer;
     text-align: left; font-size: 0.84rem; color: var(--text-muted); min-width: 0; flex: none;
 }
 .lang-item span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lang-item:hover, .lang-item:focus-visible { background: var(--surface-2); color: var(--text); outline: none; }
-.lang-item[aria-selected="true"] { background: color-mix(in srgb, var(--pick) 12%, var(--surface-2)); color: var(--text); font-weight: 600; }
-.lang-item:hover .fi, .lang-item[aria-selected="true"] .fi { color: var(--brand, var(--text)); }
+.lang-item[aria-pressed="true"] { background: color-mix(in srgb, var(--pick) 12%, var(--surface-2)); color: var(--text); font-weight: 600; }
+.lang-item:hover .fi, .lang-item[aria-pressed="true"] .fi { color: var(--brand, var(--text)); }
 .lang-item.is-prompt { margin-top: 4px; border: 1px dashed var(--border-strong); }
 .lang-item.is-prompt .fi { color: var(--pick); }
 .lang-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 4px 6px; font-size: 0.82rem; color: var(--text-faint); }
@@ -415,6 +432,7 @@ pre.code .c { color: #6b7286; }
     .lang-nav { border-right: 0; border-bottom: 1px solid var(--border); padding: 10px; }
     .lang-list { flex-direction: row; overflow-x: auto; overflow-y: hidden; gap: 4px; padding: 0 0 4px; }
     .lang-list h3 { display: none; }
+    .lang-group { display: contents; }
     .lang-item { border: 1px solid var(--border); }
     .lang-item.is-prompt { margin-top: 0; }
 }

@@ -12,13 +12,17 @@ jobs:
   python:
     name: Python (engine, API, MCP, browser parity)
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 3.10 is what Pipfile asks for; 3.12 is Vercel's default Python runtime.
+        python-version: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: true
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22

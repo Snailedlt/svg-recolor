@@ -259,6 +259,8 @@ CI runs both on every push and pull request (`.github/workflows/ci.yml`), using 
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.05` | Share of requests traced |
 | `SENTRY_PROFILING` | off | `1` enables continuous profiling |
 | `SVG_RECOLOR_DEV` | off | `1` re-reads `main.html` on every request (handy while editing) |
+| `RATE_LIMIT_WORK` | `60` | Requests per minute per IP for uploads, link fetches and MCP (`0` disables) |
+| `RATE_LIMIT_MAP` | `600` | Requests per minute per IP for `/api/map-colors` (`0` disables) |
 
 ### Deploying (Vercel)
 
@@ -268,7 +270,8 @@ CI runs both on every push and pull request (`.github/workflows/ci.yml`), using 
 - Submodules must be checked out: `submodules/svgray/.svgray.py` is imported at runtime.
 - `svgshift-linux.exe` is committed as executable. If a platform drops the bit, the engine copies it to a
   temp folder and marks it executable, or compiles it from `submodules/svgshift` when gcc is available.
-- Rate limiting is best done at the edge (for example a Vercel Firewall rate-limit rule on `/api/*` and `/mcp`).
+- The app rate-limits per IP in memory (see Configuration). On serverless that is per instance, so also add an edge rule
+  (for example a Vercel Firewall rate limit on `/api/*` and `/mcp`).
 
 ### Showcase page
 
@@ -278,3 +281,4 @@ CI runs both on every push and pull request (`.github/workflows/ci.yml`), using 
 ## Credits
 
 Framework and language icons are from [Simple Icons](https://simpleicons.org) (CC0).
+Fonts: [Inter](https://github.com/rsms/inter) and [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) (SIL OFL 1.1), self-hosted in `static/fonts`.
