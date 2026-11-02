@@ -561,6 +561,20 @@ pre.code ::selection { background: #2c3e66; }
 .more h2 { font-size: 1.4rem; letter-spacing: -0.02em; margin: 0 0 6px; }
 .more .lead { color: var(--text-muted); margin: 0 0 22px; max-width: 640px; }
 .more + .more { padding-top: 0; }
+.how-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 0 0 22px; padding: 0; list-style: none; counter-reset: how; }
+.how-steps li { position: relative; padding: 16px 16px 16px 52px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); font-size: 0.88rem; counter-increment: how; }
+.how-steps li::before {
+    content: counter(how); position: absolute; left: 16px; top: 15px; width: 24px; height: 24px; border-radius: 50%;
+    display: grid; place-items: center; background: color-mix(in srgb, var(--pick) 18%, transparent); color: var(--pick); font-weight: 700; font-size: 0.8rem;
+}
+.how-steps b { display: block; color: var(--text); margin-bottom: 2px; }
+.faq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+.faq details { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); padding: 12px 16px; }
+.faq summary { cursor: pointer; font-weight: 600; font-size: 0.92rem; }
+.faq summary:focus-visible { outline: 2px solid var(--pick); outline-offset: 3px; border-radius: 4px; }
+.faq p { margin: 8px 0 2px; color: var(--text-muted); font-size: 0.88rem; }
+@media (max-width: 960px) { .how-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .how-steps, .faq { grid-template-columns: 1fr; } }
 .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 @media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }

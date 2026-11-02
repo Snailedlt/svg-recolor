@@ -6,6 +6,7 @@
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-donate-yellow?logo=buymeacoffee)](https://buymeacoffee.com/snailedlt)
 
 [![CI](https://github.com/Snailedlt/svg-recolor/actions/workflows/ci.yml/badge.svg)](https://github.com/Snailedlt/svg-recolor/actions/workflows/ci.yml)
+[![Uptime](https://github.com/Snailedlt/svg-recolor/actions/workflows/uptime.yml/badge.svg)](https://github.com/Snailedlt/svg-recolor/actions/workflows/uptime.yml)
 
 SVG Recolor is a website, HTTP API, MCP server and CLI to recolor SVG files. It is written in Python.
 
@@ -136,8 +137,8 @@ How:
   are cached for a year; the page itself for 5 minutes in the browser and a day at the CDN (Vercel purges on deploy).
 - **No wasted invocations.** `/favicon.ico`, `/apple-touch-icon.png` and `/robots.txt` are answered and cached instead of
   404ing through the function, and `robots.txt` keeps crawlers off the API.
-- Results are cached per color and setting inside each warm instance, Sentry only reports errors by default, and the
-  per-IP rate limiter caps abuse (see Configuration).
+- Results are cached per color and setting inside each warm instance, and the per-IP rate limiter caps abuse
+  (see Configuration).
 - Bump `ENGINE_VERSION` in `recolor.py` whenever the color math changes, so cached mappings are not reused.
 
 ### Website tips
@@ -252,7 +253,8 @@ pipenv run colorize path/to/input.svg path/to/output.svg --color "255,0,0"
 | `recolor.py` | The engine: color normalization, palette, modes, svgray/svgshift wrappers, per-color cache |
 | `main.py` | FastAPI app: website, recolor/palette/map-colors endpoints, cache headers |
 | `server/` | `common.py` (shared helpers, cache policy), `fetching.py` (safe link downloads), `agents.py` (`/llms.txt`, `/mcp`) |
-| `main.html`, `static/` | The editor: `engine.js` (browser twin of the engine), `formats.js` (code formats), `snippets.js` (API examples), `icons.js`, `app.js`, `app.css` |
+| `main.html`, `static/` | The editor: `engine.js` (browser twin of the engine), `formats.js` (code formats), `snippets.js` (API examples), `highlight.js` (syntax highlighting), `icons.js`, `app.js`, `app.css` |
+| `static/logo.svg` | The snail: header logo, favicon, "Try an example" and the style thumbnails. Drawn by `scripts/make-snail.py`; `node scripts/make-icons.mjs` renders the PNG icons, `favicon.ico` and the link preview (`static/og-image.png`) from it |
 | `colorize_svg.py` | CLI |
 | `tests/` | pytest suite; `tests/js` (browser scripts), `tests/php` (Blade), `tests/live` (snippets run in their languages), `tests/e2e` (browser) |
 | `showcase/` | Builds a standalone demo page of the editor |
@@ -292,12 +294,19 @@ CI runs all of these on every push and pull request (`.github/workflows/ci.yml`)
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `SENTRY_DSN` | the project DSN | Set to an empty string to disable Sentry |
-| `SENTRY_TRACES_SAMPLE_RATE` | `0` | Share of requests traced (0 = errors only, the cheapest) |
-| `SENTRY_PROFILING` | off | `1` enables continuous profiling |
 | `SVG_RECOLOR_DEV` | off | `1` re-reads `main.html` on every request (handy while editing) |
 | `RATE_LIMIT_WORK` | `60` | Requests per minute per IP for uploads, link fetches and MCP (`0` disables) |
 | `RATE_LIMIT_MAP` | `600` | Requests per minute per IP for `/api/map-colors` (`0` disables) |
+
+### Monitoring and updates
+
+- **Uptime:** `.github/workflows/uptime.yml` checks the page and `/api/health` every hour. When the site is down it opens
+  one issue (GitHub notifies you), and closes it with a comment when the site is back. Run it by hand from the Actions
+  tab; set the repository variable `SITE_URL` to check another address. GitHub pauses scheduled workflows after 60
+  days without repository activity; re-enable it from the Actions tab if that happens.
+- **Errors:** the app logs them to stderr, which Vercel shows in the project's **Logs** tab.
+- **Dependencies:** `.github/dependabot.yml` opens one grouped update pull request per ecosystem (weekly for Python
+  and npm, monthly for Composer, Actions and submodules). CI tests each one; merge when green.
 
 ### Deploying (Vercel)
 

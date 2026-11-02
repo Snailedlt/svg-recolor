@@ -580,10 +580,10 @@
 
     async function loadExample() {
         try {
-            const res = await fetch('/static/examples/python.svg');
+            const res = await fetch('/static/logo.svg');
             if (!res.ok) throw new Error();
             const text = await res.text();
-            loadText(text, 'python.svg', new Blob([text]).size, null, 'example');
+            loadText(text, 'snail.svg', new Blob([text]).size, null, 'example');
         } catch (e) {
             showError('Could not load the example file.');
         }

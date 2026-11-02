@@ -1,0 +1,73 @@
+"""Search and link-preview metadata: present, consistent, and pointing at real files."""
+
+import json
+import re
+import struct
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SITE = "https://svg-recolor.jorgenkh.no"
+
+
+def meta(html: str, attr: str, name: str) -> str:
+    m = re.search(rf'<meta {attr}="{re.escape(name)}" content="([^"]*)"', html)
+    assert m, f"missing <meta {attr}={name}>"
+    return m.group(1)
+
+
+def test_title_description_and_canonical(client):
+    html = client.get("/").text
+    title = re.search(r"<title>([^<]+)</title>", html).group(1)
+    assert 30 <= len(title) <= 60, title  # what search results show without cutting off
+    assert 70 <= len(meta(html, "name", "description")) <= 160
+    assert f'<link rel="canonical" href="{SITE}/">' in html
+    assert "index, follow" in meta(html, "name", "robots")
+
+
+def test_link_previews_point_at_a_real_1200x630_image(client):
+    html = client.get("/").text
+    image = meta(html, "property", "og:image")
+    assert image == meta(html, "name", "twitter:image")
+    assert image.startswith(SITE + "/static/")
+    png = (ROOT / image.removeprefix(SITE + "/")).read_bytes()
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    width, height = struct.unpack(">II", png[16:24])
+    assert (width, height) == (1200, 630)
+    assert (meta(html, "property", "og:image:width"), meta(html, "property", "og:image:height")) == ("1200", "630")
+    assert meta(html, "property", "og:image:alt") and meta(html, "name", "twitter:card") == "summary_large_image"
+    assert client.get(image.removeprefix(SITE)).status_code == 200
+
+
+def test_structured_data_is_valid_json(client):
+    html = client.get("/").text
+    block = re.search(r'<script type="application/ld\+json">([\s\S]*?)</script>', html).group(1)
+    data = json.loads(block)
+    assert data["@type"] == "WebApplication" and data["url"] == SITE + "/"
+    assert data["offers"]["price"] == "0"
+
+
+def test_every_icon_and_manifest_entry_exists(client):
+    html = client.get("/").text
+    for href in re.findall(r'<link rel="(?:icon|apple-touch-icon|manifest)"[^>]*href="([^"?]+)', html):
+        assert client.get(href).status_code == 200, href
+    manifest = json.loads((ROOT / "static/favicon/site.webmanifest").read_text())
+    for icon in manifest["icons"]:
+        assert client.get(icon["src"]).status_code == 200, icon["src"]
+    assert client.get("/favicon.ico").status_code == 200
+
+
+def test_robots_points_to_the_sitemap(client):
+    robots = client.get("/robots.txt", headers={"host": "svg-recolor.jorgenkh.no", "x-forwarded-proto": "https"}).text
+    assert f"Sitemap: {SITE}/sitemap.xml" in robots
+    assert "Disallow: /api" in robots
+    res = client.get("/sitemap.xml", headers={"host": "svg-recolor.jorgenkh.no", "x-forwarded-proto": "https"})
+    assert res.headers["content-type"].startswith("application/xml")
+    assert f"<loc>{SITE}/</loc>" in res.text
+
+
+def test_the_snail_is_the_logo_example_and_thumbnail(client):
+    html = client.get("/").text
+    logo = (ROOT / "static/logo.svg").read_text()
+    assert "data:image/svg+xml;base64," in html  # header logo inlined
+    config = json.loads(re.search(r"window\.SVG_RECOLOR = (\{.*?\});</script>", html).group(1).replace("<\\/", "</"))
+    assert config["sample"] == logo.strip()
