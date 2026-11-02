@@ -5,6 +5,7 @@ exposes three tools: recolor_svg, list_svg_colors and list_recolor_modes.
 """
 
 import json
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
@@ -162,7 +163,7 @@ async def _mcp_call(name: str, args: dict) -> dict:
     raise KeyError(name)
 
 
-async def _mcp_handle(msg) -> dict | None:
+async def _mcp_handle(msg) -> Optional[dict]:
     if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0" or not isinstance(msg.get("method"), str):
         return {"jsonrpc": "2.0", "id": None, "error": {"code": -32600, "message": "Invalid request"}}
     method, mid, params = msg["method"], msg.get("id"), msg.get("params") or {}

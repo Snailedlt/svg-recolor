@@ -67,6 +67,9 @@ test('editing the current SVG as code keeps its name and applies', async () => {
     assert.ok(code.startsWith('<svg'));
     await page.fill('#code-input', code.replace('#FFD43B', '#00ff00'));
     await page.press('#code-input', 'Control+Enter');
+    await page.locator('#code-status', { hasText: 'Applied · 7 colors' }).waitFor();
+    assert.equal(await page.textContent('#source-cancel'), 'Done');
+    await page.click('#source-cancel');
     await page.locator('#file-size', { hasText: 'from code' }).waitFor();
     assert.equal(await page.textContent('#file-name'), 'python.svg');
 });
@@ -75,8 +78,14 @@ test('pasting SVG code into a fresh page works', async () => {
     const { page } = await open();
     await page.click('[data-source="code"]');
     await page.fill('#code-input', '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="red" width="9" height="9"/></svg>');
-    await page.click('#code-use');
+    // No button to press: valid SVG is used as you type.
     await page.locator('#status-text', { hasText: '2 colors' }).waitFor();
+    await page.locator('#code-status', { hasText: 'Applied' }).waitFor();
+    assert.equal(await page.isVisible('#code-input'), true, 'the editor stays open while typing');
+    await page.fill('#code-input', '<svg><rect fill="blue"');
+    await page.locator('#code-status.warn', { hasText: 'Not valid SVG yet' }).waitFor();
+    await page.click('#source-cancel'); // "Done"
+    await page.waitForSelector('#file-chip:not([hidden])');
 });
 
 test('code and API lists: search, best match and AI prompt fallback', async () => {
@@ -95,6 +104,73 @@ test('code and API lists: search, best match and AI prompt fallback', async () =
     await page.press('#snippet-search', 'Enter');
     assert.match(await page.textContent('#snippet'), /^Write Elixir code/);
     assert.equal(await page.textContent('#copy-label'), 'Copy prompt');
+});
+
+test('the SVG code field is highlighted, larger and expandable', async () => {
+    const { page, problems } = await open();
+    await page.click('#try-example');
+    await page.waitForSelector('#file-chip:not([hidden])');
+    await page.click('#change-file');
+    await page.click('[data-source="code"]');
+    await page.locator('#code-hl .t-t').first().waitFor();
+    assert.equal(await page.textContent('#code-hl'), (await page.inputValue('#code-input')) + '\n', 'highlight mirrors the text');
+    assert.ok((await page.locator('#code-input').boundingBox()).height >= 200, 'at least 200px tall');
+    await page.fill('#code-input', '<svg><rect fill="red"/></svg>');
+    await page.locator('#code-hl', { hasText: /^<svg><rect fill="red"\/><\/svg>\n$/ }).waitFor();
+    assert.equal(await page.locator('#code-hl .t-a').count(), 1, 'one attribute, highlighted');
+    // The field and its highlighted copy wrap long lines at the same points.
+    await page.fill('#code-input', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="' + 'M1 2 L3 4 '.repeat(60) + '"/></svg>');
+    await page.waitForTimeout(100);
+    const [taH, hlH] = await page.$$eval(['#code-input', '#code-hl'].join(','), (els) => els.map((e) => e.scrollHeight));
+    assert.ok(Math.abs(taH - hlH) <= 2, `same wrapped height: ${taH} vs ${hlH}`);
+    await page.click('#code-expand');
+    const big = await page.locator('#code-input').boundingBox();
+    assert.ok(big.width > 550 && big.height > 450, 'the large editor fills most of the window');
+    await page.locator('#code-preview-img[src^="blob:"]').waitFor();
+    assert.equal(await page.isVisible('#code-preview'), true, 'live preview beside the code');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.isVisible('#code-preview'), false);
+    assert.equal(await page.isVisible('#source-code'), true, 'Esc only shrinks the editor');
+    assert.deepEqual(problems, []);
+});
+
+test('code blocks are highlighted and copy their full text', async () => {
+    const { page, problems } = await open();
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+    await page.click('#try-example');
+    await page.waitForSelector('#file-chip:not([hidden])');
+    await page.click('#tab-btn-code');
+    await page.fill('#format-search', 'react');
+    await page.press('#format-search', 'Enter');
+    await page.locator('#code-view .t-t').first().waitFor();
+    assert.ok(await page.locator('#code-view .t-k').count() > 0, 'keywords are highlighted');
+    const shown = await page.textContent('#code-view');
+    await page.click('#tab-code .code-head .copy-chip');
+    await page.locator('#tab-code .code-head .copy-chip', { hasText: 'Copied' }).waitFor();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), shown, 'copies exactly the code');
+
+    await page.click('#tab-btn-api');
+    await page.fill('#snippet-search', 'rust');
+    await page.press('#snippet-search', 'Enter');
+    await page.locator('#snippet .t-s').first().waitFor();
+    // Ctrl+C on the focused block with nothing selected copies all of it.
+    await page.focus('#snippet');
+    await page.keyboard.press('Control+c');
+    await page.locator('#tab-api .code-head .copy-chip', { hasText: 'Copied' }).waitFor();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), await page.textContent('#snippet'));
+    assert.equal(await page.locator('#mcp-cmd .t-f').textContent(), 'claude');
+    assert.equal(await page.textContent('#code-view-lang'), 'React');
+    assert.equal(await page.textContent('#snippet-lang'), 'Rust');
+    // Copy never sits on top of code: it is in a header bar or a button row.
+    const overlaps = await page.$$eval('.copy-chip, .copy-btn-row', (btns) => btns.filter((b) => {
+        const r = b.getBoundingClientRect();
+        return [...document.querySelectorAll('pre.code')].some((p) => {
+            const q = p.getBoundingClientRect();
+            return r.width && q.width && r.left < q.right && r.right > q.left && r.top < q.bottom && r.bottom > q.top;
+        });
+    }).length);
+    assert.equal(overlaps, 0);
+    assert.deepEqual(problems, []);
 });
 
 test('no accessibility violations (axe) in every tab, both themes', async () => {

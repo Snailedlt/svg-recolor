@@ -3,6 +3,7 @@
 import re
 import subprocess
 from pathlib import Path
+from typing import Optional
 from urllib.parse import quote
 
 import sentry_sdk
@@ -53,7 +54,7 @@ def options(mode, color, hue, saturation, lightness) -> engine.Options:
         bad_request(e)
 
 
-def safe_stem(name: str | None) -> str:
+def safe_stem(name: Optional[str]) -> str:
     stem = Path(name or "image.svg").stem or "image"
     return re.sub(r"[^A-Za-z0-9._-]+", "_", stem)[:80] or "image"
 

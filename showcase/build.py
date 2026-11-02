@@ -9,6 +9,8 @@ Usage (needs Pillow):
     python showcase/build.py [output.html]     # default: showcase/dist/svg-recolor-showcase.html
 """
 
+from __future__ import annotations
+
 import base64
 import io
 import json
@@ -100,7 +102,7 @@ def build() -> str:
     body = replace(body, '<div class="app-grid">', '''<div class="demo-note" role="note"><span class="tag">Demo</span><span>A working copy of the editor. Here the <b>whole recolor runs in your browser</b>; on the live site only the palette goes to the server. Links and downloads need the live site.</span></div>
                 <div class="app-grid">''')
 
-    libs = "".join(f"\n<script>\n{read('static/' + name)}\n</script>" for name in ("engine.js", "icons.js", "formats.js", "snippets.js"))
+    libs = "".join(f"\n<script>\n{read('static/' + name)}\n</script>" for name in ("engine.js", "icons.js", "formats.js", "snippets.js", "highlight.js"))
     body, count = re.subn(
         r'\s*<script>window\.SVG_RECOLOR[^<]*</script>\s*(<!--[^>]*-->\s*)?<script src="/assets/app\.js\?v=__HASH__" defer></script>',
         lambda m: libs + "\n<script>\n" + js + "\n</script>\n", body,

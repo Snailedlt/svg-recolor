@@ -102,10 +102,80 @@
         try {
             await navigator.clipboard.writeText(text);
             toast(label + ' copied to clipboard');
+            return true;
         } catch (e) {
             showError('Your browser blocked clipboard access. Select the text and copy it manually.');
+            return false;
         }
     }
+
+    // ------------------------------------------------------------------
+    // Code blocks: syntax highlighting (highlight.js) and a Copy button on each
+    // ------------------------------------------------------------------
+    const Hl = window.SvgHighlight;
+    const HIGHLIGHT_LIMIT = 150000; // bigger inputs show plain, to keep typing smooth
+    function showCode(el, text, lang) {
+        if (!Hl || text.length > HIGHLIGHT_LIMIT) el.textContent = text;
+        else Hl.render(el, text, lang);
+    }
+    const copySources = new Map(); // <pre> id -> () => [full text, label]
+    // The Code and API views get a header bar (language on the left, Copy on the
+    // right); small blocks get Copy in the button row under them. Never on the code.
+    function setupCodeBlock(pre) {
+        const fill = pre.classList.contains('fill');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = fill ? 'copy-chip' : 'btn btn-ghost btn-sm copy-btn-row';
+        btn.title = 'Copy all (or focus the code and press Ctrl+C)';
+        btn.setAttribute('aria-label', 'Copy ' + (pre.getAttribute('aria-label') || 'code').toLowerCase());
+        const label = document.createElement('span');
+        label.textContent = 'Copy';
+        btn.append($('copy-btn').querySelector('svg').cloneNode(true), label);
+        let reset = null;
+        const copy = async () => {
+            const src = copySources.get(pre.id);
+            const [text, name] = src ? src() : [pre.textContent, pre.dataset.copyLabel || 'Code'];
+            if (!text || !text.trim()) return;
+            if (await copyText(text, name)) {
+                btn.classList.add('done');
+                label.textContent = 'Copied';
+                clearTimeout(reset);
+                reset = setTimeout(() => { btn.classList.remove('done'); label.textContent = 'Copy'; }, 1600);
+            }
+        };
+        btn.addEventListener('click', copy);
+        // Ctrl/Cmd+C with nothing selected copies the whole block.
+        pre.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'c' && !String(window.getSelection())) {
+                e.preventDefault();
+                copy();
+            }
+        });
+        if (fill) {
+            const box = document.createElement('div');
+            box.className = 'code-box';
+            const head = document.createElement('div');
+            head.className = 'code-head';
+            const lang = document.createElement('span');
+            lang.className = 'code-lang';
+            lang.id = pre.id + '-lang';
+            head.append(lang, btn);
+            pre.replaceWith(box);
+            box.append(head, pre);
+        } else {
+            let row = pre.nextElementSibling;
+            if (!row || !row.classList.contains('row')) {
+                row = document.createElement('div');
+                row.className = 'row';
+                pre.after(row);
+            }
+            row.prepend(btn);
+        }
+        if (pre.dataset.lang) showCode(pre, pre.textContent, pre.dataset.lang);
+    }
+    function setCodeLang(id, text) { const el = $(id + '-lang'); if (el) el.textContent = text; }
+    $$('pre.code').forEach(setupCodeBlock);
+
     async function errorDetail(res) {
         const body = await res.text();
         try {
@@ -290,6 +360,8 @@
     let codeName = null; // keeps the file name when editing the current SVG as code
     function showSource(kind) {
         SOURCES.forEach((k) => { $('source-' + k).hidden = k !== kind; });
+        // In the code editor the current SVG is what's in the field, so "Done" fits.
+        $('source-cancel').textContent = kind === 'code' && state.doc && state.doc.source === 'code' ? 'Done' : 'Keep current SVG';
         $$('#source-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.source === kind)));
     }
     function focusSource(kind) {
@@ -320,29 +392,101 @@
     $('change-file').addEventListener('click', () => {
         const kind = state.doc && SOURCES.includes(state.doc.source) ? state.doc.source : 'file';
         if (state.doc) {
-            $('code-input').value = state.doc.text;
+            setCodeInput(state.doc.text);
             codeName = state.doc.name;
             $('code-input').setSelectionRange(0, 0); // start at the top, not the end
             $('code-input').scrollTop = 0;
-            $('code-input-hint').textContent = 'This is the current SVG. Edit it, then apply.';
+            syncCodeScroll();
+            setCodeStatus('ok', 'This is the current SVG. Edits are used as you type.');
         }
         showSourcePicker(kind);
         focusSource(kind);
     });
     $('source-cancel').addEventListener('click', () => { hideSourcePicker(); $('change-file').focus(); });
 
-    function useCode() {
-        const text = $('code-input').value.trim();
-        if (!text) return showError('Paste or type some SVG markup first.');
-        const name = codeName || 'pasted.svg';
-        loadText(text, name, new Blob([text]).size, null, 'code');
+    // SVG code field: the textarea's text is transparent and a highlighted copy sits
+    // underneath, scrolled in step, so typing, selection and undo stay native.
+    const codeInput = $('code-input');
+    const codeHl = $('code-hl');
+    let hlFrame = 0;
+    function syncCodeScroll() {
+        codeHl.scrollTop = codeInput.scrollTop;
+        codeHl.scrollLeft = codeInput.scrollLeft;
     }
-    $('code-use').addEventListener('click', useCode);
-    $('code-input').addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); useCode(); }
+    function syncCodeEditor() {
+        cancelAnimationFrame(hlFrame);
+        hlFrame = requestAnimationFrame(() => {
+            showCode(codeHl, codeInput.value + '\n', 'markup'); // the newline keeps a trailing empty line visible
+            // Match the textarea's text width when it shows a scrollbar.
+            const pad = parseFloat(getComputedStyle(codeInput).paddingRight) || 0;
+            codeHl.style.paddingRight = (pad + codeInput.offsetWidth - codeInput.clientWidth) + 'px';
+            syncCodeScroll();
+        });
+    }
+    function setCodeInput(text) { codeInput.value = text; syncCodeEditor(); }
+    codeInput.addEventListener('input', syncCodeEditor);
+    codeInput.addEventListener('scroll', syncCodeScroll);
+    if (window.ResizeObserver) new ResizeObserver(syncCodeEditor).observe(codeInput);
+
+    // Code is used as you type: once it parses as SVG (a short pause after the
+    // last key), it replaces the current SVG. The status line says what happened.
+    let codeTimer = 0;
+    function setCodeStatus(kind, text) {
+        $('code-status').className = 'code-status ' + kind;
+        $('code-status-text').textContent = text;
+        $('code-status').title = text;
+    }
+    function codeProblem(text) {
+        if (!text) return 'empty';
+        if (new Blob([text]).size > MAX_BYTES) return 'Too large: the limit is 2 MB.';
+        if (!/<svg[\s>]/i.test(text)) return 'Waiting for an <svg> element…';
+        const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+        const err = doc.querySelector('parsererror');
+        if (err) {
+            // Chrome wraps the message in boilerplate; its <div> holds just the error.
+            const msg = ((err.querySelector('div') || err).textContent || '').split(/Below is a rendering/)[0];
+            const m = /line (\d+)[^:]*:\s*([^\n]*)/i.exec(msg);
+            return 'Not valid SVG yet' + (m ? ' (line ' + m[1] + ': ' + m[2].trim().replace(/\.$/, '') + ')' : '') + '. Ctrl+Enter uses it anyway.';
+        }
+        if (doc.documentElement.localName !== 'svg') return 'The outermost element must be <svg>.';
+        return null;
+    }
+    function applyCode(force) {
+        clearTimeout(codeTimer);
+        const text = codeInput.value.trim();
+        const problem = codeProblem(text);
+        if (problem === 'empty') return setCodeStatus('', 'Paste or type SVG. It\'s used as you type.');
+        const forced = force && problem && /^Not valid/.test(problem);
+        if (problem && !forced) return setCodeStatus('warn', problem);
+        if (state.doc && state.doc.text === text) return setCodeStatus('ok', 'In use · ' + state.doc.palette.length + ' colors');
+        loadText(text, codeName || 'pasted.svg', new Blob([text]).size, null, 'code', true);
+        if (state.doc && state.doc.text === text) {
+            setCodeStatus('ok', 'Applied · ' + state.doc.palette.length + ' colors' + (forced ? ' (not valid XML; used anyway)' : ''));
+            $('source-cancel').hidden = false;
+            $('source-cancel').textContent = 'Done';
+        }
+    }
+    codeInput.addEventListener('input', () => { clearTimeout(codeTimer); codeTimer = setTimeout(applyCode, 400); });
+    codeInput.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); applyCode(true); }
     });
 
-    async function loadText(text, name, size, fromUrl, source) {
+    // The larger editor: same field, plus a live preview of the result.
+    function setCodeExpanded(on) {
+        $('code-panel').classList.toggle('expanded', on);
+        document.body.classList.toggle('code-expanded', on);
+        if (on && (resultUrl || originalUrl)) $('code-preview-img').src = resultUrl || originalUrl;
+        codeInput.focus();
+        syncCodeEditor();
+        if (!on) $('code-expand').focus();
+    }
+    $('code-expand').addEventListener('click', () => setCodeExpanded(true));
+    $('code-collapse').addEventListener('click', () => setCodeExpanded(false));
+    $('code-panel').addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && $('code-panel').classList.contains('expanded')) { e.preventDefault(); e.stopPropagation(); setCodeExpanded(false); }
+    });
+
+    async function loadText(text, name, size, fromUrl, source, keepEditorOpen) {
         clearError();
         if (size > MAX_BYTES) return showError('This file is ' + formatBytes(size) + '. The limit is 2 MB; try optimizing it with SVGO first.');
         if (!/<svg[\s>]/i.test(text)) return showError('That doesn\'t look like an SVG: no <svg> element was found.');
@@ -358,7 +502,7 @@
         $('file-name').textContent = name;
         const from = { link: ' · from link', code: ' · from code' }[source] || '';
         $('file-size').textContent = formatBytes(size) + ' · ' + state.doc.palette.length + ' colors' + from;
-        hideSourcePicker();
+        if (!keepEditorOpen) hideSourcePicker();
         if (fromUrl) $('url-input').value = fromUrl;
         updateSnippet();
         syncPageUrl();
@@ -398,7 +542,7 @@
         const file = Array.from(data.files || []).find((f) => /svg/i.test(f.type) || /\.svg$/i.test(f.name));
         if (file) { e.preventDefault(); loadFile(file); return; }
         const text = data.getData('text/plain');
-        if (text && /<svg[\s>]/i.test(text)) { e.preventDefault(); $('code-input').value = text; codeName = null; loadText(text, 'pasted.svg', new Blob([text]).size, null, 'code'); return; }
+        if (text && /<svg[\s>]/i.test(text)) { e.preventDefault(); setCodeInput(text); codeName = null; loadText(text, 'pasted.svg', new Blob([text]).size, null, 'code'); return; }
         if (text && /^https?:\/\/\S+$/i.test(text.trim()) && !(t && /^(INPUT|TEXTAREA)$/.test(t.tagName))) {
             e.preventDefault();
             showSourcePicker('link');
@@ -599,6 +743,7 @@
         if (resultUrl) URL.revokeObjectURL(resultUrl);
         resultUrl = URL.createObjectURL(new Blob([r.svg], { type: 'image/svg+xml' }));
         renderImage($('result-container'), resultUrl, 'Recolored ' + state.doc.name);
+        $('code-preview-img').src = resultUrl;
         renderPalette(r.palette);
         if (state.tab === 'code') renderCode();
         syncCopyButton();
@@ -759,6 +904,7 @@
         const view = $('code-view');
         const f = F.get(state.format);
         $('code-prompt-bar').hidden = !f.prompt;
+        setCodeLang('code-view', f.prompt ? 'AI prompt' : f.label);
         if (!state.result) {
             view.textContent = 'Load an SVG to see it as ' + f.label + ' code here.';
             $('code-meta').textContent = '';
@@ -766,7 +912,7 @@
             return;
         }
         const text = codeFor(state.format);
-        view.textContent = text.length > CODE_VIEW_LIMIT ? text.slice(0, CODE_VIEW_LIMIT) + '\n\n… shortened in this view. Copy and Download include everything.' : text;
+        showCode(view, text.length > CODE_VIEW_LIMIT ? text.slice(0, CODE_VIEW_LIMIT) + '\n\n… shortened in this view. Copy and Download include everything.' : text, f.prompt ? 'text' : Hl.langFor(f.file));
         const meta = $('code-meta');
         meta.replaceChildren();
         const file = document.createElement('span');
@@ -811,11 +957,15 @@
     function updateSnippet() {
         const sn = S.get(state.snippet);
         $('api-prompt-bar').hidden = !sn.prompt;
-        $('snippet').textContent = S.build(state.snippet, snippetContext());
+        setCodeLang('snippet', sn.prompt ? 'AI prompt' : sn.label);
+        showCode($('snippet'), S.build(state.snippet, snippetContext()), sn.lang);
+        const code = $('snippet').textContent;
         $('api-hint').textContent = sn.prompt
             ? 'Paste this into ChatGPT, Claude, Copilot or any AI agent.'
-            : 'Uses your current settings. No API key needed.';
-        $('mcp-cmd').textContent = 'claude mcp add --transport http svg-recolor ' + SITE + '/mcp';
+            : code.includes('example.com%2Ficon.svg')
+                ? 'Links need a public SVG: replace example.com/icon.svg with yours, or load your SVG from a link.'
+                : 'Uses your current settings. No API key needed.';
+        showCode($('mcp-cmd'), 'claude mcp add --transport http svg-recolor ' + SITE + '/mcp', 'sh');
         $('llms-url').textContent = SITE + '/llms.txt';
     }
     const snippetList = createLangList({
@@ -862,12 +1012,15 @@
             btn.disabled = !state.result;
         }
     }
+    // What a copy gives: always the complete text, never the shortened view.
+    function snippetCopy() { return [S.build(state.snippet, snippetContext()), S.get(state.snippet).prompt ? 'Prompt' : 'Snippet']; }
+    function codeCopy(id) { return state.result ? [codeFor(id), F.get(id).prompt ? 'Prompt' : F.get(id).label] : ['', '']; }
     function copyCurrent() {
-        if (state.tab === 'api') return copyText($('snippet').textContent, S.get(state.snippet).prompt ? 'Prompt' : 'Snippet');
-        if (!state.result) return;
-        const id = state.tab === 'code' ? state.format : 'svg';
-        copyText(codeFor(id), F.get(id).prompt ? 'Prompt' : F.get(id).label);
+        const [text, label] = state.tab === 'api' ? snippetCopy() : codeCopy(state.tab === 'code' ? state.format : 'svg');
+        if (text) copyText(text, label);
     }
+    copySources.set('code-view', () => codeCopy(state.format));
+    copySources.set('snippet', snippetCopy);
     // Download follows the view: the SVG file, or the code file in the Code tab.
     let downloadUrl = null;
     function syncDownload() {
@@ -882,7 +1035,6 @@
         downloadBtn.tabIndex = 0;
     }
     $('copy-btn').addEventListener('click', copyCurrent);
-    $$('[data-copy-from]').forEach((b) => b.addEventListener('click', () => copyText($(b.dataset.copyFrom).textContent, 'Command')));
     downloadBtn.addEventListener('click', (e) => {
         if (!state.result) { e.preventDefault(); return; }
         toast('Downloading ' + downloadBtn.download);

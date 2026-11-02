@@ -189,8 +189,72 @@ body.dragging::after {
 }
 .text-field:focus { outline: none; border-color: var(--pick); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pick) 25%, transparent); }
 .field-hint { color: var(--text-faint); font-size: 0.76rem; margin: 6px 0 0; }
-.code-input { width: 100%; margin-top: 8px; resize: vertical; min-height: 96px; max-height: 260px; font-family: var(--mono); font-size: 0.76rem; line-height: 1.5; }
-.code-input-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+/* SVG code field: a transparent textarea over a highlighted <pre> (see app.js) */
+.code-editor {
+    position: relative; margin-top: 8px; border-radius: var(--radius-sm);
+    background: var(--code-bg); border: 1px solid var(--code-border);
+}
+.code-editor:focus-within { border-color: var(--pick); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pick) 25%, transparent); }
+.code-editor > .code-input, .code-editor > .code-editor-hl {
+    margin: 0; padding: 10px 12px; border: 0; border-radius: inherit;
+    font-family: var(--mono); font-size: 0.76rem; line-height: 1.55; font-variant-ligatures: none; letter-spacing: normal;
+    tab-size: 2; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal;
+}
+.code-editor > .code-editor-hl { position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: var(--code-text); }
+.code-editor > .code-input {
+    position: relative; display: block; width: 100%; height: 220px; min-height: 140px; max-height: 70vh; resize: vertical;
+    background: transparent; color: transparent; caret-color: #fff; outline: none; overflow: auto;
+}
+.code-editor > .code-input::placeholder { color: #8a92a6; }
+.code-editor > .code-input::selection { background: rgba(110, 150, 255, 0.35); }
+/* Expand button inside the editor's corner (the field has room for it) */
+.code-editor > .code-input { padding-right: 40px; }
+.code-expand {
+    position: absolute; top: 6px; right: 6px; z-index: 1; display: grid; place-items: center;
+    width: 28px; height: 28px; padding: 0; border-radius: 7px; border: 1px solid var(--code-border);
+    background: color-mix(in srgb, var(--code-bg) 82%, #fff 18%); color: var(--code-text); cursor: pointer; opacity: .8;
+}
+.code-expand:hover, .code-expand:focus-visible { opacity: 1; }
+.code-expand:focus-visible { outline: 2px solid var(--pick); outline-offset: 2px; }
+.code-expand svg { width: 14px; height: 14px; }
+/* One status line: what happens with the code right now */
+.code-status { display: flex; align-items: baseline; gap: 7px; margin: 6px 0 0; font-size: 0.78rem; color: var(--text-muted); min-height: 1.4em; }
+.code-status .dot { flex: none; transform: translateY(-1px); width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+.code-status.ok .dot { background: var(--success); }
+.code-status.warn .dot { background: var(--warning); }
+.code-status.warn { color: var(--text); }
+#code-status-text { min-width: 0; overflow-wrap: anywhere; }
+/* Header and preview only show in the large editor */
+.code-panel-head, .code-preview { display: none; }
+.code-preview {
+    margin: 0; position: relative; display: none; place-items: center; min-height: 0; overflow: hidden;
+    border-radius: var(--radius-sm); border: 1px solid var(--border);
+    background: repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 50% / 16px 16px;
+}
+.code-preview img { max-width: 80%; max-height: 80%; width: auto; height: auto; }
+.code-preview img:not([src]) { display: none; }
+.code-preview figcaption {
+    position: absolute; top: 8px; left: 8px; padding: 3px 8px; border-radius: 6px;
+    background: var(--surface); color: var(--text-muted); font-size: 0.7rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+}
+.code-panel.expanded {
+    position: fixed; inset: 5vh max(16px, 4vw); z-index: 60; display: flex; flex-direction: column; gap: 10px;
+    padding: 12px 14px 10px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border);
+    box-shadow: 0 0 0 100vmax rgba(5, 7, 12, 0.62), 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+.code-panel.expanded .code-panel-head { display: flex; align-items: center; justify-content: space-between; }
+.code-panel-title { font-weight: 700; font-size: 0.95rem; }
+.code-panel.expanded .code-panel-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 12px; }
+.code-panel.expanded .code-preview { display: grid; }
+.code-panel.expanded .code-editor { min-height: 0; margin-top: 0; display: flex; }
+.code-panel.expanded .code-input { height: auto; flex: 1; max-height: none; resize: none; font-size: 0.84rem; }
+.code-panel.expanded .code-editor-hl { font-size: 0.84rem; }
+.code-panel.expanded .code-expand { display: none; }
+.code-panel.expanded .code-status { margin: 0; }
+@media (max-width: 760px) {
+    .code-panel.expanded .code-panel-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
+}
+body.code-expanded { overflow: hidden; }
 .code-input-row .field-hint { margin: 0; }
 .section-title .link-btn.aside { font-size: 0.78rem; }
 .file-chip {
@@ -404,8 +468,48 @@ pre.code {
     background: var(--code-bg); border: 1px solid var(--code-border); color: var(--code-text);
     font-family: var(--mono); font-size: 0.8rem; line-height: 1.65; font-variant-ligatures: none; tab-size: 2;
 }
-pre.code.fill { flex: 1; min-height: 0; white-space: pre-wrap; word-break: break-all; }
+pre.code.fill { flex: 1; min-height: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 pre.code .c { color: #6b7286; }
+
+/* Code blocks: a Copy button in the corner, and syntax colors (highlight.js).
+   The code background is dark in both themes, so one palette serves both;
+   every color passes WCAG AA (4.5:1) on --code-bg. */
+.code-box {
+    flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--code-bg); border: 1px solid var(--code-border); border-radius: var(--radius-sm);
+}
+.code-box > pre.code { flex: 1; border: 0; border-radius: 0; }
+.code-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none;
+    padding: 5px 6px 5px 14px; border-bottom: 1px solid var(--code-border);
+    color: #9aa3b5; font-size: 0.74rem; font-weight: 600;
+}
+.code-lang { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.copy-btn-row svg { width: 14px; height: 14px; }
+.copy-btn-row.done { color: var(--ok, #1f9d55); }
+.copy-chip {
+    flex: none; display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border-radius: 7px; border: 1px solid var(--code-border);
+    background: color-mix(in srgb, var(--code-bg) 82%, #fff 18%); color: var(--code-text);
+    font: 600 0.74rem/1 var(--sans, inherit); cursor: pointer; opacity: 0.85;
+    transition: opacity .15s, background-color .15s, border-color .15s;
+}
+.copy-chip svg { width: 14px; height: 14px; }
+.copy-chip:hover, .copy-chip:focus-visible { opacity: 1; border-color: #4a5266; background: color-mix(in srgb, var(--code-bg) 70%, #fff 30%); }
+.copy-chip:focus-visible { outline: 2px solid var(--pick, #7c5cff); outline-offset: 2px; }
+.copy-chip.done { color: #8ee6a0; border-color: #2f6b3e; opacity: 1; }
+pre.code:focus-visible { outline: 2px solid var(--pick, #7c5cff); outline-offset: 2px; }
+pre.code ::selection { background: #2c3e66; }
+.t-c { color: #7f889c; font-style: italic; }
+.t-k { color: #c99bf2; }
+.t-s { color: #a3d9a5; }
+.t-n { color: #f5b083; }
+.t-l { color: #f59a7d; }
+.t-f { color: #8cb4ff; }
+.t-t { color: #f5838c; }
+.t-a { color: #ffd27a; }
+.t-v { color: #7fd8f0; }
+.t-y { color: #7fdccb; }
 .code-meta { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 0.78rem; color: var(--text-faint); }
 .code-meta a { color: var(--text-muted); }
 
@@ -463,7 +567,7 @@ pre.code .c { color: #6b7286; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .card h3 { margin: 0; font-size: 1rem; }
 .card p { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
-.card pre.code { padding: 10px 12px; font-size: 0.75rem; white-space: pre-wrap; word-break: break-all; }
+.card pre.code { padding: 10px 12px; font-size: 0.75rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .card .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
 .endpoints { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 28px; list-style: none; margin: 0 0 20px; padding: 0; }
 @media (max-width: 800px) { .endpoints { grid-template-columns: 1fr; } }

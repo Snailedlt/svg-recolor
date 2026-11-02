@@ -34,6 +34,7 @@ import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 BASE_DIR = Path(__file__).resolve().parent
 SVGRAY_PATH = BASE_DIR / "submodules" / "svgray" / ".svgray.py"
@@ -168,7 +169,7 @@ def _to_hex(r: float, g: float, b: float) -> str:
     return "".join(f"{round(_clamp(c, 0, 255)):02x}" for c in (r, g, b))
 
 
-def _parse_func(kind: str, args: str) -> tuple[str, float | None] | None:
+def _parse_func(kind: str, args: str) -> Optional[tuple[str, Optional[float]]]:
     """Parse rgb()/rgba()/hsl()/hsla() arguments strictly. Returns (hex6, alpha)."""
     parts = [p for p in re.split(r"[\s,/]+", args.strip()) if p]
     if len(parts) not in (3, 4):
@@ -259,7 +260,7 @@ def svgray_gray(hex6: str) -> str:
     return _load_svgray().convert("#" + hex6)[1:].lower()
 
 
-_svgshift_exe: str | None = None
+_svgshift_exe: Optional[str] = None
 
 
 def _svgshift_executable() -> str:
@@ -300,13 +301,16 @@ def svgshift(op: str, values, colors: list[str]) -> list[str]:
         f.write("".join(f"#{c}\n" for c in colors))
         path = f.name
     try:
-        out = subprocess.run(
+        proc = subprocess.run(
             [_svgshift_executable(), op, *args, path],
             capture_output=True,
             text=True,
-            check=True,
+            check=False,
             timeout=15,
-        ).stdout
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"svgshift exited with {proc.returncode}: {proc.stderr.strip()[:300]}")
+        out = proc.stdout
     finally:
         os.remove(path)
     result = re.findall(r"#([0-9a-fA-F]{6})", out)
@@ -417,7 +421,7 @@ def apply_mapping(normalized_svg: str, mapping: dict[str, str]) -> str:
 @dataclass
 class Options:
     mode: str = DEFAULT_MODE
-    color: str | None = "#FF0066"
+    color: Optional[str] = "#FF0066"
     hue: int = 0  # hue rotation in degrees, -360..360
     saturation: int = 0  # saturation shift in percentage points, -100..100
     lightness: int = 0  # lightness shift in percentage points, -100..100
@@ -553,7 +557,7 @@ def map_colors(colors: list[str], opts: Options) -> dict[str, str]:
     return result
 
 
-def recolor(svg: str, opts: Options | None = None) -> Result:
+def recolor(svg: str, opts: Optional[Options] = None) -> Result:
     opts = (opts or Options()).validate()
     normalized = normalize_svg(svg)
     counts = extract_palette(normalized)

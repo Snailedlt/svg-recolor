@@ -72,7 +72,7 @@
             code: (s) => dataUri(s) },
         { id: 'base64', label: 'Base64', group: 'Basics', generic: 'base64', file: 'icon.b64.txt', usage: 'For data:image/svg+xml;base64,… or APIs that want Base64.',
             code: (s) => base64(s) },
-        { id: 'markdown', label: 'Markdown', group: 'Basics', icon: 'markdown', file: 'icon.md', usage: 'Works where Markdown allows data URIs.',
+        { id: 'markdown', label: 'Markdown', group: 'Basics', icon: 'markdown', file: 'icon.md', usage: 'Self-contained, for editors like VS Code and Obsidian. GitHub and GitLab block data URIs: use Markdown in the API tab to embed by link.',
             code: (s) => '![Icon](' + dataUri(s) + ')' },
 
         // JavaScript

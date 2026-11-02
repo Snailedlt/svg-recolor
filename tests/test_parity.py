@@ -48,5 +48,7 @@ def test_browser_engine_matches_python():
         [NODE, str(CLI)], input=json.dumps([{"svg": c["svg"], "mapping": c["mapping"]} for c in data]),
         capture_output=True, text=True, check=True, timeout=60,
     )
-    for case, got in zip(data, json.loads(proc.stdout), strict=True):
+    results = json.loads(proc.stdout)
+    assert len(results) == len(data)
+    for case, got in zip(data, results):
         assert got == case["expected"], case["svg"][:80]

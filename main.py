@@ -7,7 +7,7 @@ import re
 import subprocess
 import zipfile
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 
 import sentry_sdk
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
@@ -186,11 +186,11 @@ def _page_security_headers(html: str) -> dict:
     }
 
 
-_landing_cache: str | None = None
-_bundle_cache: tuple[str, str] | None = None
+_landing_cache: Optional[str] = None
+_bundle_cache: Optional[tuple[str, str]] = None
 
 # Scripts served as one bundle (/assets/app.js) to save requests. Order matters.
-BUNDLE = ("engine.js", "icons.js", "formats.js", "snippets.js", "app.js")
+BUNDLE = ("engine.js", "icons.js", "formats.js", "snippets.js", "highlight.js", "app.js")
 # Small images inlined into the page as data: URIs, saving a request each.
 INLINE_IMAGES = ("/static/logo-56.webp", "/static/avatar-48.webp")
 
@@ -210,9 +210,14 @@ def _page_config() -> str:
     sample = (BASE_DIR / "static" / "examples" / "sample.svg").read_text(encoding="utf-8").strip()
     colors = list(engine.extract_palette(engine.normalize_svg(sample)))
     seed = {}
-    for mode, info in engine.MODES.items():
-        key = ("color=ff0066&" if info["uses_color"] else "") + f"mode={mode}"
-        seed[key] = engine.map_colors(colors, engine.Options(mode=mode, color="ff0066"))
+    try:
+        for mode, info in engine.MODES.items():
+            key = ("color=ff0066&" if info["uses_color"] else "") + f"mode={mode}"
+            seed[key] = engine.map_colors(colors, engine.Options(mode=mode, color="ff0066"))
+    except Exception as e:  # noqa: BLE001 - the page must load even if the tools can't run
+        # Without the seed the browser fetches the thumbnails itself; /api/health says why.
+        sentry_sdk.capture_exception(e)
+        seed = {}
     config = {"engineVersion": engine.ENGINE_VERSION, "sample": sample, "seed": seed}
     return json.dumps(config, separators=(",", ":")).replace("</", "<\\/")
 
@@ -237,7 +242,7 @@ def _landing_html() -> str:
 
 
 @app.get("/assets/app.js", include_in_schema=False)
-async def app_bundle(v: str | None = None):
+async def app_bundle(v: Optional[str] = None):
     js, digest = _bundle()
     cache = CACHE_IMMUTABLE if v == digest else CACHE_STATIC
     return Response(js, media_type="text/javascript; charset=utf-8", headers={"Cache-Control": cache})
@@ -254,6 +259,35 @@ async def favicon_ico():
 @app.get("/apple-touch-icon-precomposed.png", include_in_schema=False)
 async def apple_touch_icon():
     return FileResponse(BASE_DIR / "static/favicon/apple-touch-icon.png", headers={"Cache-Control": CACHE_STATIC})
+
+
+@app.get("/api/health", tags=["Inspect"], operation_id="health", summary="Check that the recolor tools work on this server")
+async def health():
+    """Runs svgray and svgshift on one color and reports what works. Not cached."""
+    import platform
+
+    report = {
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "libc": " ".join(platform.libc_ver()).strip() or None,
+        "engine": engine.ENGINE_VERSION,
+        "svgray": {"path": str(engine.SVGRAY_PATH), "exists": engine.SVGRAY_PATH.exists()},
+        "svgshift": {"path": str(engine.SVGSHIFT_PATH), "exists": engine.SVGSHIFT_PATH.exists(),
+                     "executable": os.access(engine.SVGSHIFT_PATH, os.X_OK)},
+    }
+    checks = {
+        "svgray": lambda: engine.svgray_gray("5a9fd4"),
+        "svgshift": lambda: engine.svgshift("setrgb", (255, 0, 0), ["5a9fd4"])[0],
+    }
+    ok = True
+    for name, check in checks.items():
+        try:
+            report[name]["result"] = await run_in_threadpool(check)
+        except Exception as e:  # noqa: BLE001 - report every failure, whatever it is
+            report[name]["error"] = f"{type(e).__name__}: {e}"
+            ok = False
+    report["ok"] = ok
+    return JSONResponse(report, status_code=200 if ok else 503, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/robots.txt", include_in_schema=False)
@@ -429,7 +463,7 @@ def _parse_modes(raw) -> list[str]:
     return list(dict.fromkeys(modes))
 
 
-async def _map_response(colors: list[str], opts_by_mode: dict[str, engine.Options], cache: bool, single: str | None):
+async def _map_response(colors: list[str], opts_by_mode: dict[str, engine.Options], cache: bool, single: Optional[str]):
     def compute():
         return {mode: engine.map_colors(colors, opts) for mode, opts in opts_by_mode.items()}
 
@@ -457,8 +491,8 @@ async def map_colors_get(
     hue: HueParam = 0,
     saturation: SatParam = 0,
     lightness: LightParam = 0,
-    modes: Annotated[str | None, Query(description="Comma-separated modes to compute in one call; the response then has `mappings` per mode instead of `mapping`.", examples=["tint,colorize,solid"])] = None,
-    v: Annotated[str | None, Query(description="Engine version; pass the `engine` value from a previous response to get a long-lived cacheable URL.")] = None,
+    modes: Annotated[Optional[str], Query(description="Comma-separated modes to compute in one call; the response then has `mappings` per mode instead of `mapping`.", examples=["tint,colorize,solid"])] = None,
+    v: Annotated[Optional[str], Query(description="Engine version; pass the `engine` value from a previous response to get a long-lived cacheable URL.")] = None,
 ):
     """Runs only the colors through the engine and returns the old-to-new mapping. The cheapest way
     to recolor: the website extracts an SVG's palette in the browser, calls this endpoint once for

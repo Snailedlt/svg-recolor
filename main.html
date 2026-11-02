@@ -114,10 +114,20 @@
                                 </div>
                                 <div id="source-code" hidden>
                                     <label for="code-input" class="sr-only">SVG code</label>
-                                    <textarea id="code-input" class="text-field code-input" rows="5" spellcheck="false" autocomplete="off" placeholder="Paste or type SVG markup: <svg …>…</svg>"></textarea>
-                                    <div class="code-input-row">
-                                        <span class="field-hint" id="code-input-hint">Edit the markup, then apply it.</span>
-                                        <button type="button" class="btn btn-ghost btn-sm" id="code-use" title="Use this SVG (Ctrl+Enter)">Use this SVG</button>
+                                    <div class="code-panel" id="code-panel">
+                                        <div class="code-panel-head">
+                                            <span class="code-panel-title">SVG code</span>
+                                            <button type="button" class="btn btn-ghost btn-sm" id="code-collapse">Done</button>
+                                        </div>
+                                        <div class="code-panel-body">
+                                            <div class="code-editor">
+                                                <pre class="code-editor-hl" id="code-hl" aria-hidden="true"></pre>
+                                                <textarea id="code-input" class="code-input" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="code-status" placeholder="Paste or type SVG markup: <svg …>…</svg>"></textarea>
+                                                <button type="button" class="code-expand" id="code-expand" aria-label="Open a larger editor with a live preview" title="Larger editor with live preview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+                                            </div>
+                                            <figure class="code-preview checker" id="code-preview" aria-label="Live preview"><img id="code-preview-img" alt=""><figcaption>Live preview</figcaption></figure>
+                                        </div>
+                                        <p class="code-status" id="code-status" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="code-status-text">Paste or type SVG. It's used as you type.</span></p>
                                     </div>
                                 </div>
                                 <div class="file-chip" id="file-chip" hidden>
@@ -286,7 +296,7 @@
                                 <div class="lang-layout">
                                     <nav class="lang-nav" aria-label="Languages">
                                         <label for="snippet-search" class="sr-only">Search languages</label>
-                                        <input id="snippet-search" class="text-field lang-search" type="search" placeholder="Search 21 languages" autocomplete="off" spellcheck="false">
+                                        <input id="snippet-search" class="text-field lang-search" type="search" placeholder="Search 22 languages" autocomplete="off" spellcheck="false">
                                         <div class="lang-list" id="snippet-list"></div>
                                         <div class="lang-empty" id="snippet-empty" hidden>
                                             <span id="snippet-empty-text"></span>
@@ -332,19 +342,18 @@
                         <div class="card">
                             <h3>MCP server</h3>
                             <p>Add it to Claude Code, Cursor or any MCP client. Tools: <code>recolor_svg</code>, <code>list_svg_colors</code>, <code>list_recolor_modes</code>.</p>
-                            <pre class="code" id="mcp-cmd"></pre>
-                            <div class="row"><button type="button" class="btn btn-ghost btn-sm" data-copy-from="mcp-cmd">Copy command</button></div>
+                            <pre class="code" id="mcp-cmd" tabindex="0" aria-label="MCP install command" data-copy-label="Command"></pre>
                         </div>
                         <div class="card">
                             <h3>llms.txt</h3>
                             <p>A short plain-text guide to every endpoint, parameter and mode. Point an agent at it and it can use the API right away.</p>
-                            <pre class="code" id="llms-url"></pre>
+                            <pre class="code" id="llms-url" tabindex="0" aria-label="llms.txt link" data-copy-label="Link"></pre>
                             <div class="row"><a class="btn btn-ghost btn-sm" href="/llms.txt" target="_blank" rel="noopener">Open llms.txt</a></div>
                         </div>
                         <div class="card">
                             <h3>JSON in, JSON out</h3>
                             <p>Send SVG markup as JSON and get the result plus a color mapping back. The OpenAPI spec has stable operation IDs for generating tools.</p>
-                            <pre class="code">POST /api/recolor?format=json
+                            <pre class="code" tabindex="0" aria-label="JSON request example" data-lang="sh" data-copy-label="Example">POST /api/recolor?format=json
 {"svg": "&lt;svg …&gt;", "color": "tomato", "mode": "solid"}</pre>
                             <div class="row"><a class="btn btn-ghost btn-sm" href="/openapi.json" target="_blank" rel="noopener">OpenAPI spec</a><a class="btn btn-ghost btn-sm" href="/api" target="_blank" rel="noopener">API index</a></div>
                         </div>
@@ -355,7 +364,7 @@
             <section class="more" id="api">
                 <div class="wrap">
                     <h2>HTTP API</h2>
-                    <p class="lead">Everything the editor does is available over HTTP with the same modes and options. The <b>API</b> tab above turns your current settings into ready-to-run code for 20 languages and clients, or an AI prompt for any other.</p>
+                    <p class="lead">Everything the editor does is available over HTTP with the same modes and options. The <b>API</b> tab above turns your current settings into ready-to-run code for 21 languages and clients, or an AI prompt for any other.</p>
                     <ul class="endpoints">
                         <li><span class="verb get">GET</span><code>/api/recolor?url=…</code><span class="d">Recolor a linked SVG. Cached, so it works as an &lt;img&gt; src.</span></li>
                         <li><span class="verb post">POST</span><code>/api/recolor</code><span class="d">Upload a file, send JSON, or send the SVG as the body.</span></li>
