@@ -9,6 +9,8 @@ Usage (needs Pillow):
     python showcase/build.py [output.html]     # default: showcase/dist/svg-recolor-showcase.html
 """
 
+from __future__ import annotations
+
 import base64
 import io
 import json

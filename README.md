@@ -223,6 +223,7 @@ Replace `<your-environment>` with your environment (e.g. windows, linux).
 
 ```sh
 gcc submodules/svgshift/svgshift.c -o svgshift-<your-environment>.exe
+# or, on Linux, the static build that is committed: scripts/build-svgshift.sh
 ```
 
 ### Running the API
@@ -302,8 +303,13 @@ CI runs all of these on every push and pull request (`.github/workflows/ci.yml`)
   (the page, static files, docs, linked SVGs and `/api/map-colors?v=...`). After a deploy, a repeated
   `/api/map-colors` request should answer with `x-vercel-cache: HIT`.
 - Submodules must be checked out: `submodules/svgray/.svgray.py` is imported at runtime.
-- `svgshift-linux.exe` is committed as executable. If a platform drops the bit, the engine copies it to a
-  temp folder and marks it executable, or compiles it from `submodules/svgshift` when gcc is available.
+- `svgshift-linux.exe` is a static binary (`scripts/build-svgshift.sh`), so it runs whatever the host's glibc
+  version is. It is committed as executable. If a platform drops the bit, the engine copies it to a temp folder
+  and marks it executable, or compiles it from `submodules/svgshift` when gcc is available.
+- The code stays compatible with Python 3.9, which is what Vercel's older build image runs (CI tests 3.9, 3.10
+  and 3.12). Ruff is set to `py39` so it doesn't rewrite `Optional[...]` into `X | None`, which breaks on 3.9.
+- `/api/health` runs both tools on one color and reports the Python version, libc and any error, uncached.
+  If the tools fail, the page still loads and the browser fetches the style thumbnails itself.
 - The app rate-limits per IP in memory (see Configuration). On serverless that is per instance, so also add an edge rule
   (for example a Vercel Firewall rate limit on `/api/*` and `/mcp`).
 

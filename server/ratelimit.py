@@ -14,6 +14,7 @@ import os
 import threading
 import time
 from collections import OrderedDict, deque
+from typing import Optional
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -36,7 +37,7 @@ class RateLimiter:
         self._lock = threading.Lock()
 
     @staticmethod
-    def bucket(request: Request) -> str | None:
+    def bucket(request: Request) -> Optional[str]:
         path, method = request.url.path, request.method
         if path.startswith("/api/map-colors"):
             return "map"
@@ -55,7 +56,7 @@ class RateLimiter:
         forwarded = request.headers.get("x-real-ip") or request.headers.get("x-forwarded-for", "").split(",")[0]
         return forwarded.strip() or (request.client.host if request.client else "unknown")
 
-    def check(self, bucket: str, client: str) -> float | None:
+    def check(self, bucket: str, client: str) -> Optional[float]:
         """Record a hit. Returns seconds to wait if over the limit, else None."""
         limit = self.limits.get(bucket, 0)
         if not limit:

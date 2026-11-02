@@ -287,3 +287,34 @@ def test_root_files_browsers_ask_for_are_cached(client):
     assert "Disallow: /api" in client.get("/robots.txt").text
     assert "immutable" in client.get("/static/app.css?v=abc").headers["cache-control"]
     assert "immutable" not in client.get("/static/app.css").headers["cache-control"]
+
+
+def test_landing_page_loads_even_if_the_tools_fail(client, monkeypatch):
+    import main
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("svgshift exited with 127")
+
+    monkeypatch.setattr(main, "_landing_cache", None)
+    monkeypatch.setattr(r, "map_colors", broken)
+    res = client.get("/")
+    assert res.status_code == 200
+    assert '"seed":{}' in res.text  # the browser fetches the thumbnails itself
+
+
+def test_health_reports_working_tools(client):
+    res = client.get("/api/health")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["ok"] and body["svgray"]["result"] and body["svgshift"]["result"] == "ff0000"
+    assert res.headers["cache-control"] == "no-store"
+
+
+def test_health_reports_broken_tools(client, monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("svgshift exited with 127")
+
+    monkeypatch.setattr(r, "svgshift", broken)
+    res = client.get("/api/health")
+    assert res.status_code == 503
+    assert res.json()["svgshift"]["error"] == "RuntimeError: svgshift exited with 127"
