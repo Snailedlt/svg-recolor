@@ -9,8 +9,7 @@ scripts
 example-input-svgs
 website_screenshot.png
 svgshift-windows.exe
-colorize_svg_old.bash
-submodules/argparse-bash
+colorize_svg.sh
 node_modules
 .github
 .pytest_cache
