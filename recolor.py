@@ -30,6 +30,8 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -93,6 +95,10 @@ MODES: dict[str, dict] = {
     },
 }
 DEFAULT_MODE = "tint"
+
+# Bump when the color math changes, so cached results (CDN, browsers) are not reused.
+ENGINE_VERSION = "2"
+MAX_PALETTE = 4096
 
 
 # --------------------------------------------------------------------------
@@ -502,13 +508,56 @@ def transform_palette(colors: list[str], opts: Options) -> list[str]:
     return colors
 
 
+# Every operation works on each color independently, so results are cached per
+# (settings, color). Icons share most of their colors, so warm instances rarely
+# need to start svgray/svgshift at all.
+_CACHE_SIZE = 100_000
+_cache: OrderedDict = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def _settings_key(opts: Options) -> tuple:
+    color = rgb_to_hex(parse_color(opts.color)) if MODES[opts.mode]["uses_color"] else None
+    return (opts.mode, color, opts.hue, opts.saturation, opts.lightness)
+
+
+def map_colors(colors: list[str], opts: Options) -> dict[str, str]:
+    """Map 6-digit hex colors (lowercase, no '#') to their recolored values."""
+    opts.validate()
+    key = _settings_key(opts)
+    unique = list(dict.fromkeys(c.lower().lstrip("#") for c in colors))
+    bad = [c for c in unique if not re.fullmatch(r"[0-9a-f]{6}", c)]
+    if bad:
+        raise RecolorError(f"Colors must be 6-digit hex values; got '{bad[0]}'.")
+    if len(unique) > MAX_PALETTE:
+        raise RecolorError(f"At most {MAX_PALETTE} distinct colors are supported.")
+    with _cache_lock:
+        missing = [c for c in unique if (key, c) not in _cache]
+    if missing:
+        computed = transform_palette(missing, opts)
+        with _cache_lock:
+            for c, new in zip(missing, computed):
+                _cache[(key, c)] = new
+            while len(_cache) > _CACHE_SIZE:
+                _cache.popitem(last=False)
+    result = {}
+    with _cache_lock:
+        for c in unique:
+            value = _cache.get((key, c))
+            if value is None:  # evicted by a concurrent request; recompute below
+                break
+            _cache.move_to_end((key, c))
+            result[c] = value
+    if len(result) != len(unique):
+        result = dict(zip(unique, transform_palette(unique, opts)))
+    return result
+
+
 def recolor(svg: str, opts: Options | None = None) -> Result:
     opts = (opts or Options()).validate()
     normalized = normalize_svg(svg)
     counts = extract_palette(normalized)
-    originals = list(counts)
-    new = transform_palette(originals, opts)
-    mapping = dict(zip(originals, new))
+    mapping = map_colors(list(counts), opts)
     return Result(svg=apply_mapping(normalized, mapping), mapping=mapping, counts=counts)
 
 

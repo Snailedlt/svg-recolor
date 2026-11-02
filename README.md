@@ -104,12 +104,30 @@ curl -X POST "https://svg-recolor.jorgenkh.no/api/recolor?format=json" \
 - **[`/llms.txt`](https://svg-recolor.jorgenkh.no/llms.txt)**: a plain-text guide to the endpoints, parameters and modes.
 - **[`/api`](https://svg-recolor.jorgenkh.no/api)**: a JSON index of the endpoints. The [OpenAPI spec](https://svg-recolor.jorgenkh.no/openapi.json) has stable operation IDs (`recolorSvg`, `recolorFromUrl`, ...).
 
+### Recolor just colors
+
+`GET /api/map-colors?colors=5a9fd4,306998&color=tomato&mode=colorize` returns `{"mapping": {"#5a9fd4": "#…"}}`.
+Useful for design tokens and themes. It is also what the website uses: the browser extracts the SVG's
+palette, asks this endpoint for the new colors, and applies them locally, so the SVG itself is never uploaded.
+
+### Hosting and scaling
+
+The service is built to stay cheap under load:
+
+- The website sends only an SVG's palette (a few hex colors) to `GET /api/map-colors`. With `v=<engine version>`
+  the response is cacheable for a year (`s-maxage`), so the CDN answers repeat palettes without running the function.
+  The result is byte-for-byte the same as `POST /api/recolor`.
+- Results are cached per color and setting inside each warm instance, so svgray/svgshift rarely run twice for the same color.
+- The page, static files, docs and linked-SVG responses all send `s-maxage`/`stale-while-revalidate`,
+  and CSS/JS URLs carry a content hash.
+- Bump `ENGINE_VERSION` in `recolor.py` whenever the color math changes, so cached mappings are not reused.
+
 ### Website tips
 
 - The page URL keeps your settings (`?mode=colorize&color=ff0066&url=...`), so you can bookmark or share a setup. Opening a link with `url=` loads that SVG.
-- **Copy as…** gives the result as SVG code, a data URI, a CSS background, a React component or Base64.
+- Everything fits on one screen: settings on the left, and Preview, Code (SVG, React, CSS, data URI, Base64) and API tabs on the right, with Share, Copy and Download always visible.
 - Compare before and after side by side or with a slider.
-- Press <kbd>?</kbd> for keyboard shortcuts: <kbd>1</kbd>-<kbd>6</kbd> pick a mode, <kbd>Ctrl</kbd>+<kbd>S</kbd> downloads, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> copies the SVG.
+- Press <kbd>?</kbd> for keyboard shortcuts: <kbd>1</kbd>-<kbd>6</kbd> pick a mode, <kbd>P</kbd>/<kbd>E</kbd>/<kbd>A</kbd> switch tabs, <kbd>Ctrl</kbd>+<kbd>S</kbd> downloads, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> copies.
 
 ### CLI Tool
 

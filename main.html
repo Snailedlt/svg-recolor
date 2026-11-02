@@ -4,10 +4,10 @@
         <meta charset="utf-8">
         <title>SVG Recolor — Recolor any SVG in seconds</title>
         <meta property="og:site_name" content="SVG Recolor">
-        <meta name="description" content="Easily recolor SVG icons! Pick a color, select an icon, and edit effortlessly. Perfect for mono- or multi-colored icons, logos, illustrations, and much more!">
-        <meta name="keywords" content="svg, recolor, colorize, icons, images, graphics, tint, rgb, hex, color edit, python, fastapi, soloproject, svg editing">
+        <meta name="description" content="Recolor SVG icons, logos and illustrations in your browser, over a free API, or from AI agents via MCP. Six recolor modes, shading preserved.">
+        <meta name="keywords" content="svg, recolor, colorize, icons, images, graphics, tint, rgb, hex, color edit, api, mcp, svg editing">
         <meta name="author" content="Snailedlt">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
         <meta name="color-scheme" content="dark light">
         <meta name="theme-color" content="#0f1117">
 
@@ -23,7 +23,7 @@
         <meta property="og:url" content="https://svg-recolor.jorgenkh.no/">
         <meta property="og:type" content="website">
         <meta property="og:title" content="SVG Recolor">
-        <meta property="og:description" content="Easily recolor SVG icons! Pick a color, select an icon, and edit effortlessly. Perfect for mono- or multi-colored icons, logos, illustrations, and much more!">
+        <meta property="og:description" content="Recolor SVG icons, logos and illustrations in your browser, over a free API, or from AI agents via MCP.">
         <meta property="og:image" content="https://svg-recolor.jorgenkh.no/static/thumbnail.jpg">
 
         <!-- Twitter Meta Tags -->
@@ -31,549 +31,21 @@
         <meta property="twitter:domain" content="svg-recolor.jorgenkh.no">
         <meta property="twitter:url" content="https://svg-recolor.jorgenkh.no/">
         <meta name="twitter:title" content="SVG Recolor">
-        <meta name="twitter:description" content="Easily recolor SVG icons! Pick a color, select an icon, and edit effortlessly. Perfect for mono- or multi-colored icons, logos, illustrations, and much more!">
+        <meta name="twitter:description" content="Recolor SVG icons, logos and illustrations in your browser, over a free API, or from AI agents via MCP.">
         <meta name="twitter:image" content="https://svg-recolor.jorgenkh.no/static/thumbnail.jpg">
+
+        <!-- For AI agents: plain-text guide to the API -->
+        <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt">
+        <link rel="service-desc" type="application/json" href="/openapi.json">
 
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-
-        <style>
-            :root {
-                --bg: #0f1117;
-                --bg-glow-1: rgba(255, 0, 102, 0.16);
-                --bg-glow-2: rgba(86, 156, 214, 0.14);
-                --surface: #171a23;
-                --surface-2: #1e2230;
-                --border: #2a2f3e;
-                --border-strong: #3a4154;
-                --text: #e8eaf0;
-                --text-muted: #9aa1b2;
-                --text-faint: #6b7286;
-                --accent: #ff0066;
-                --accent-2: #7c5cff;
-                --accent-text: #ffffff;
-                --success: #3ecf8e;
-                --danger: #ff5c7a;
-                --danger-bg: rgba(255, 92, 122, 0.1);
-                --checker-a: #232737;
-                --checker-b: #1b1f2c;
-                --shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.6);
-                --radius: 16px;
-                --radius-sm: 10px;
-                --pick: #ff0066;
-            }
-            :root[data-theme="light"] {
-                --bg: #f6f7fb;
-                --bg-glow-1: rgba(255, 0, 102, 0.10);
-                --bg-glow-2: rgba(86, 156, 214, 0.12);
-                --surface: #ffffff;
-                --surface-2: #f1f3f8;
-                --border: #e3e6ee;
-                --border-strong: #cfd4e0;
-                --text: #141824;
-                --text-muted: #5a6275;
-                --text-faint: #8a91a3;
-                --danger-bg: rgba(255, 92, 122, 0.08);
-                --checker-a: #eceef4;
-                --checker-b: #ffffff;
-                --shadow: 0 20px 50px -24px rgba(20, 24, 36, 0.25);
-            }
-
-            *, *::before, *::after { box-sizing: border-box; }
-            [hidden] { display: none !important; }
-            html { scroll-behavior: smooth; }
-            body {
-                margin: 0;
-                font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-                background:
-                    radial-gradient(900px 500px at 10% -10%, var(--bg-glow-1), transparent 60%),
-                    radial-gradient(900px 500px at 100% 0%, var(--bg-glow-2), transparent 60%),
-                    var(--bg);
-                background-attachment: fixed;
-                color: var(--text);
-                line-height: 1.5;
-                -webkit-font-smoothing: antialiased;
-                min-height: 100vh;
-                display: flex;
-                flex-direction: column;
-            }
-            a { color: inherit; }
-            button { font: inherit; color: inherit; }
-            :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-            .sr-only {
-                position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-                overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
-            }
-            .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 20px; }
-
-            /* ---------- Header ---------- */
-            header.site {
-                position: sticky; top: 0; z-index: 20;
-                backdrop-filter: saturate(160%) blur(12px);
-                -webkit-backdrop-filter: saturate(160%) blur(12px);
-                background: color-mix(in srgb, var(--bg) 75%, transparent);
-                border-bottom: 1px solid var(--border);
-            }
-            header.site .wrap {
-                display: flex; align-items: center; justify-content: space-between;
-                height: 64px; gap: 12px;
-            }
-            .brand {
-                display: flex; align-items: center; gap: 10px;
-                text-decoration: none; font-weight: 700; font-size: 1.05rem; letter-spacing: -0.01em;
-            }
-            .brand img { width: 30px; height: 30px; border-radius: 8px; }
-            nav.links { display: flex; align-items: center; gap: 4px; }
-            nav.links a, .icon-btn {
-                display: inline-flex; align-items: center; gap: 6px;
-                padding: 8px 12px; border-radius: 8px;
-                text-decoration: none; color: var(--text-muted);
-                font-size: 0.9rem; font-weight: 500;
-                background: none; border: 0; cursor: pointer;
-                transition: color .15s, background-color .15s;
-            }
-            nav.links a:hover, .icon-btn:hover { color: var(--text); background: var(--surface-2); }
-            nav.links svg, .icon-btn svg { width: 18px; height: 18px; flex: none; }
-            @media (max-width: 640px) {
-                nav.links .label { display: none; }
-                nav.links a, .icon-btn { padding: 8px; }
-            }
-
-            /* ---------- Hero ---------- */
-            .hero { text-align: center; padding: 56px 0 32px; }
-            .eyebrow {
-                display: inline-flex; align-items: center; gap: 8px;
-                padding: 4px 12px; border-radius: 999px;
-                border: 1px solid var(--border); background: var(--surface);
-                font-size: 0.8rem; color: var(--text-muted); font-weight: 500;
-            }
-            .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
-            .hero h1 {
-                font-size: clamp(2rem, 5vw, 3.4rem);
-                line-height: 1.1; letter-spacing: -0.03em; font-weight: 800;
-                margin: 18px 0 14px;
-            }
-            .gradient-text {
-                background: linear-gradient(90deg, var(--pick), var(--accent-2));
-                -webkit-background-clip: text; background-clip: text; color: transparent;
-                transition: background .3s;
-            }
-            .hero p { color: var(--text-muted); font-size: 1.1rem; max-width: 620px; margin: 0 auto; }
-
-            /* ---------- Workspace ---------- */
-            .workspace {
-                display: grid; grid-template-columns: 360px 1fr; gap: 20px;
-                margin-bottom: 64px;
-            }
-            .workspace > *, .api > * { min-width: 0; }
-            @media (max-width: 900px) { .workspace { grid-template-columns: 1fr; } }
-            .card {
-                background: var(--surface); border: 1px solid var(--border);
-                border-radius: var(--radius); box-shadow: var(--shadow);
-            }
-            .controls { padding: 22px; display: flex; flex-direction: column; gap: 24px; align-self: start; }
-            .step-title {
-                display: flex; align-items: center; gap: 10px;
-                font-size: 0.95rem; font-weight: 600; margin: 0 0 12px;
-            }
-            .step-num {
-                display: inline-grid; place-items: center;
-                width: 24px; height: 24px; border-radius: 50%;
-                background: var(--surface-2); border: 1px solid var(--border-strong);
-                font-size: 0.75rem; font-weight: 700; color: var(--text-muted);
-            }
-
-            /* Dropzone */
-            .dropzone {
-                position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center;
-                gap: 8px; text-align: center; padding: 26px 16px;
-                border: 1.5px dashed var(--border-strong); border-radius: var(--radius-sm);
-                background: var(--surface-2); cursor: pointer;
-                transition: border-color .15s, background-color .15s, transform .15s;
-            }
-            .dropzone:hover, .dropzone.dragover, .dropzone:focus-within { border-color: var(--pick); }
-            .dropzone.dragover { transform: scale(1.01); background: color-mix(in srgb, var(--pick) 8%, var(--surface-2)); }
-            .dropzone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
-            .dropzone .dz-icon {
-                width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
-                background: var(--surface); border: 1px solid var(--border); color: var(--text-muted);
-            }
-            .dropzone strong { font-weight: 600; }
-            .dropzone .hint { color: var(--text-faint); font-size: 0.82rem; }
-            .file-chip {
-                display: none; align-items: center; gap: 12px;
-                padding: 10px 12px; border-radius: var(--radius-sm);
-                background: var(--surface-2); border: 1px solid var(--border);
-            }
-            .file-chip.show { display: flex; }
-            .file-chip .thumb {
-                width: 40px; height: 40px; flex: none; border-radius: 8px; padding: 4px;
-                background: repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 50% / 10px 10px;
-                display: grid; place-items: center; overflow: hidden;
-            }
-            .file-chip .thumb img { max-width: 100%; max-height: 100%; }
-            .file-chip .meta { min-width: 0; flex: 1; }
-            .file-chip .name { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .file-chip .size { color: var(--text-faint); font-size: 0.8rem; }
-            .link-btn {
-                background: none; border: 0; padding: 0; cursor: pointer;
-                color: var(--text-muted); font-size: 0.85rem; text-decoration: underline; text-underline-offset: 3px;
-            }
-            .link-btn:hover { color: var(--text); }
-            .below-drop { display: flex; justify-content: center; margin-top: 10px; font-size: 0.85rem; color: var(--text-faint); gap: 6px; }
-
-            /* Color */
-            .color-row { display: flex; gap: 10px; align-items: stretch; }
-            .swatch-picker {
-                position: relative; width: 52px; flex: none; border-radius: var(--radius-sm);
-                border: 1px solid var(--border-strong); overflow: hidden; background: var(--pick);
-                cursor: pointer; box-shadow: inset 0 0 0 3px var(--surface);
-            }
-            .swatch-picker input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
-            .hex-field {
-                flex: 1; min-width: 0; display: flex; align-items: center;
-                border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
-                background: var(--surface-2); padding: 0 12px;
-                transition: border-color .15s, box-shadow .15s;
-            }
-            .hex-field:focus-within { border-color: var(--pick); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pick) 25%, transparent); }
-            .hex-field.invalid { border-color: var(--danger); }
-            .hex-field span { color: var(--text-faint); font-family: 'JetBrains Mono', monospace; }
-            .hex-field input {
-                flex: 1; min-width: 0; border: 0; background: none; outline: none; color: var(--text);
-                font-family: 'JetBrains Mono', monospace; font-size: 1rem; padding: 12px 4px; text-transform: uppercase;
-            }
-            .presets { display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; margin-top: 12px; }
-            .preset {
-                aspect-ratio: 1; border-radius: 8px; border: 1px solid rgba(127,127,127,.25); cursor: pointer; padding: 0;
-                transition: transform .12s, box-shadow .12s;
-            }
-            .preset:hover { transform: translateY(-2px); }
-            .preset[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
-
-            .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 0.88rem; color: var(--text-muted); }
-            .switch { position: relative; width: 38px; height: 22px; flex: none; }
-            .switch input { opacity: 0; width: 100%; height: 100%; margin: 0; position: absolute; cursor: pointer; z-index: 1; }
-            .switch .track { position: absolute; inset: 0; border-radius: 999px; background: var(--border-strong); transition: background .15s; }
-            .switch .track::after {
-                content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
-                background: #fff; transition: transform .15s;
-            }
-            .switch input:checked + .track { background: var(--pick); }
-            .switch input:checked + .track::after { transform: translateX(16px); }
-            .switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-            .btn {
-                display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-                padding: 12px 18px; border-radius: var(--radius-sm); border: 1px solid transparent;
-                font-weight: 600; font-size: 0.95rem; cursor: pointer; text-decoration: none;
-                transition: transform .12s, filter .15s, background-color .15s, border-color .15s, opacity .15s;
-            }
-            .btn svg { width: 18px; height: 18px; }
-            .btn:active { transform: translateY(1px); }
-            .btn:disabled { opacity: .5; cursor: not-allowed; }
-            .btn-primary {
-                background: linear-gradient(135deg, var(--pick), var(--accent-2));
-                color: var(--accent-text); width: 100%;
-                box-shadow: 0 8px 24px -10px var(--pick);
-            }
-            .btn-primary:not(:disabled):hover { filter: brightness(1.08); }
-            .btn-ghost { background: var(--surface-2); border-color: var(--border); color: var(--text); }
-            .btn-ghost:not(:disabled):hover { border-color: var(--border-strong); }
-            .spinner {
-                width: 16px; height: 16px; border-radius: 50%;
-                border: 2px solid rgba(255,255,255,.4); border-top-color: #fff;
-                animation: spin .7s linear infinite; display: none;
-            }
-            .loading .spinner { display: inline-block; }
-            .loading .btn-icon { display: none; }
-            @keyframes spin { to { transform: rotate(360deg); } }
-
-            .alert {
-                display: none; gap: 10px; align-items: flex-start;
-                padding: 12px 14px; border-radius: var(--radius-sm);
-                background: var(--danger-bg); border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
-                color: var(--danger); font-size: 0.88rem;
-            }
-            .alert.show { display: flex; animation: shake .35s ease-in-out; }
-            .alert svg { width: 18px; height: 18px; flex: none; margin-top: 1px; }
-            @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
-
-            /* Preview */
-            .preview-card { display: flex; flex-direction: column; min-height: 520px; overflow: hidden; }
-            .preview-toolbar {
-                display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-                padding: 14px 18px; border-bottom: 1px solid var(--border);
-            }
-            .preview-toolbar h2 { font-size: 0.95rem; margin: 0; font-weight: 600; }
-            .segmented {
-                display: inline-flex; padding: 3px; border-radius: 10px;
-                background: var(--surface-2); border: 1px solid var(--border);
-            }
-            .segmented button {
-                border: 0; background: none; cursor: pointer; padding: 5px 10px; border-radius: 7px;
-                font-size: 0.8rem; font-weight: 500; color: var(--text-muted);
-                display: inline-flex; align-items: center; gap: 6px;
-            }
-            .segmented button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.2); }
-            .segmented .sw { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(127,127,127,.4); }
-            .sw-checker { background: repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 50% / 6px 6px; }
-            .sw-light { background: #fff; }
-            .sw-dark { background: #111; }
-
-            .stage { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); }
-            @media (max-width: 560px) { .stage { grid-template-columns: 1fr; } }
-            .pane { position: relative; display: flex; flex-direction: column; min-height: 260px; }
-            .pane-label {
-                position: absolute; top: 12px; left: 12px; z-index: 1;
-                font-size: 0.72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
-                padding: 4px 8px; border-radius: 6px;
-                background: color-mix(in srgb, var(--surface) 85%, transparent);
-                border: 1px solid var(--border); color: var(--text-muted);
-                display: inline-flex; align-items: center; gap: 6px;
-            }
-            .pane-label .sw { width: 10px; height: 10px; border-radius: 3px; background: var(--pick); }
-            .canvas {
-                flex: 1; display: grid; place-items: center; padding: 48px 28px 28px;
-                background: repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 50% / 20px 20px;
-                transition: background-color .2s;
-            }
-            .stage[data-bg="light"] .canvas { background: #ffffff; }
-            .stage[data-bg="dark"] .canvas { background: #111318; }
-            .canvas img {
-                max-width: 100%; max-height: 340px; width: auto; height: auto; object-fit: contain;
-                animation: pop .35s cubic-bezier(.2,.9,.3,1.2);
-            }
-            .canvas img.fill { width: 100%; height: 300px; }
-            .canvas .busy { opacity: .35; filter: blur(1px); transition: opacity .2s, filter .2s; }
-            @keyframes pop { from { transform: scale(.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-            .empty {
-                display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
-                color: var(--text-faint); font-size: 0.88rem; max-width: 220px;
-            }
-            .stage[data-bg="light"] .empty { color: #8a91a3; }
-            .empty svg { width: 40px; height: 40px; opacity: .6; }
-            .preview-actions {
-                display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; align-items: center;
-                padding: 14px 18px; border-top: 1px solid var(--border);
-            }
-            .preview-actions .status { margin-right: auto; color: var(--text-faint); font-size: 0.85rem; display: flex; align-items: center; gap: 8px; }
-            .preview-actions .status .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
-            .preview-actions .status.ok .live-dot { background: var(--success); }
-            .preview-actions .status.work .live-dot { background: #f5a524; animation: pulse 1s infinite; }
-            @keyframes pulse { 50% { opacity: .3; } }
-
-            /* ---------- Sections ---------- */
-            section.block { padding: 8px 0 64px; }
-            section.block h2 { font-size: 1.6rem; letter-spacing: -0.02em; margin: 0 0 8px; text-align: center; }
-            section.block > .wrap > p.lead { color: var(--text-muted); text-align: center; margin: 0 auto 32px; max-width: 560px; }
-            .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-            @media (max-width: 800px) { .features { grid-template-columns: 1fr; } }
-            .feature { padding: 22px; }
-            .feature .ficon {
-                width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 14px;
-                background: color-mix(in srgb, var(--pick) 14%, transparent); color: var(--pick);
-            }
-            .feature .ficon svg { width: 20px; height: 20px; }
-            .feature h3 { margin: 0 0 6px; font-size: 1rem; }
-            .feature p { margin: 0; color: var(--text-muted); font-size: 0.92rem; }
-
-            .api { display: grid; grid-template-columns: 1fr 1.3fr; gap: 24px; align-items: center; padding: 28px; }
-            @media (max-width: 800px) { .api { grid-template-columns: 1fr; } }
-            .api h2 { text-align: left !important; }
-            .api p { color: var(--text-muted); margin: 0 0 18px; }
-            .api .btns { display: flex; gap: 10px; flex-wrap: wrap; }
-            pre.code {
-                margin: 0; padding: 18px; border-radius: var(--radius-sm); overflow-x: auto;
-                background: #0b0d12; border: 1px solid #222736; color: #d4d8e2;
-                font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; line-height: 1.7;
-                font-variant-ligatures: none;
-            }
-            pre.code .c { color: #6b7286; }
-            pre.code .k { color: #ff6b9d; }
-            pre.code .s { color: #7ee2b8; }
-
-
-            /* Source tabs */
-            .source-tabs { display: flex; width: 100%; margin-bottom: 12px; }
-            .source-tabs button { flex: 1; justify-content: center; padding: 7px 10px; }
-            .link-row { display: flex; gap: 8px; }
-            .text-field {
-                flex: 1; min-width: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
-                background: var(--surface-2); color: var(--text); padding: 11px 12px; font: inherit; font-size: 0.9rem;
-                transition: border-color .15s, box-shadow .15s;
-            }
-            .text-field:focus { outline: none; border-color: var(--pick); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pick) 25%, transparent); }
-            .btn-sm { padding: 10px 14px; font-size: 0.88rem; }
-            .field-hint { color: var(--text-faint); font-size: 0.8rem; margin: 8px 0 0; }
-
-            /* Modes */
-            .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-            .mode {
-                display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
-                padding: 10px 10px 9px; border-radius: var(--radius-sm); cursor: pointer;
-                background: var(--surface-2); border: 1px solid var(--border);
-                transition: border-color .15s, background-color .15s;
-            }
-            .mode:hover { border-color: var(--border-strong); }
-            .mode b { font-size: 0.86rem; font-weight: 600; }
-            .mode small { font-size: 0.74rem; color: var(--text-faint); line-height: 1.3; }
-            .mode[aria-pressed="true"] { border-color: var(--pick); background: color-mix(in srgb, var(--pick) 10%, var(--surface-2)); }
-            .mode-desc { color: var(--text-muted); font-size: 0.84rem; margin: 10px 0 0; min-height: 2.6em; }
-            .step-off { opacity: .45; pointer-events: none; }
-            .step-off .step-title::after { content: "not used by this mode"; font-size: 0.75rem; font-weight: 500; color: var(--text-faint); margin-left: auto; }
-
-            /* Fine-tune */
-            details.finetune { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
-            details.finetune summary {
-                list-style: none; cursor: pointer; padding: 12px 14px; display: flex; align-items: center; gap: 8px;
-                font-size: 0.9rem; font-weight: 600;
-            }
-            details.finetune summary::-webkit-details-marker { display: none; }
-            details.finetune summary .chev { margin-left: auto; transition: transform .15s; color: var(--text-faint); }
-            details.finetune[open] summary .chev { transform: rotate(180deg); }
-            details.finetune summary .badge { font-size: 0.72rem; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--pick) 18%, transparent); color: var(--pick); }
-            .sliders { display: flex; flex-direction: column; gap: 14px; padding: 2px 14px 14px; }
-            .slider-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; font-size: 0.85rem; color: var(--text-muted); }
-            .slider-row output { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text); font-variant-numeric: tabular-nums; }
-            .slider-row input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--pick); margin: 0; }
-            .reset-row { display: flex; justify-content: flex-end; }
-
-            /* Palette mapping */
-            .palette { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
-            .palette > span { font-size: 0.72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint); padding-top: 5px; flex: none; }
-            .palette ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-            .palette li {
-                display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px 3px 3px; border-radius: 8px;
-                border: 1px solid var(--border); background: var(--surface-2); font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-muted);
-            }
-            .palette li i { width: 16px; height: 16px; border-radius: 5px; border: 1px solid rgba(127,127,127,.35); display: inline-block; }
-            .palette li .arrow { color: var(--text-faint); }
-            .palette li.more { padding: 3px 8px; }
-
-            /* API */
-            .api-grid { display: grid; grid-template-columns: 1fr 1.25fr; gap: 28px; padding: 28px; }
-            @media (max-width: 860px) { .api-grid { grid-template-columns: 1fr; } }
-            .api-grid > * { min-width: 0; }
-            .api-grid h2 { text-align: left !important; }
-            .api-grid > div > p { color: var(--text-muted); margin: 0 0 18px; }
-            .endpoints { list-style: none; margin: 0 0 20px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-            .endpoints li { display: grid; grid-template-columns: 52px 1fr; gap: 4px 10px; font-size: 0.86rem; align-items: baseline; }
-            .endpoints code { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--text); overflow-wrap: anywhere; }
-            .endpoints .verb { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 600; padding: 2px 0; border-radius: 4px; text-align: center; }
-            .verb.get { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
-            .verb.post { background: color-mix(in srgb, #569cd6 22%, transparent); color: #6aaef0; }
-            .endpoints span.d { grid-column: 2; color: var(--text-faint); font-size: 0.8rem; }
-            .snippet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-            .snippet-head .note { font-size: 0.8rem; color: var(--text-faint); }
-            .snippet-wrap { position: relative; }
-            .snippet-wrap pre.code { white-space: pre-wrap; word-break: break-all; padding-right: 56px; min-height: 120px; }
-            .snippet-wrap .copy-snippet { position: absolute; top: 10px; right: 10px; padding: 6px 10px; font-size: 0.78rem; background: #1b1f2c; border-color: #2a2f3e; color: #d4d8e2; }
-
-            /* Compare slider */
-            .stage { position: relative; }
-            .stage[data-view="slider"] { grid-template-columns: 1fr; }
-            .stage[data-view="slider"] .pane + .pane { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--split, 50%)); }
-            .stage[data-view="slider"] .pane + .pane .pane-label { left: auto; right: 12px; }
-            .compare-range { display: none; }
-            .stage[data-view="slider"] .compare-range {
-                display: block; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
-                opacity: 0; cursor: ew-resize; z-index: 3;
-            }
-            .split-line { display: none; }
-            .stage[data-view="slider"] .split-line {
-                display: block; position: absolute; top: 0; bottom: 0; left: var(--split, 50%); width: 2px; margin-left: -1px;
-                background: var(--pick); z-index: 2; pointer-events: none;
-            }
-            .split-line::after {
-                content: "⇆"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
-                background: var(--pick); color: #fff; font-size: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.35);
-            }
-            .stage[data-view="slider"] .compare-range:focus-visible ~ .split-line::after { outline: 2px solid var(--text); outline-offset: 2px; }
-            .toolbar-groups { display: flex; gap: 8px; flex-wrap: wrap; }
-
-            /* Copy menu */
-            details.menu { position: relative; }
-            details.menu > summary { list-style: none; }
-            details.menu > summary::-webkit-details-marker { display: none; }
-            details.menu.disabled > summary { opacity: .5; pointer-events: none; }
-            .menu-list {
-                position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 30; min-width: 230px;
-                display: flex; flex-direction: column; padding: 6px; border-radius: var(--radius-sm);
-                background: var(--surface); border: 1px solid var(--border-strong); box-shadow: var(--shadow);
-            }
-            .menu-list button {
-                display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
-                text-align: left; border: 0; background: none; cursor: pointer; padding: 8px 10px; border-radius: 7px; font-size: 0.88rem;
-            }
-            .menu-list button:hover, .menu-list button:focus-visible { background: var(--surface-2); }
-            .menu-list button small { color: var(--text-faint); font-size: 0.75rem; }
-
-            .controls-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: -12px; font-size: 0.82rem; color: var(--text-faint); }
-            kbd {
-                font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; padding: 1px 6px; border-radius: 5px;
-                border: 1px solid var(--border-strong); border-bottom-width: 2px; background: var(--surface-2); color: var(--text-muted);
-            }
-            .eyedropper { width: 46px; flex: none; display: grid; place-items: center; border-radius: var(--radius-sm); border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-muted); cursor: pointer; }
-            .eyedropper:hover { color: var(--text); border-color: var(--pick); }
-
-            /* Shortcuts dialog */
-            dialog.shortcuts {
-                border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 0; width: min(440px, calc(100vw - 32px));
-                background: var(--surface); color: var(--text); box-shadow: var(--shadow);
-            }
-            dialog.shortcuts::backdrop { background: rgba(0,0,0,.5); }
-            dialog.shortcuts header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-            dialog.shortcuts h2 { margin: 0; font-size: 1rem; }
-            dialog.shortcuts dl { margin: 0; padding: 12px 18px 18px; display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; font-size: 0.88rem; align-items: center; }
-            dialog.shortcuts dt { white-space: nowrap; }
-            dialog.shortcuts dd { margin: 0; color: var(--text-muted); }
-
-            /* Agents */
-            .agents { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-            @media (max-width: 860px) { .agents { grid-template-columns: 1fr; } }
-            .agent-card { padding: 22px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-            .agent-card h3 { margin: 0; font-size: 1rem; }
-            .agent-card p { margin: 0; color: var(--text-muted); font-size: 0.9rem; }
-            .agent-card pre.code { padding: 12px 14px; font-size: 0.76rem; white-space: pre-wrap; word-break: break-all; }
-            .agent-card .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
-
-            .brand { white-space: nowrap; }
-            @media (max-width: 640px), (hover: none) {
-                #shortcuts-btn, .shortcut-hint { display: none; }
-            }
-
-            /* ---------- Footer ---------- */
-            footer.site { margin-top: auto; border-top: 1px solid var(--border); padding: 28px 0; color: var(--text-faint); font-size: 0.88rem; }
-            footer.site .wrap { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
-            footer.site a { color: var(--text-muted); text-decoration: none; }
-            footer.site a:hover { color: var(--text); }
-            footer.site .made { display: flex; align-items: center; gap: 10px; }
-            footer.site .made img { width: 26px; height: 26px; border-radius: 50%; }
-            footer.site .support { display: flex; gap: 10px; flex-wrap: wrap; }
-            .pill {
-                display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
-                border: 1px solid var(--border); background: var(--surface);
-            }
-            .pill:hover { border-color: var(--border-strong); }
-
-            .toast {
-                position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
-                background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px;
-                font-size: 0.9rem; font-weight: 500; box-shadow: var(--shadow); transition: all .2s; z-index: 50;
-            }
-            .toast.show { opacity: 1; transform: translate(-50%, 0); }
-
-            @media (prefers-reduced-motion: reduce) {
-                *, *::before, *::after { animation: none !important; transition: none !important; }
-            }
-        </style>
+        <link rel="stylesheet" href="/static/app.css?v=__APP_CSS_V__">
         <script>
-            // Apply saved/system theme before paint to avoid a flash.
+            // Apply the saved or system theme before first paint.
             (function () {
-                let theme = null;
+                var theme = null;
                 try { theme = localStorage.getItem('theme'); } catch (e) {}
                 if (!theme) theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
                 document.documentElement.dataset.theme = theme;
@@ -583,31 +55,31 @@
     <body>
         <header class="site">
             <div class="wrap">
-                <a class="brand" href="/">
-                    <img src="/static/favicon/favicon.svg" alt="" width="30" height="30">
-                    SVG Recolor
-                </a>
+                <div class="brand-group">
+                    <h1 class="brand"><a href="/"><img src="/static/favicon/favicon.svg" alt="" width="28" height="28">SVG Recolor</a></h1>
+                    <span class="tagline">Recolor any SVG in seconds. Free, open source, no sign-up.</span>
+                </div>
                 <nav class="links" aria-label="Main">
-                    <a href="#agents">
+                    <a href="#agents" title="Use it from AI agents">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 14h.01M16 14h.01M9 18h6"/></svg>
                         <span class="label">Agents</span>
                     </a>
-                    <a href="#api">
+                    <a href="#api" title="HTTP API">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
                         <span class="label">API</span>
                     </a>
-                    <a href="/docs" target="_blank" rel="noopener">
+                    <a href="/docs" target="_blank" rel="noopener" title="Interactive API docs">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
                         <span class="label">Docs</span>
                     </a>
-                    <a href="https://github.com/Snailedlt/svg-recolor" target="_blank" rel="noopener">
+                    <a href="https://github.com/Snailedlt/svg-recolor" target="_blank" rel="noopener" title="Source on GitHub">
                         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.37-3.87-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg>
                         <span class="label">GitHub</span>
                     </a>
                     <button class="icon-btn" id="shortcuts-btn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
                     </button>
-                    <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle light/dark theme">
+                    <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">
                         <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
                         <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                     </button>
@@ -616,246 +88,252 @@
         </header>
 
         <main>
-            <div class="wrap">
-                <section class="hero">
-                    <span class="eyebrow"><span class="dot"></span> Free &amp; open source · No sign-up</span>
-                    <h1>Recolor any SVG <span class="gradient-text">in seconds</span></h1>
-                    <p>Drop in an icon, logo or illustration, pick a color, and download the result. Shading and detail are preserved — even for multi-colored artwork.</p>
-                </section>
-
-                <div class="workspace">
+            <div class="wrap app">
+                <div class="app-grid">
                     <!-- Controls -->
-                    <form id="colorize-form" class="card controls" novalidate>
-                        <div>
-                            <h2 class="step-title"><span class="step-num">1</span> Add your SVG</h2>
-                            <div class="segmented source-tabs" role="group" aria-label="SVG source">
-                                <button type="button" data-source="file" aria-pressed="true">Upload file</button>
-                                <button type="button" data-source="link" aria-pressed="false">From a link</button>
-                            </div>
-                            <div id="source-file">
-                                <label class="dropzone" id="dropzone">
-                                    <input id="files" type="file" name="icon" accept=".svg,image/svg+xml">
-                                    <span class="dz-icon">
-                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                    </span>
-                                    <strong>Drop an SVG here or click to browse</strong>
-                                    <span class="hint">You can also paste one · max 2 MB</span>
-                                </label>
-                            </div>
-                            <div id="source-link" hidden>
-                                <div class="link-row">
-                                    <label for="url-input" class="sr-only">Link to an SVG</label>
-                                    <input id="url-input" class="text-field" type="url" placeholder="https://example.com/icon.svg" spellcheck="false" autocomplete="off">
-                                    <button type="button" class="btn btn-ghost btn-sm" id="url-load">Load</button>
+                    <form id="controls" class="panel" novalidate aria-label="Recolor settings">
+                        <div class="controls-body">
+                            <section aria-labelledby="src-title">
+                                <h2 class="section-title" id="src-title">SVG <span class="aside kbd-hint">or paste with <kbd>Ctrl</kbd>+<kbd>V</kbd></span></h2>
+                                <div class="segmented full" role="group" aria-label="SVG source" id="source-tabs">
+                                    <button type="button" data-source="file" aria-pressed="true">Upload file</button>
+                                    <button type="button" data-source="link" aria-pressed="false">From a link</button>
                                 </div>
-                                <p class="field-hint">Any public SVG link works. GitHub file pages are converted to raw links automatically.</p>
-                            </div>
-                            <div class="file-chip" id="file-chip">
-                                <div class="thumb"><img id="file-thumb" alt=""></div>
-                                <div class="meta">
-                                    <div class="name" id="file-name"></div>
-                                    <div class="size" id="file-size"></div>
+                                <div id="source-file">
+                                    <label class="dropzone" id="dropzone">
+                                        <input id="files" type="file" accept=".svg,image/svg+xml">
+                                        <span class="dz-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>
+                                        <span class="dz-text"><strong>Drop an SVG or browse</strong><span>Max 2 MB · drop anywhere on the page</span></span>
+                                    </label>
                                 </div>
-                                <button type="button" class="link-btn" id="change-file">Change</button>
-                            </div>
-                            <div class="below-drop">
-                                No file handy? <button type="button" class="link-btn" id="try-example">Try an example</button>
-                            </div>
+                                <div id="source-link" hidden>
+                                    <div class="link-row">
+                                        <label for="url-input" class="sr-only">Link to an SVG</label>
+                                        <input id="url-input" class="text-field" type="url" placeholder="https://example.com/icon.svg" spellcheck="false" autocomplete="off">
+                                        <button type="button" class="btn btn-ghost btn-sm" id="url-load">Load</button>
+                                    </div>
+                                    <p class="field-hint">Any public SVG link. GitHub file pages work too.</p>
+                                </div>
+                                <div class="file-chip" id="file-chip" hidden>
+                                    <div class="thumb"><img id="file-thumb" alt=""></div>
+                                    <div class="meta">
+                                        <div class="name" id="file-name"></div>
+                                        <div class="size" id="file-size"></div>
+                                    </div>
+                                    <button type="button" class="link-btn" id="change-file">Change</button>
+                                </div>
+                                <div class="below-drop" id="example-row">No file handy? <button type="button" class="link-btn" id="try-example">Try an example</button></div>
+                            </section>
+
+                            <section aria-labelledby="mode-title">
+                                <h2 class="section-title" id="mode-title">Mode</h2>
+                                <div class="modes" id="modes" role="group" aria-label="Recolor mode">
+                                    <button type="button" class="mode" data-mode="tint" aria-pressed="true"><b>Tint <kbd>1</kbd></b><small>Gray + color</small></button>
+                                    <button type="button" class="mode" data-mode="colorize" aria-pressed="false"><b>Colorize <kbd>2</kbd></b><small>Keeps shading</small></button>
+                                    <button type="button" class="mode" data-mode="hue" aria-pressed="false"><b>Hue <kbd>3</kbd></b><small>Hue only</small></button>
+                                    <button type="button" class="mode" data-mode="solid" aria-pressed="false"><b>Solid <kbd>4</kbd></b><small>One flat color</small></button>
+                                    <button type="button" class="mode" data-mode="grayscale" aria-pressed="false"><b>Gray <kbd>5</kbd></b><small>No color</small></button>
+                                    <button type="button" class="mode" data-mode="adjust" aria-pressed="false"><b>Adjust <kbd>6</kbd></b><small>Shift HSL</small></button>
+                                </div>
+                                <p class="mode-desc" id="mode-desc"></p>
+                            </section>
+
+                            <section aria-labelledby="color-title" id="color-step">
+                                <h2 class="section-title" id="color-title">Color <span class="aside" id="color-note"></span></h2>
+                                <div class="color-row">
+                                    <label class="swatch-picker" title="Open color picker">
+                                        <span class="sr-only">Color picker</span>
+                                        <input id="color-input" type="color" value="#ff0066">
+                                    </label>
+                                    <label class="hex-field" id="hex-field">
+                                        <span>#</span>
+                                        <span class="sr-only">Hex color</span>
+                                        <input id="hex-input" type="text" value="FF0066" maxlength="7" spellcheck="false" autocomplete="off" aria-describedby="error-message">
+                                    </label>
+                                    <button type="button" class="eyedropper" id="eyedropper" title="Pick a color from your screen" aria-label="Pick a color from your screen" hidden>
+                                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
+                                    </button>
+                                </div>
+                                <div class="presets" id="presets" role="group" aria-label="Preset colors"></div>
+                                <div class="recent" id="recent" hidden><span>Recent</span></div>
+                            </section>
+
+                            <details class="finetune" id="finetune">
+                                <summary>
+                                    Fine-tune <span class="badge" id="finetune-badge" hidden>on</span>
+                                    <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                                </summary>
+                                <div class="sliders">
+                                    <div class="slider-row">
+                                        <label for="adj-hue">Hue shift</label><output id="adj-hue-out" for="adj-hue">0°</output>
+                                        <input id="adj-hue" type="range" min="-180" max="180" step="1" value="0">
+                                    </div>
+                                    <div class="slider-row">
+                                        <label for="adj-saturation">Saturation</label><output id="adj-saturation-out" for="adj-saturation">0</output>
+                                        <input id="adj-saturation" type="range" min="-100" max="100" step="1" value="0">
+                                    </div>
+                                    <div class="slider-row">
+                                        <label for="adj-lightness">Lightness</label><output id="adj-lightness-out" for="adj-lightness">0</output>
+                                        <input id="adj-lightness" type="range" min="-100" max="100" step="1" value="0">
+                                    </div>
+                                    <div><button type="button" class="link-btn" id="adj-reset">Reset fine-tune</button></div>
+                                </div>
+                            </details>
                         </div>
 
-                        <div>
-                            <h2 class="step-title"><span class="step-num">2</span> Choose a mode</h2>
-                            <div class="modes" id="modes" role="group" aria-label="Recolor mode">
-                                <button type="button" class="mode" data-mode="tint" aria-pressed="true"><b>Tint</b><small>Gray + color</small></button>
-                                <button type="button" class="mode" data-mode="colorize" aria-pressed="false"><b>Colorize</b><small>Keeps shading</small></button>
-                                <button type="button" class="mode" data-mode="hue" aria-pressed="false"><b>Hue</b><small>Hue only</small></button>
-                                <button type="button" class="mode" data-mode="solid" aria-pressed="false"><b>Solid</b><small>One flat color</small></button>
-                                <button type="button" class="mode" data-mode="grayscale" aria-pressed="false"><b>Grayscale</b><small>No color</small></button>
-                                <button type="button" class="mode" data-mode="adjust" aria-pressed="false"><b>Adjust</b><small>Shift HSL</small></button>
+                        <div class="controls-foot">
+                            <div id="error-message" class="alert" role="alert" hidden>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                <span id="error-text"></span>
+                                <button type="button" class="close" id="error-close" aria-label="Dismiss">✕</button>
                             </div>
-                            <p class="mode-desc" id="mode-desc"></p>
-                        </div>
-
-                        <div id="color-step">
-                            <h2 class="step-title"><span class="step-num">3</span> Pick a color</h2>
-                            <div class="color-row">
-                                <label class="swatch-picker" title="Open color picker">
-                                    <span class="sr-only">Color picker</span>
-                                    <input id="color-input" type="color" value="#ff0066">
-                                </label>
-                                <label class="hex-field" id="hex-field">
-                                    <span>#</span>
-                                    <span class="sr-only">Hex color</span>
-                                    <input id="hex-input" type="text" value="FF0066" maxlength="7" spellcheck="false" autocomplete="off" inputmode="text" aria-describedby="error-message">
-                                </label>
-                                <button type="button" class="eyedropper" id="eyedropper" title="Pick a color from your screen" aria-label="Pick a color from your screen" hidden>
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
-                                </button>
+                            <div class="toggle-row">
+                                <label for="live-toggle">Update the preview as you change settings</label>
+                                <span class="switch"><input type="checkbox" id="live-toggle" checked><span class="track"></span></span>
                             </div>
-                            <div class="presets" id="presets" role="group" aria-label="Preset colors"></div>
-                        </div>
-
-                        <details class="finetune" id="finetune">
-                            <summary>
-                                Fine-tune <span class="badge" id="finetune-badge" hidden>on</span>
-                                <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-                            </summary>
-                            <div class="sliders">
-                                <div class="slider-row">
-                                    <label for="adj-hue">Hue shift</label><output id="adj-hue-out" for="adj-hue">0°</output>
-                                    <input id="adj-hue" type="range" min="-180" max="180" step="1" value="0">
-                                </div>
-                                <div class="slider-row">
-                                    <label for="adj-saturation">Saturation</label><output id="adj-saturation-out" for="adj-saturation">0</output>
-                                    <input id="adj-saturation" type="range" min="-100" max="100" step="1" value="0">
-                                </div>
-                                <div class="slider-row">
-                                    <label for="adj-lightness">Lightness</label><output id="adj-lightness-out" for="adj-lightness">0</output>
-                                    <input id="adj-lightness" type="range" min="-100" max="100" step="1" value="0">
-                                </div>
-                                <div class="reset-row"><button type="button" class="link-btn" id="adj-reset">Reset</button></div>
+                            <button type="submit" class="btn btn-primary btn-block" id="submit-btn" hidden>
+                                <span class="spinner" aria-hidden="true"></span>
+                                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+                                Recolor
+                            </button>
+                            <div class="foot-meta">
+                                <button type="button" class="link-btn" id="reset-all">Reset settings</button>
+                                <span class="kbd-hint">Press <kbd>?</kbd> for shortcuts</span>
                             </div>
-                        </details>
-
-                        <div class="toggle-row">
-                            <label for="live-toggle">Live preview — update as you pick</label>
-                            <span class="switch">
-                                <input type="checkbox" id="live-toggle" checked>
-                                <span class="track"></span>
-                            </span>
-                        </div>
-
-                        <button type="submit" class="btn btn-primary" id="submit-btn">
-                            <span class="spinner" aria-hidden="true"></span>
-                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
-                            <span class="btn-text">Recolor SVG</span>
-                        </button>
-
-                        <div class="controls-footer">
-                            <button type="button" class="link-btn" id="reset-all">Reset settings</button>
-                            <span class="shortcut-hint">Press <kbd>?</kbd> for shortcuts</span>
-                        </div>
-
-                        <div id="error-message" class="alert" role="alert">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                            <span id="error-text"></span>
                         </div>
                     </form>
 
-                    <!-- Preview -->
-                    <section class="card preview-card" aria-labelledby="preview-title">
-                        <div class="preview-toolbar">
-                            <h2 id="preview-title">Preview</h2>
-                            <div class="toolbar-groups">
+                    <!-- Workspace -->
+                    <section class="panel" aria-label="Result">
+                        <div class="ws-bar">
+                            <div class="tabs" role="tablist" aria-label="Result views">
+                                <button type="button" class="tab" role="tab" id="tab-btn-preview" aria-controls="tab-preview" aria-selected="true" data-tab="preview" title="Preview (P)">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>Preview
+                                </button>
+                                <button type="button" class="tab" role="tab" id="tab-btn-code" aria-controls="tab-code" aria-selected="false" data-tab="code" title="Code (E)">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>Code
+                                </button>
+                                <button type="button" class="tab" role="tab" id="tab-btn-api" aria-controls="tab-api" aria-selected="false" data-tab="api" title="API (A)">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>API
+                                </button>
+                            </div>
+                            <div class="ws-tools" data-for="preview">
                                 <div class="segmented" role="group" aria-label="Comparison view" id="view-tabs">
                                     <button type="button" data-view="side" aria-pressed="true" title="Side by side (V)">Side by side</button>
                                     <button type="button" data-view="slider" aria-pressed="false" title="Before/after slider (V)">Slider</button>
                                 </div>
                                 <div class="segmented" role="group" aria-label="Preview background" id="bg-tabs">
-                                    <button type="button" data-bg="checker" aria-pressed="true" title="Transparent (B)"><span class="sw sw-checker"></span>Transparent</button>
-                                    <button type="button" data-bg="light" aria-pressed="false" title="Light (B)"><span class="sw sw-light"></span>Light</button>
-                                    <button type="button" data-bg="dark" aria-pressed="false" title="Dark (B)"><span class="sw sw-dark"></span>Dark</button>
+                                    <button type="button" data-bg="checker" aria-pressed="true" title="Transparent (B)"><span class="sw sw-checker"></span><span class="label">Clear</span></button>
+                                    <button type="button" data-bg="light" aria-pressed="false" title="Light (B)"><span class="sw sw-light"></span><span class="label">Light</span></button>
+                                    <button type="button" data-bg="dark" aria-pressed="false" title="Dark (B)"><span class="sw sw-dark"></span><span class="label">Dark</span></button>
+                                </div>
+                            </div>
+                            <div class="ws-tools" data-for="code" hidden>
+                                <div class="segmented" role="group" aria-label="Code format" id="format-tabs">
+                                    <button type="button" data-format="svg" aria-pressed="true">SVG</button>
+                                    <button type="button" data-format="jsx" aria-pressed="false">React</button>
+                                    <button type="button" data-format="css" aria-pressed="false">CSS</button>
+                                    <button type="button" data-format="datauri" aria-pressed="false">Data URI</button>
+                                    <button type="button" data-format="base64" aria-pressed="false">Base64</button>
+                                </div>
+                            </div>
+                            <div class="ws-tools" data-for="api" hidden>
+                                <div class="segmented" role="group" aria-label="Snippet type" id="snippet-tabs">
+                                    <button type="button" data-snippet="curl" aria-pressed="true">curl</button>
+                                    <button type="button" data-snippet="link" aria-pressed="false">Link</button>
+                                    <button type="button" data-snippet="html" aria-pressed="false">HTML</button>
+                                    <button type="button" data-snippet="js" aria-pressed="false">JS</button>
+                                    <button type="button" data-snippet="python" aria-pressed="false">Python</button>
+                                    <button type="button" data-snippet="mcp" aria-pressed="false">MCP</button>
                                 </div>
                             </div>
                         </div>
-                        <div class="stage" id="stage" data-bg="checker" data-view="side">
-                            <div class="pane">
-                                <span class="pane-label">Original</span>
-                                <div class="canvas" id="preview-container">
-                                    <div class="empty">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg>
-                                        Your uploaded SVG will appear here
+
+                        <div class="ws-body">
+                            <div class="tab-panel" role="tabpanel" id="tab-preview" aria-labelledby="tab-btn-preview">
+                                <div class="stage" id="stage" data-bg="checker" data-view="side">
+                                    <div class="pane">
+                                        <span class="pane-label">Original</span>
+                                        <div class="canvas" id="preview-container">
+                                            <div class="empty">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg>
+                                                Drop, paste or link an SVG to start.
+                                                <button type="button" class="btn btn-ghost btn-sm" data-action="example">Try an example</button>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
-                            <div class="pane">
-                                <span class="pane-label"><span class="sw"></span>Recolored</span>
-                                <div class="canvas" id="result-container">
-                                    <div class="empty">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
-                                        The recolored result will show up here
+                                    <div class="pane">
+                                        <span class="pane-label"><span class="sw"></span>Recolored</span>
+                                        <div class="canvas" id="result-container">
+                                            <div class="empty">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+                                                The result appears here and updates as you change settings.
+                                            </div>
+                                        </div>
                                     </div>
+                                    <input class="compare-range" id="compare-range" type="range" min="0" max="100" value="50" aria-label="Before/after split position">
+                                    <span class="split-line" aria-hidden="true"></span>
+                                </div>
+                                <div class="palette" id="palette" hidden>
+                                    <span>Colors</span>
+                                    <ul id="palette-list" aria-label="Original color to new color"></ul>
                                 </div>
                             </div>
-                            <input class="compare-range" id="compare-range" type="range" min="0" max="100" value="50" aria-label="Before/after split position">
-                            <span class="split-line" aria-hidden="true"></span>
+
+                            <div class="tab-panel" role="tabpanel" id="tab-code" aria-labelledby="tab-btn-code" hidden>
+                                <div class="code-wrap">
+                                    <pre class="code fill" id="code-view" tabindex="0" aria-label="Result code">Load an SVG to see its recolored code here.</pre>
+                                    <div class="code-meta"><span id="code-meta"></span><span id="code-hint"></span></div>
+                                </div>
+                            </div>
+
+                            <div class="tab-panel" role="tabpanel" id="tab-api" aria-labelledby="tab-btn-api" hidden>
+                                <div class="code-wrap">
+                                    <pre class="code fill" id="snippet" tabindex="0" aria-label="API snippet"></pre>
+                                    <div class="code-meta"><span>Uses your current settings. No API key needed.</span><span><a href="/docs" target="_blank" rel="noopener">Swagger</a> · <a href="/llms.txt" target="_blank" rel="noopener">llms.txt</a> · <a href="#api">All endpoints</a></span></div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="palette" id="palette" hidden>
-                            <span>Colors</span>
-                            <ul id="palette-list"></ul>
-                        </div>
-                        <div class="preview-actions">
-                            <span class="status" id="status"><span class="live-dot"></span><span id="status-text">Waiting for an SVG</span></span>
+
+                        <div class="action-bar">
+                            <span class="status" id="status" role="status" aria-live="polite"><span class="live-dot"></span><span id="status-text">Waiting for an SVG</span></span>
                             <button type="button" class="btn btn-ghost btn-sm" id="share-btn" title="Copy a link to this page with your settings">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                                 Share
                             </button>
-                            <details class="menu disabled" id="copy-menu">
-                                <summary class="btn btn-ghost btn-sm" id="copy-btn" aria-label="Copy the result">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                                    Copy as…
-                                </summary>
-                                <div class="menu-list" role="menu">
-                                    <button type="button" role="menuitem" data-copy="svg">SVG code <small>Ctrl+Shift+C</small></button>
-                                    <button type="button" role="menuitem" data-copy="datauri">Data URI <small>for src=""</small></button>
-                                    <button type="button" role="menuitem" data-copy="css">CSS background <small>url(…)</small></button>
-                                    <button type="button" role="menuitem" data-copy="jsx">React component <small>JSX</small></button>
-                                    <button type="button" role="menuitem" data-copy="base64">Base64 <small>raw</small></button>
-                                </div>
-                            </details>
-                            <a class="btn btn-ghost btn-sm" id="download-btn" aria-disabled="true" role="button" tabindex="-1" style="pointer-events:none;opacity:.5">
+                            <button type="button" class="btn btn-ghost btn-sm" id="copy-btn" disabled title="Copy (Ctrl+Shift+C)">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                <span id="copy-label">Copy SVG</span>
+                            </button>
+                            <a class="btn btn-primary btn-sm" id="download-btn" aria-disabled="true" role="button" tabindex="-1" title="Download (Ctrl+S)">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                Download SVG
+                                Download
                             </a>
                         </div>
                     </section>
                 </div>
             </div>
 
-            <section class="block">
+            <section class="more" id="agents">
                 <div class="wrap">
-                    <h2>Why SVG Recolor?</h2>
-                    <p class="lead">Changing the color of an SVG shouldn't require opening a design tool.</p>
-                    <div class="features">
-                        <div class="card feature">
-                            <div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><circle cx="6.5" cy="12.5" r="1.5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.56-2.5 5.56-5.55C21.97 6.01 17.46 2 12 2z"/></svg></div>
-                            <h3>Six recolor modes</h3>
-                            <p>Tint, colorize, shift the hue, flatten to one color, go grayscale, or fine-tune hue, saturation and lightness.</p>
-                        </div>
-                        <div class="card feature">
-                            <div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
-                            <h3>Files or links</h3>
-                            <p>Upload, paste or link to an SVG. Named colors, rgb(), hsl() and black icons without a fill are all handled.</p>
-                        </div>
-                        <div class="card feature">
-                            <div class="ficon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
-                            <h3>Website, API &amp; CLI</h3>
-                            <p>Use it here, call the HTTP API from your build pipeline, or run the Python script locally.</p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <section class="block" id="agents">
-                <div class="wrap">
-                    <h2>Built for AI agents too</h2>
+                    <h2>Use it from AI agents</h2>
                     <p class="lead">Let your coding agent recolor icons for you. No API key, no sign-up.</p>
-                    <div class="agents">
-                        <div class="card agent-card">
+                    <div class="cards">
+                        <div class="card">
                             <h3>MCP server</h3>
                             <p>Add it to Claude Code, Cursor or any MCP client. Tools: <code>recolor_svg</code>, <code>list_svg_colors</code>, <code>list_recolor_modes</code>.</p>
                             <pre class="code" id="mcp-cmd"></pre>
                             <div class="row"><button type="button" class="btn btn-ghost btn-sm" data-copy-from="mcp-cmd">Copy command</button></div>
                         </div>
-                        <div class="card agent-card">
+                        <div class="card">
                             <h3>llms.txt</h3>
                             <p>A short plain-text guide to every endpoint, parameter and mode. Point an agent at it and it can use the API right away.</p>
                             <pre class="code" id="llms-url"></pre>
                             <div class="row"><a class="btn btn-ghost btn-sm" href="/llms.txt" target="_blank" rel="noopener">Open llms.txt</a></div>
                         </div>
-                        <div class="card agent-card">
+                        <div class="card">
                             <h3>JSON in, JSON out</h3>
-                            <p>Send SVG markup as JSON and get the result plus a color mapping back. The OpenAPI spec has stable operation IDs for tool generation.</p>
+                            <p>Send SVG markup as JSON and get the result plus a color mapping back. The OpenAPI spec has stable operation IDs for generating tools.</p>
                             <pre class="code">POST /api/recolor?format=json
 {"svg": "&lt;svg …&gt;", "color": "tomato", "mode": "solid"}</pre>
                             <div class="row"><a class="btn btn-ghost btn-sm" href="/openapi.json" target="_blank" rel="noopener">OpenAPI spec</a><a class="btn btn-ghost btn-sm" href="/api" target="_blank" rel="noopener">API index</a></div>
@@ -864,40 +342,22 @@
                 </div>
             </section>
 
-            <section class="block" id="api">
+            <section class="more" id="api">
                 <div class="wrap">
-                    <div class="card api-grid">
-                        <div>
-                            <h2>Use it from code</h2>
-                            <p>Everything on this page is available over HTTP, with the same modes and options. No key needed.</p>
-                            <ul class="endpoints">
-                                <li><span class="verb get">GET</span><code>/api/recolor?url=…</code><span class="d">Recolor a linked SVG. Works as an &lt;img&gt; src.</span></li>
-                                <li><span class="verb post">POST</span><code>/api/recolor</code><span class="d">Upload a file, or send the SVG as the request body.</span></li>
-                                <li><span class="verb post">POST</span><code>/api/recolor/batch</code><span class="d">Many files in, one ZIP out.</span></li>
-                                <li><span class="verb get">GET</span><code>/api/palette?url=…</code><span class="d">List the colors in an SVG.</span></li>
-                                <li><span class="verb get">GET</span><code>/api/modes</code><span class="d">Available modes and option ranges.</span></li>
-                            </ul>
-                            <div class="btns">
-                                <a class="btn btn-ghost" href="/docs" target="_blank" rel="noopener">Swagger docs</a>
-                                <a class="btn btn-ghost" href="/redoc" target="_blank" rel="noopener">ReDoc</a>
-                            </div>
-                        </div>
-                        <div>
-                            <div class="snippet-head">
-                                <div class="segmented" role="group" aria-label="Snippet type" id="snippet-tabs">
-                                    <button type="button" data-snippet="curl" aria-pressed="true">curl</button>
-                                    <button type="button" data-snippet="link" aria-pressed="false">Link</button>
-                                    <button type="button" data-snippet="html" aria-pressed="false">HTML</button>
-                                    <button type="button" data-snippet="js" aria-pressed="false">JavaScript</button>
-                                    <button type="button" data-snippet="python" aria-pressed="false">Python</button>
-                                </div>
-                                <span class="note">Matches your current settings</span>
-                            </div>
-                            <div class="snippet-wrap">
-                                <pre class="code" id="snippet"></pre>
-                                <button type="button" class="btn btn-ghost copy-snippet" id="copy-snippet">Copy</button>
-                            </div>
-                        </div>
+                    <h2>HTTP API</h2>
+                    <p class="lead">Everything the editor does is available over HTTP with the same modes and options. The <b>API</b> tab above turns your current settings into ready-to-run code.</p>
+                    <ul class="endpoints">
+                        <li><span class="verb get">GET</span><code>/api/recolor?url=…</code><span class="d">Recolor a linked SVG. Cached, so it works as an &lt;img&gt; src.</span></li>
+                        <li><span class="verb post">POST</span><code>/api/recolor</code><span class="d">Upload a file, send JSON, or send the SVG as the body.</span></li>
+                        <li><span class="verb get">GET</span><code>/api/map-colors?colors=…</code><span class="d">Recolor just a list of colors, for design tokens or themes.</span></li>
+                        <li><span class="verb post">POST</span><code>/api/recolor/batch</code><span class="d">Many files in, one ZIP out.</span></li>
+                        <li><span class="verb get">GET</span><code>/api/palette?url=…</code><span class="d">List the colors in an SVG.</span></li>
+                        <li><span class="verb get">GET</span><code>/api/modes</code><span class="d">Available modes and option ranges.</span></li>
+                    </ul>
+                    <div class="btns">
+                        <a class="btn btn-ghost btn-sm" href="/docs" target="_blank" rel="noopener">Swagger docs</a>
+                        <a class="btn btn-ghost btn-sm" href="/redoc" target="_blank" rel="noopener">ReDoc</a>
+                        <a class="btn btn-ghost btn-sm" href="https://github.com/Snailedlt/svg-recolor#cli-tool" target="_blank" rel="noopener">CLI</a>
                     </div>
                 </div>
             </section>
@@ -906,8 +366,8 @@
         <footer class="site">
             <div class="wrap">
                 <div class="made">
-                    <img src="/static/avatar.png" alt="" width="26" height="26">
-                    <span>Made by <a href="https://jorgenkh.no" target="_blank" rel="noopener">Jørgen Kalsnes Hagen</a> · <a href="https://github.com/Snailedlt/svg-recolor" target="_blank" rel="noopener">Source on GitHub</a></span>
+                    <img src="/static/avatar.png" alt="" width="24" height="24">
+                    <span>Made by <a href="https://jorgenkh.no" target="_blank" rel="noopener">Jørgen Kalsnes Hagen</a> · <a href="https://github.com/Snailedlt/svg-recolor" target="_blank" rel="noopener">Source on GitHub</a> · Powered by svgray and svgshift</span>
                 </div>
                 <div class="support">
                     <a class="pill" href="https://ko-fi.com/snailedlt" target="_blank" rel="noopener">☕ Support on Ko-fi</a>
@@ -919,587 +379,22 @@
         <dialog class="shortcuts" id="shortcuts" aria-labelledby="shortcuts-title">
             <header><h2 id="shortcuts-title">Keyboard shortcuts</h2><button type="button" class="icon-btn" id="shortcuts-close" aria-label="Close">✕</button></header>
             <dl>
-                <dt><kbd>1</kbd>–<kbd>6</kbd></dt><dd>Choose a mode (Tint, Colorize, Hue, Solid, Grayscale, Adjust)</dd>
-                <dt><kbd>O</kbd></dt><dd>Open a file</dd>
-                <dt><kbd>L</kbd></dt><dd>Load from a link</dd>
+                <dt><kbd>1</kbd>–<kbd>6</kbd></dt><dd>Choose a mode</dd>
+                <dt><kbd>O</kbd> / <kbd>L</kbd></dt><dd>Open a file / load from a link</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>V</kbd></dt><dd>Paste an SVG file or SVG code</dd>
                 <dt><kbd>C</kbd></dt><dd>Edit the color</dd>
-                <dt><kbd>V</kbd></dt><dd>Switch between side by side and slider</dd>
-                <dt><kbd>B</kbd></dt><dd>Cycle the preview background</dd>
+                <dt><kbd>P</kbd> <kbd>E</kbd> <kbd>A</kbd></dt><dd>Preview, Code or API tab</dd>
+                <dt><kbd>V</kbd> / <kbd>B</kbd></dt><dd>Side by side or slider / cycle the background</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>Enter</kbd></dt><dd>Recolor now</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>S</kbd></dt><dd>Download the result</dd>
-                <dt><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>C</kbd></dt><dd>Copy the SVG code</dd>
+                <dt><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>C</kbd></dt><dd>Copy the current code</dd>
                 <dt><kbd>?</kbd></dt><dd>Show this list</dd>
             </dl>
         </dialog>
 
         <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-        <script>
-            (function () {
-                const MAX_BYTES = 2 * 1024 * 1024;
-                const PRESETS = ['#FF0066', '#FF5C00', '#F5A524', '#3ECF8E', '#00B8D9', '#569CD6', '#7C5CFF', '#111827', '#9AA1B2'];
-
-                const $ = (id) => document.getElementById(id);
-                const form = $('colorize-form');
-                const fileInput = $('files');
-                const dropzone = $('dropzone');
-                const fileChip = $('file-chip');
-                const colorInput = $('color-input');
-                const hexInput = $('hex-input');
-                const hexField = $('hex-field');
-                const presetsEl = $('presets');
-                const liveToggle = $('live-toggle');
-                const submitBtn = $('submit-btn');
-                const errorBox = $('error-message');
-                const errorText = $('error-text');
-                const previewEl = $('preview-container');
-                const resultEl = $('result-container');
-                const stage = $('stage');
-                const copyBtn = $('copy-btn');
-                const downloadBtn = $('download-btn');
-                const statusEl = $('status');
-                const statusText = $('status-text');
-
-                const MODES = {
-                    tint: { color: true, desc: 'Converts to grayscale, then adds your color. Dark areas take on the color and highlights stay light.' },
-                    colorize: { color: true, desc: 'Gives every color your hue and saturation but keeps its lightness, so shading and contrast survive.' },
-                    hue: { color: true, desc: 'Changes only the hue. Saturation and lightness stay the same, so muted tones stay muted.' },
-                    solid: { color: true, desc: 'Replaces every color with exactly your color. Best for single-color icons and logos.' },
-                    grayscale: { color: false, desc: 'Converts every color to its gray equivalent.' },
-                    adjust: { color: false, desc: 'Keeps the original colors. Use Fine-tune below to shift hue, saturation and lightness.' },
-                };
-                const adj = { hue: 0, saturation: 0, lightness: 0 };
-                let currentMode = 'tint';
-                let sourceUrl = null;
-                let snippetKind = 'curl';
-                let urlTimer = null;
-                let currentFile = null;
-                let currentColor = '#FF0066';
-                let resultText = '';
-                let resultUrl = null;
-                let originalUrl = null;
-                let requestId = 0;
-                let debounceTimer = null;
-
-                // ---------- Theme ----------
-                const root = document.documentElement;
-                function syncThemeIcons() {
-                    const dark = root.dataset.theme !== 'light';
-                    document.querySelector('.i-sun').style.display = dark ? '' : 'none';
-                    document.querySelector('.i-moon').style.display = dark ? 'none' : '';
-                }
-                syncThemeIcons();
-                $('theme-toggle').addEventListener('click', () => {
-                    root.dataset.theme = root.dataset.theme === 'light' ? 'dark' : 'light';
-                    try { localStorage.setItem('theme', root.dataset.theme); } catch (e) {}
-                    syncThemeIcons();
-                });
-
-                // ---------- Helpers ----------
-                function formatBytes(n) {
-                    if (n < 1024) return n + ' B';
-                    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-                    return (n / 1024 / 1024).toFixed(2) + ' MB';
-                }
-                function normalizeHex(value) {
-                    let v = String(value).trim().replace(/^#/, '');
-                    if (/^[0-9a-f]{3}$/i.test(v)) v = v.split('').map((c) => c + c).join('');
-                    return /^[0-9a-f]{6}$/i.test(v) ? '#' + v.toUpperCase() : null;
-                }
-                function showError(msg) {
-                    errorText.textContent = msg;
-                    errorBox.classList.remove('show');
-                    void errorBox.offsetWidth; // restart animation
-                    errorBox.classList.add('show');
-                }
-                function clearError() { errorBox.classList.remove('show'); }
-                let toastTimer;
-                function toast(msg) {
-                    const t = $('toast');
-                    t.textContent = msg;
-                    t.classList.add('show');
-                    clearTimeout(toastTimer);
-                    toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
-                }
-                function setStatus(kind, text) {
-                    statusEl.className = 'status ' + (kind || '');
-                    statusText.textContent = text;
-                }
-                function setLoading(on) {
-                    submitBtn.classList.toggle('loading', on);
-                    submitBtn.disabled = on;
-                    const img = resultEl.querySelector('img');
-                    if (img) img.classList.toggle('busy', on);
-                }
-                function setResultActions(enabled) {
-                    $('copy-menu').classList.toggle('disabled', !enabled);
-                    downloadBtn.setAttribute('aria-disabled', String(!enabled));
-                    downloadBtn.tabIndex = enabled ? 0 : -1;
-                    downloadBtn.style.pointerEvents = enabled ? '' : 'none';
-                    downloadBtn.style.opacity = enabled ? '' : '.5';
-                }
-                function renderImage(container, url, alt) {
-                    // Rendering via <img> keeps SVG scripts/styles sandboxed from the page.
-                    const img = document.createElement('img');
-                    img.src = url;
-                    img.alt = alt;
-                    img.onload = () => { if (!img.naturalWidth) img.classList.add('fill'); };
-                    container.replaceChildren(img);
-                }
-
-                // ---------- Color ----------
-                PRESETS.forEach((hex) => {
-                    const b = document.createElement('button');
-                    b.type = 'button';
-                    b.className = 'preset';
-                    b.style.background = hex;
-                    b.title = hex;
-                    b.setAttribute('aria-label', 'Use ' + hex);
-                    b.dataset.hex = hex;
-                    b.addEventListener('click', () => setColor(hex, true));
-                    presetsEl.appendChild(b);
-                });
-
-                function setColor(hex, fromUser) {
-                    currentColor = hex;
-                    colorInput.value = hex.toLowerCase();
-                    if (document.activeElement !== hexInput) hexInput.value = hex.slice(1);
-                    hexField.classList.remove('invalid');
-                    root.style.setProperty('--pick', hex);
-                    presetsEl.querySelectorAll('.preset').forEach((p) => p.setAttribute('aria-pressed', String(p.dataset.hex === hex)));
-                    updateSnippet();
-                    if (fromUser) scheduleLive();
-                }
-                colorInput.addEventListener('input', () => setColor(colorInput.value.toUpperCase(), true));
-                hexInput.addEventListener('input', () => {
-                    const hex = normalizeHex(hexInput.value);
-                    if (hex) setColor(hex, true);
-                    else hexField.classList.add('invalid');
-                });
-                hexInput.addEventListener('blur', () => { hexInput.value = currentColor.slice(1); hexField.classList.remove('invalid'); });
-                setColor(currentColor, false);
-
-                // ---------- File handling ----------
-                async function loadFile(file, fromUrl) {
-                    clearError();
-                    if (!file) return;
-                    sourceUrl = fromUrl || null;
-                    const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
-                    if (!isSvg) return showError('That doesn\'t look like an SVG. Please choose a .svg file.');
-                    if (file.size > MAX_BYTES) return showError('File is ' + formatBytes(file.size) + '. The limit is 2 MB — try optimizing it with SVGO first.');
-                    // The API requires the image/svg+xml content type; normalize it.
-                    if (file.type !== 'image/svg+xml') file = new File([file], file.name, { type: 'image/svg+xml' });
-
-                    currentFile = file;
-                    if (originalUrl) URL.revokeObjectURL(originalUrl);
-                    originalUrl = URL.createObjectURL(file);
-                    renderImage(previewEl, originalUrl, 'Original ' + file.name);
-                    $('file-thumb').src = originalUrl;
-                    $('file-name').textContent = file.name;
-                    $('file-size').textContent = formatBytes(file.size);
-                    $('source-file').hidden = true;
-                    $('source-link').hidden = true;
-                    document.querySelector('.source-tabs').hidden = true;
-                    fileChip.classList.add('show');
-                    $('file-size').textContent = fromUrl ? formatBytes(file.size) + ' · from link' : formatBytes(file.size);
-                    updateSnippet();
-                    recolor();
-                }
-
-                fileInput.addEventListener('change', () => { loadFile(fileInput.files[0]); fileInput.value = ''; });
-                $('change-file').addEventListener('click', () => {
-                    fileChip.classList.remove('show');
-                    document.querySelector('.source-tabs').hidden = false;
-                    showSource(sourceUrl ? 'link' : 'file');
-                    if (sourceUrl) $('url-input').select(); else fileInput.click();
-                });
-
-                // ---------- Source: file or link ----------
-                function showSource(kind) {
-                    $('source-file').hidden = kind !== 'file';
-                    $('source-link').hidden = kind !== 'link';
-                    document.querySelectorAll('.source-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.source === kind)));
-                }
-                document.querySelectorAll('.source-tabs button').forEach((b) => b.addEventListener('click', () => {
-                    showSource(b.dataset.source);
-                    if (b.dataset.source === 'link') $('url-input').focus();
-                }));
-                async function loadFromLink() {
-                    const url = $('url-input').value.trim();
-                    clearError();
-                    if (!/^https?:\/\/\S+$/i.test(url)) return showError('Enter a full link that starts with http:// or https://.');
-                    const btn = $('url-load');
-                    btn.disabled = true; btn.textContent = 'Loading…';
-                    try {
-                        const res = await fetch('/api/fetch?url=' + encodeURIComponent(url));
-                        const body = await res.text();
-                        if (!res.ok) {
-                            let detail = body;
-                            try { detail = JSON.parse(body).detail || body; } catch (e) {}
-                            throw new Error(typeof detail === 'string' ? detail : 'Could not load that link.');
-                        }
-                        const name = (decodeURIComponent(new URL(url).pathname.split('/').pop() || '') || 'linked.svg').replace(/(\.svg)?$/i, '.svg');
-                        loadFile(new File([body], name, { type: 'image/svg+xml' }), url);
-                    } catch (err) {
-                        showError(err.message && err.message !== 'Failed to fetch' ? err.message : 'Could not reach the server. Check your connection and try again.');
-                    } finally {
-                        btn.disabled = false; btn.textContent = 'Load';
-                    }
-                }
-                $('url-load').addEventListener('click', loadFromLink);
-                $('url-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); loadFromLink(); } });
-
-                // ---------- Mode ----------
-                function setMode(mode, fromUser) {
-                    currentMode = mode;
-                    document.querySelectorAll('.mode').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
-                    $('mode-desc').textContent = MODES[mode].desc;
-                    $('color-step').classList.toggle('step-off', !MODES[mode].color);
-                    if (mode === 'adjust') $('finetune').open = true;
-                    updateSnippet();
-                    if (fromUser) scheduleLive();
-                }
-                document.querySelectorAll('.mode').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode, true)));
-
-                // ---------- Fine-tune ----------
-                function syncAdjust(fromUser) {
-                    ['hue', 'saturation', 'lightness'].forEach((k) => {
-                        adj[k] = parseInt($('adj-' + k).value, 10) || 0;
-                        const v = adj[k];
-                        $('adj-' + k + '-out').textContent = (v > 0 ? '+' : '') + v + (k === 'hue' ? '°' : '');
-                    });
-                    $('finetune-badge').hidden = !(adj.hue || adj.saturation || adj.lightness);
-                    updateSnippet();
-                    if (fromUser) scheduleLive();
-                }
-                ['hue', 'saturation', 'lightness'].forEach((k) => $('adj-' + k).addEventListener('input', () => syncAdjust(true)));
-                $('adj-reset').addEventListener('click', () => {
-                    ['hue', 'saturation', 'lightness'].forEach((k) => { $('adj-' + k).value = 0; });
-                    syncAdjust(true);
-                });
-
-                // ---------- API snippet ----------
-                function apiParams() {
-                    const q = new URLSearchParams();
-                    if (MODES[currentMode].color) q.set('color', currentColor.slice(1).toLowerCase());
-                    q.set('mode', currentMode);
-                    ['hue', 'saturation', 'lightness'].forEach((k) => { if (adj[k]) q.set(k, adj[k]); });
-                    return q;
-                }
-                function updateSnippet() {
-                    const el = $('snippet');
-                    if (!el) return;
-                    const origin = location.origin.startsWith('http') ? location.origin : 'https://svg-recolor.jorgenkh.no';
-                    const q = apiParams();
-                    const link = sourceUrl || 'https://example.com/icon.svg';
-                    const getQ = new URLSearchParams(q); getQ.set('url', link);
-                    const getUrl = origin + '/api/recolor?' + getQ.toString();
-                    const fname = currentFile && !sourceUrl ? currentFile.name : 'icon.svg';
-                    const out = fname.replace(/\.svg$/i, '') + '-recolored.svg';
-                    const snippets = {
-                        curl: '# Upload a file\ncurl -X POST "' + origin + '/api/recolor?' + q.toString() + '" \\\n  -F "file=@' + fname + '" \\\n  -o ' + out,
-                        link: '# Recolor a linked SVG\n' + getUrl,
-                        html: '<!-- Use the API directly as an image -->\n<img src="' + getUrl.replace(/&/g, '&amp;') + '" alt="">',
-                        python: 'import requests\n\nwith open("' + fname + '", "rb") as f:\n    res = requests.post(\n        "' + origin + '/api/recolor",\n        params=' + JSON.stringify(Object.fromEntries(q)).replace(/":/g, '": ').replace(/,"/g, ', "') + ',\n        files={"file": f},\n    )\nres.raise_for_status()\n\nwith open("' + out + '", "wb") as f:\n    f.write(res.content)',
-                        js: "const form = new FormData();\nform.append('file', file); // a File or Blob\n\nconst res = await fetch('" + origin + '/api/recolor?' + q.toString() + "', {\n  method: 'POST',\n  body: form,\n});\nconst svg = await res.text();",
-                    };
-                    el.textContent = snippets[snippetKind];
-                    $('mcp-cmd').textContent = 'claude mcp add --transport http svg-recolor ' + origin + '/mcp';
-                    $('llms-url').textContent = origin + '/llms.txt';
-                    syncPageUrl();
-                }
-
-                // ---------- Page URL holds the settings (shareable) ----------
-                function shareParams() {
-                    const q = apiParams();
-                    if (sourceUrl) q.set('url', sourceUrl);
-                    return q;
-                }
-                function syncPageUrl() {
-                    clearTimeout(urlTimer);
-                    urlTimer = setTimeout(() => {
-                        try { history.replaceState(null, '', location.pathname + '?' + shareParams().toString() + location.hash); } catch (e) {}
-                    }, 300);
-                }
-                $('share-btn').addEventListener('click', async () => {
-                    const link = location.origin + location.pathname + '?' + shareParams().toString();
-                    try {
-                        await navigator.clipboard.writeText(link);
-                        toast(sourceUrl ? 'Link copied. It opens with this SVG and these settings.' : 'Link copied. It opens with these settings; uploaded files are not included.');
-                    } catch (e) {
-                        showError('Could not access the clipboard. Copy the address bar instead.');
-                    }
-                });
-                document.querySelectorAll('#snippet-tabs button').forEach((b) => b.addEventListener('click', () => {
-                    snippetKind = b.dataset.snippet;
-                    document.querySelectorAll('#snippet-tabs button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-                    updateSnippet();
-                }));
-                $('copy-snippet').addEventListener('click', async () => {
-                    try {
-                        await navigator.clipboard.writeText($('snippet').textContent);
-                        toast('Copied to clipboard');
-                    } catch (e) {
-                        const r = document.createRange(); r.selectNodeContents($('snippet'));
-                        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
-                    }
-                });
-
-                // ---------- Palette ----------
-                function renderPalette(entries) {
-                    const list = $('palette-list');
-                    list.replaceChildren();
-                    const max = 12;
-                    entries.slice(0, max).forEach((e) => {
-                        const li = document.createElement('li');
-                        li.title = e.from + ' → ' + e.to + ' (' + e.count + '×)';
-                        const a = document.createElement('i'); a.style.background = e.from;
-                        const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.textContent = '→';
-                        const b = document.createElement('i'); b.style.background = e.to;
-                        const t = document.createElement('span'); t.textContent = e.to.toUpperCase();
-                        li.append(a, arrow, b, t);
-                        list.appendChild(li);
-                    });
-                    if (entries.length > max) {
-                        const li = document.createElement('li'); li.className = 'more';
-                        li.textContent = '+' + (entries.length - max) + ' more';
-                        list.appendChild(li);
-                    }
-                    $('palette').hidden = entries.length === 0;
-                }
-
-                ['dragenter', 'dragover'].forEach((ev) => document.addEventListener(ev, (e) => {
-                    e.preventDefault();
-                    dropzone.classList.add('dragover');
-                }));
-                ['dragleave', 'drop'].forEach((ev) => document.addEventListener(ev, (e) => {
-                    if (ev === 'dragleave' && e.relatedTarget) return;
-                    e.preventDefault();
-                    dropzone.classList.remove('dragover');
-                }));
-                document.addEventListener('drop', (e) => {
-                    const file = e.dataTransfer && e.dataTransfer.files[0];
-                    if (file) { showSource('file'); loadFile(file); }
-                });
-
-                document.addEventListener('paste', (e) => {
-                    if (e.target === hexInput || e.target === $('url-input')) return;
-                    const items = e.clipboardData;
-                    if (!items) return;
-                    const file = Array.from(items.files || []).find((f) => /svg/i.test(f.type) || /\.svg$/i.test(f.name));
-                    if (file) { e.preventDefault(); return loadFile(file); }
-                    const text = items.getData('text/plain');
-                    if (text && /<svg[\s>]/i.test(text)) {
-                        e.preventDefault();
-                        loadFile(new File([text], 'pasted.svg', { type: 'image/svg+xml' }));
-                    }
-                });
-
-                async function loadExample() {
-                    try {
-                        const res = await fetch('/static/examples/python.svg');
-                        if (!res.ok) throw new Error();
-                        const blob = await res.blob();
-                        loadFile(new File([blob], 'python.svg', { type: 'image/svg+xml' }));
-                    } catch (e) {
-                        showError('Could not load the example file.');
-                    }
-                }
-                $('try-example').addEventListener('click', loadExample);
-
-                // ---------- Recolor ----------
-                function scheduleLive() {
-                    if (!currentFile || !liveToggle.checked) return;
-                    clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(recolor, 350);
-                }
-
-                async function recolor() {
-                    clearTimeout(debounceTimer);
-                    clearError();
-                    if (!currentFile) {
-                        showError('Upload an SVG first — drop it in the box above or try the example.');
-                        fileInput.focus();
-                        return;
-                    }
-                    const color = currentColor;
-                    const params = apiParams();
-                    params.set('format', 'json');
-                    const id = ++requestId;
-                    setLoading(true);
-                    setStatus('work', 'Recoloring…');
-
-                    const formData = new FormData();
-                    formData.append('file', currentFile, currentFile.name);
-                    try {
-                        const response = await fetch('/api/recolor?' + params.toString(), { method: 'POST', body: formData });
-                        const text = await response.text();
-                        const body = text;
-                        if (!response.ok) {
-                            let detail = body;
-                            try { detail = JSON.parse(body).detail || body; } catch (e) {}
-                            throw new Error(typeof detail === 'string' ? detail : (response.status + ' ' + response.statusText));
-                        }
-                        if (id !== requestId) return; // a newer request superseded this one
-                        const data = JSON.parse(text);
-                        resultText = data.svg;
-                        if (resultUrl) URL.revokeObjectURL(resultUrl);
-                        resultUrl = URL.createObjectURL(new Blob([data.svg], { type: 'image/svg+xml' }));
-                        renderImage(resultEl, resultUrl, 'Recolored ' + currentFile.name);
-                        downloadBtn.href = resultUrl;
-                        downloadBtn.download = data.filename;
-                        renderPalette(data.palette || []);
-                        setResultActions(true);
-                        const n = (data.palette || []).length;
-                        const label = currentMode.charAt(0).toUpperCase() + currentMode.slice(1);
-                        setStatus('ok', label + (MODES[currentMode].color ? ' ' + color : '') + ' · ' + n + ' color' + (n === 1 ? '' : 's') + ' · ' + formatBytes(new Blob([data.svg]).size));
-                    } catch (err) {
-                        if (id !== requestId) return;
-                        console.error(err);
-                        showError(err.message && err.message !== 'Failed to fetch' ? err.message : 'Could not reach the server. Check your connection and try again.');
-                        setStatus('', 'Something went wrong');
-                    } finally {
-                        if (id === requestId) setLoading(false);
-                    }
-                }
-
-                form.addEventListener('submit', (e) => { e.preventDefault(); recolor(); });
-
-                // ---------- Start: apply settings from the page URL ----------
-                const startParams = new URLSearchParams(location.search);
-                if (MODES[startParams.get('mode')]) currentMode = startParams.get('mode');
-                if (startParams.get('color')) {
-                    const hex = normalizeHex(startParams.get('color'));
-                    if (hex) setColor(hex, false);
-                }
-                [['hue', 180], ['saturation', 100], ['lightness', 100]].forEach(([k, lim]) => {
-                    const v = parseInt(startParams.get(k), 10);
-                    if (!Number.isNaN(v)) $('adj-' + k).value = Math.max(-lim, Math.min(lim, v));
-                });
-                setMode(currentMode, false);
-                syncAdjust(false);
-                if (startParams.get('url')) {
-                    showSource('link');
-                    $('url-input').value = startParams.get('url');
-                    loadFromLink();
-                }
-
-                // ---------- Result actions ----------
-                function toJsx(svg) {
-                    let out = svg.replace(/<\?xml[\s\S]*?\?>/g, '').replace(/<!DOCTYPE[\s\S]*?>/gi, '').replace(/<!--[\s\S]*?-->/g, '').trim();
-                    const camel = (n) => n.replace(/[-:]([a-z])/g, (m, c) => c.toUpperCase());
-                    out = out.replace(/<([a-zA-Z][\w:-]*)((?:\s+[\w:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/g, (tag, name, attrs, selfClose) => {
-                        const fixed = attrs.replace(/([\w:-]+)\s*=\s*("[^"]*"|'[^']*')/g, (a, key, val) => {
-                            if (key === 'class') return 'className=' + val;
-                            if (key === 'style') {
-                                const obj = val.slice(1, -1).split(';').map((d) => d.trim()).filter(Boolean).map((d) => {
-                                    const i = d.indexOf(':');
-                                    return i < 0 ? '' : JSON.stringify(camel(d.slice(0, i).trim())) + ': ' + JSON.stringify(d.slice(i + 1).trim());
-                                }).filter(Boolean).join(', ');
-                                return 'style={{ ' + obj + ' }}';
-                            }
-                            if (/^(data|aria)-/.test(key) || key === 'xmlns' || key.startsWith('xmlns:')) return key + '=' + val;
-                            return camel(key) + '=' + val;
-                        });
-                        return '<' + name + fixed + (selfClose ? ' />' : '>');
-                    });
-                    out = out.replace(/<svg\b/, '<svg {...props}');
-                    return 'export default function RecoloredIcon(props) {\n  return (\n' + out.split('\n').map((l) => '    ' + l).join('\n') + '\n  );\n}\n';
-                }
-                function formatResult(kind) {
-                    const uri = 'data:image/svg+xml,' + encodeURIComponent(resultText.replace(/\s*\n\s*/g, ' ').trim());
-                    if (kind === 'datauri') return uri;
-                    if (kind === 'css') return 'background-image: url("' + uri + '");';
-                    if (kind === 'base64') return btoa(unescape(encodeURIComponent(resultText)));
-                    if (kind === 'jsx') return toJsx(resultText);
-                    return resultText;
-                }
-                const COPY_LABELS = { svg: 'SVG code', datauri: 'Data URI', css: 'CSS background', jsx: 'React component', base64: 'Base64' };
-                async function copyResult(kind) {
-                    if (!resultText) return;
-                    $('copy-menu').open = false;
-                    try {
-                        await navigator.clipboard.writeText(formatResult(kind));
-                        toast(COPY_LABELS[kind] + ' copied to clipboard');
-                    } catch (e) {
-                        showError('Could not access the clipboard.');
-                    }
-                }
-                document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', () => copyResult(b.dataset.copy)));
-                document.addEventListener('click', (e) => { if (!$('copy-menu').contains(e.target)) $('copy-menu').open = false; });
-                document.querySelectorAll('[data-copy-from]').forEach((b) => b.addEventListener('click', async () => {
-                    try { await navigator.clipboard.writeText($(b.dataset.copyFrom).textContent); toast('Copied to clipboard'); }
-                    catch (e) { showError('Could not access the clipboard.'); }
-                }));
-                downloadBtn.addEventListener('click', () => toast('Download started'));
-
-                // ---------- Preview background and view ----------
-                function setBg(bg) {
-                    stage.dataset.bg = bg;
-                    document.querySelectorAll('#bg-tabs button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.bg === bg)));
-                }
-                document.querySelectorAll('#bg-tabs button').forEach((b) => b.addEventListener('click', () => setBg(b.dataset.bg)));
-                function setView(view) {
-                    stage.dataset.view = view;
-                    document.querySelectorAll('#view-tabs button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.view === view)));
-                }
-                document.querySelectorAll('#view-tabs button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
-                $('compare-range').addEventListener('input', (e) => stage.style.setProperty('--split', e.target.value + '%'));
-
-                // ---------- Eyedropper ----------
-                if ('EyeDropper' in window) {
-                    $('eyedropper').hidden = false;
-                    $('eyedropper').addEventListener('click', async () => {
-                        try {
-                            const { sRGBHex } = await new window.EyeDropper().open();
-                            const hex = normalizeHex(sRGBHex);
-                            if (hex) setColor(hex, true);
-                        } catch (e) { /* cancelled */ }
-                    });
-                }
-
-                // ---------- Reset ----------
-                $('reset-all').addEventListener('click', () => {
-                    ['hue', 'saturation', 'lightness'].forEach((k) => { $('adj-' + k).value = 0; });
-                    syncAdjust(false);
-                    setColor('#FF0066', false);
-                    setMode('tint', false);
-                    setView('side');
-                    setBg('checker');
-                    scheduleLive();
-                    toast('Settings reset');
-                });
-
-                // ---------- Keyboard shortcuts ----------
-                const dialog = $('shortcuts');
-                const openShortcuts = () => { if (dialog.showModal) dialog.showModal(); };
-                $('shortcuts-btn').addEventListener('click', openShortcuts);
-                $('shortcuts-close').addEventListener('click', () => dialog.close());
-                const MODE_KEYS = ['tint', 'colorize', 'hue', 'solid', 'grayscale', 'adjust'];
-                document.addEventListener('keydown', (e) => {
-                    const mod = e.ctrlKey || e.metaKey;
-                    if (mod && e.key.toLowerCase() === 's') {
-                        e.preventDefault();
-                        if (resultText) downloadBtn.click();
-                        return;
-                    }
-                    if (mod && e.shiftKey && e.key.toLowerCase() === 'c') { e.preventDefault(); copyResult('svg'); return; }
-                    if (mod && e.key === 'Enter') { e.preventDefault(); recolor(); return; }
-                    const t = e.target;
-                    if (mod || e.altKey || (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) || dialog.open) return;
-                    const k = e.key.toLowerCase();
-                    if (/^[1-6]$/.test(k)) setMode(MODE_KEYS[+k - 1], true);
-                    else if (k === 'o') { showSource('file'); fileInput.click(); }
-                    else if (k === 'l') { fileChip.classList.remove('show'); document.querySelector('.source-tabs').hidden = false; showSource('link'); $('url-input').focus(); }
-                    else if (k === 'c') { hexInput.focus(); hexInput.select(); }
-                    else if (k === 'v') setView(stage.dataset.view === 'slider' ? 'side' : 'slider');
-                    else if (k === 'b') { const order = ['checker', 'light', 'dark']; setBg(order[(order.indexOf(stage.dataset.bg) + 1) % 3]); }
-                    else if (e.key === '?') openShortcuts();
-                    else return;
-                    e.preventDefault();
-                });
-            })();
-        </script>
+        <script>window.SVG_RECOLOR = { engineVersion: '__ENGINE_VERSION__' };</script>
+        <script src="/static/app.js?v=__APP_JS_V__" defer></script>
     </body>
 </html>

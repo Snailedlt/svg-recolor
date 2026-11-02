@@ -1,6 +1,8 @@
+import hashlib
 import io
 import ipaddress
 import json
+import os
 import re
 import socket
 import subprocess
@@ -76,6 +78,27 @@ app = FastAPI(
 )
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static", html=True), name="static")
 
+# Cache policy. `s-maxage` lets the hosting CDN (Vercel's edge network) answer repeat
+# requests without running the function, which keeps cost flat as traffic grows.
+CACHE_PAGE = "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400"
+CACHE_STATIC = "public, max-age=86400, s-maxage=604800, stale-while-revalidate=604800"
+CACHE_DOCS = "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
+CACHE_REMOTE = "public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800"
+# Mapping results depend only on the query (which includes the engine version).
+CACHE_IMMUTABLE = "public, max-age=31536000, s-maxage=31536000, immutable"
+
+
+@app.middleware("http")
+async def cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if response.status_code == 200 and "cache-control" not in response.headers:
+        if path.startswith("/static/"):
+            response.headers["Cache-Control"] = CACHE_STATIC
+        elif path in ("/llms.txt", "/api", "/api/modes", "/openapi.json"):
+            response.headers["Cache-Control"] = CACHE_DOCS
+    return response
+
 # Served SVGs are user content. Stop any embedded script from running if the
 # response is opened directly on this origin.
 SVG_HEADERS = {
@@ -112,7 +135,23 @@ DownloadParam = Annotated[bool, Query(description="Send as an attachment instead
 
 @app.get("/", include_in_schema=False)
 async def landing_page():
-    return HTMLResponse(content=(BASE_DIR / "main.html").read_text(encoding="utf-8"))
+    return HTMLResponse(content=_landing_html(), headers={"Cache-Control": CACHE_PAGE})
+
+
+_landing_cache: str | None = None
+
+
+def _landing_html() -> str:
+    global _landing_cache
+    if _landing_cache is None or os.environ.get("SVG_RECOLOR_DEV"):
+        html = (BASE_DIR / "main.html").read_text(encoding="utf-8")
+        # Content hashes in asset URLs: browsers and the CDN can cache them, and a
+        # deploy that changes a file changes its URL.
+        for placeholder, asset in (("__APP_CSS_V__", "app.css"), ("__APP_JS_V__", "app.js")):
+            digest = hashlib.sha256((BASE_DIR / "static" / asset).read_bytes()).hexdigest()[:12]
+            html = html.replace(placeholder, digest)
+        _landing_cache = html.replace("__ENGINE_VERSION__", engine.ENGINE_VERSION)
+    return _landing_cache
 
 
 # --------------------------------------------------------------------------
@@ -181,7 +220,7 @@ def _respond(result: engine.Result, opts, filename: str, fmt: str, download: boo
     disposition = "attachment" if download else "inline"
     headers["Content-Disposition"] = f"{disposition}; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}"
     if cache:
-        headers["Cache-Control"] = "public, max-age=86400"
+        headers["Cache-Control"] = CACHE_REMOTE
     return Response(result.svg, media_type="image/svg+xml", headers=headers)
 
 
@@ -401,6 +440,65 @@ async def recolor_upload(
     return _respond(result, opts, _output_name(_safe_stem(name), opts), params["format"], download_flag)
 
 
+def _parse_colors(raw) -> list[str]:
+    if isinstance(raw, str):
+        raw = [c for c in re.split(r"[\s,]+", raw) if c]
+    if not isinstance(raw, list) or not raw:
+        raise HTTPException(400, "Send at least one color, e.g. colors=5a9fd4,306998.")
+    return [str(c) for c in raw]
+
+
+async def _map_response(colors: list[str], opts: engine.Options, cache: bool):
+    try:
+        mapping = await run_in_threadpool(engine.map_colors, colors, opts)
+    except engine.RecolorError as e:
+        _bad_request(e)
+    except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+        sentry_sdk.capture_exception(e)
+        raise HTTPException(status_code=500, detail=f"Error processing the colors: {e}")
+    headers = {"Access-Control-Allow-Origin": "*"}
+    if cache:
+        headers["Cache-Control"] = CACHE_IMMUTABLE
+    return JSONResponse(
+        {"engine": engine.ENGINE_VERSION, "mode": opts.mode, "mapping": {f"#{k}": f"#{v}" for k, v in mapping.items()}},
+        headers=headers,
+    )
+
+
+@app.get("/api/map-colors", tags=["Recolor"], operation_id="mapColors", summary="Recolor a list of colors")
+async def map_colors_get(
+    colors: Annotated[str, Query(description="Comma-separated 6-digit hex colors, with or without '#'.", examples=["5a9fd4,306998,ffd43b"])],
+    color: ColorParam = "ff0066",
+    mode: ModeParam = "tint",
+    hue: HueParam = 0,
+    saturation: SatParam = 0,
+    lightness: LightParam = 0,
+    v: Annotated[str | None, Query(description="Engine version; pass the `engine` value from a previous response to get a long-lived cacheable URL.")] = None,
+):
+    """Runs only the colors through the engine and returns the old-to-new mapping. The cheapest way
+    to recolor: the website extracts an SVG's palette in the browser, calls this endpoint, and
+    applies the mapping itself. Responses are cached by the CDN, so identical requests are free.
+
+    Also handy for design tokens or theme colors."""
+    opts = _options(mode, color, hue, saturation, lightness)
+    return await _map_response(_parse_colors(colors), opts, cache=v == engine.ENGINE_VERSION)
+
+
+@app.post("/api/map-colors", tags=["Recolor"], operation_id="mapColorsPost", summary="Recolor a list of colors (JSON)")
+async def map_colors_post(request: Request):
+    """Same as `GET /api/map-colors`, for long palettes: send
+    `{"colors": ["#5a9fd4", ...], "color": "tomato", "mode": "colorize"}`."""
+    try:
+        data = json.loads(await request.body() or b"{}")
+    except ValueError:
+        raise HTTPException(400, "The JSON body could not be parsed.")
+    if not isinstance(data, dict):
+        raise HTTPException(400, "The JSON body must be an object.")
+    opts = _options(data.get("mode") or engine.DEFAULT_MODE, data.get("color") or "ff0066",
+                    data.get("hue", 0), data.get("saturation", 0), data.get("lightness", 0))
+    return await _map_response(_parse_colors(data.get("colors")), opts, cache=False)
+
+
 @app.post(
     "/api/recolor/batch",
     tags=["Recolor"],
@@ -466,6 +564,7 @@ async def fetch_original(url: Annotated[str, Query(description="Public http(s) l
     svg_text, name = await fetch_svg(url)
     headers = dict(SVG_HEADERS)
     headers["Content-Disposition"] = f"inline; filename=\"{_safe_stem(name)}.svg\""
+    headers["Cache-Control"] = CACHE_REMOTE
     return Response(svg_text, media_type="image/svg+xml", headers=headers)
 
 
@@ -498,6 +597,7 @@ async def api_index(request: Request):
             {"method": "GET", "path": "/api/recolor", "description": "Recolor an SVG from a link (?url=). Cacheable; works as <img src>."},
             {"method": "POST", "path": "/api/recolor", "description": "Recolor an SVG sent as multipart, JSON {svg|url, ...} or a raw image/svg+xml body."},
             {"method": "POST", "path": "/api/recolor/batch", "description": "Recolor many files (multipart 'files'), get a ZIP."},
+            {"method": "GET", "path": "/api/map-colors", "description": "Recolor just a list of colors (?colors=5a9fd4,306998). CDN-cached; cheapest option."},
             {"method": "GET", "path": "/api/palette", "description": "List the colors in an SVG from a link (?url=)."},
             {"method": "POST", "path": "/api/palette", "description": "List the colors in an uploaded SVG."},
             {"method": "GET", "path": "/api/modes", "description": "List recolor modes and option ranges."},
@@ -528,6 +628,8 @@ Base URL: {base}
   → `{{"svg": "...", "palette": [{{"from": "#5a9fd4", "to": "#ff6347", "count": 3}}], "filename": "..."}}`
 - Recolor a file: `POST {base}/api/recolor?color=ff0066` with multipart field `file`
 - Many files: `POST {base}/api/recolor/batch` with multipart fields `files` → ZIP
+- Just colors: `GET {base}/api/map-colors?colors=5a9fd4,306998&color=tomato&mode=colorize`
+  → `{{"mapping": {{"#5a9fd4": "#…"}}}}`. Use this when you already have the colors (design tokens, themes).
 - List colors: `GET {base}/api/palette?url=<svg-url>` or `POST {base}/api/palette` (same bodies as above)
 - Modes and limits: `GET {base}/api/modes`
 - OpenAPI: {base}/openapi.json
