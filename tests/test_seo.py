@@ -71,3 +71,14 @@ def test_the_snail_is_the_logo_example_and_thumbnail(client):
     assert "data:image/svg+xml;base64," in html  # header logo inlined
     config = json.loads(re.search(r"window\.SVG_RECOLOR = (\{.*?\});</script>", html).group(1).replace("<\\/", "</"))
     assert config["sample"] == logo.strip()
+
+
+def test_rainbow_snail_example_scales_and_stays_small(client):
+    res = client.get("/static/examples/rainbow-snail.svg")
+    assert res.status_code == 200
+    head = res.text[:300]
+    assert 'viewBox="0 0 ' in head and "<title>Rainbow snail</title>" in head
+    assert len(res.content) < 200_000  # loaded only when "Try an example" is clicked
+    import recolor as r
+
+    assert 8 <= len(r.extract_palette(r.normalize_svg(res.text))) <= 30  # enough colors to show every style

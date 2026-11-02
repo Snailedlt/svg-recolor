@@ -254,7 +254,8 @@ pipenv run colorize path/to/input.svg path/to/output.svg --color "255,0,0"
 | `main.py` | FastAPI app: website, recolor/palette/map-colors endpoints, cache headers |
 | `server/` | `common.py` (shared helpers, cache policy), `fetching.py` (safe link downloads), `agents.py` (`/llms.txt`, `/mcp`) |
 | `main.html`, `static/` | The editor: `engine.js` (browser twin of the engine), `formats.js` (code formats), `snippets.js` (API examples), `highlight.js` (syntax highlighting), `icons.js`, `app.js`, `app.css` |
-| `static/logo.svg` | The snail: header logo, favicon, "Try an example" and the style thumbnails. Drawn by `scripts/make-snail.py`; `node scripts/make-icons.mjs` renders the PNG icons, `favicon.ico` and the link preview (`static/og-image.png`) from it |
+| `static/logo.svg` | The small snail: header logo, favicon and the style thumbnails on first load. Drawn by `scripts/make-snail.py`; `node scripts/make-icons.mjs` renders the PNG icons and `favicon.ico` from it |
+| `static/examples/rainbow-snail.svg` | "Try an example" and the link preview (`static/og-image.png`, also from `make-icons.mjs`). Traced from the original art (`logo/old-social-preview.jpg`) by `scripts/trace-snail.py` |
 | `colorize_svg.py` | CLI |
 | `tests/` | pytest suite; `tests/js` (browser scripts), `tests/php` (Blade), `tests/live` (snippets run in their languages), `tests/e2e` (browser) |
 | `showcase/` | Builds a standalone demo page of the editor |

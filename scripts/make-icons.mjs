@@ -17,12 +17,13 @@ const { chromium } = require('playwright');
 
 const BG = '#0f1117';
 const logo = readFileSync(path.join(root, 'static/logo.svg'), 'utf8');
+const rainbow = readFileSync(path.join(root, 'static/examples/rainbow-snail.svg'), 'utf8');
 const uri = (svg) => 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
 const font = (file) => 'data:font/woff2;base64,' + readFileSync(path.join(root, 'static/fonts', file)).toString('base64');
 
-function recolored(mode, color) {
+function recolored(svg, mode, color) {
     const py = 'import sys, recolor as r; print(r.recolor(sys.stdin.read(), r.Options(mode=sys.argv[1], color=sys.argv[2])).svg)';
-    return execFileSync(process.env.PYTHON || 'python3', ['-c', py, mode, color], { cwd: root, input: logo, encoding: 'utf8' });
+    return execFileSync(process.env.PYTHON || 'python3', ['-c', py, mode, color], { cwd: root, input: svg, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 }
 
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
@@ -65,9 +66,10 @@ ico.forEach((png, i) => {
 });
 writeFileSync(path.join(root, 'static/favicon/favicon.ico'), Buffer.concat([header, ...ico]));
 
-// Social preview, 1200x630: the snail before and after, with the name and what it does.
+// Social preview, 1200x630: the rainbow snail (static/examples/rainbow-snail.svg) before
+// and after, with the name and what it does.
 const snail = (svg, label) => `<figure style="margin:0;display:grid;justify-items:center;gap:10px">
-    <img src="${uri(svg)}" width="230" height="230">
+    <img src="${uri(svg)}" width="268" height="225" style="object-fit:contain">
     <figcaption style="font:600 22px Inter;color:#9aa3b5;letter-spacing:.02em">${label}</figcaption></figure>`;
 const og = `<div style="width:1200px;height:630px;box-sizing:border-box;padding:64px 72px;display:flex;flex-direction:column;justify-content:space-between;
         background:radial-gradient(900px 500px at 85% 10%, #2a1f5c 0%, transparent 60%), radial-gradient(700px 400px at 0% 100%, #0f3b3a 0%, transparent 60%), ${BG};
@@ -77,14 +79,14 @@ const og = `<div style="width:1200px;height:630px;box-sizing:border-box;padding:
         <span style="font:800 44px Inter;letter-spacing:-.01em">SVG Recolor</span>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between">
-        <div style="max-width:470px">
-            <div style="font:800 62px/1.05 Inter;letter-spacing:-.02em">Recolor any SVG in seconds</div>
+        <div style="max-width:500px">
+            <div style="font:800 56px/1.05 Inter;letter-spacing:-.02em">Recolor any SVG in seconds</div>
             <div style="margin-top:22px;font:500 26px/1.4 Inter;color:#b8bfd0">Six modes that keep the shading. Code for 24 frameworks. Free API and MCP server.</div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px">
-            ${snail(logo, 'Original')}
+        <div style="display:flex;align-items:center;gap:6px">
+            ${snail(rainbow, 'Original')}
             <svg width="54" height="40" viewBox="0 0 54 40" style="margin-bottom:40px"><path d="M4 20h40M32 8l13 12-13 12" fill="none" stroke="#9aa3b5" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            ${snail(recolored('colorize', '14b8a6'), 'Colorize')}
+            ${snail(recolored(rainbow, 'colorize', 'a855f7'), 'Colorize')}
         </div>
     </div>
     <div style="font:600 24px Inter;color:#8b93a7">svg-recolor.jorgenkh.no</div>

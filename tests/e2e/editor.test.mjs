@@ -31,7 +31,7 @@ test('loads with no errors, CSP violations or third-party requests', async () =>
     await page.locator('#status-text', { hasText: 'colors' }).waitFor();
     assert.deepEqual(problems, []);
     assert.deepEqual(external, []);
-    assert.match(await status(page), /^Colorize #FF0066 · 11 colors/);
+    assert.match(await status(page), /^Colorize #FF0066 · 15 colors/);
 });
 
 test('style tiles show thumbnails and switch the style', async () => {
@@ -54,7 +54,7 @@ test('"Change" opens the source picker, not the file browser', async () => {
     assert.equal(chooser, false);
     assert.equal(await page.isVisible('#source-tabs'), true);
     await page.click('#source-cancel');
-    assert.equal(await page.textContent('#file-name'), 'snail.svg');
+    assert.equal(await page.textContent('#file-name'), 'rainbow-snail.svg');
 });
 
 test('editing the current SVG as code keeps its name and applies', async () => {
@@ -65,13 +65,13 @@ test('editing the current SVG as code keeps its name and applies', async () => {
     await page.click('[data-source="code"]');
     const code = await page.inputValue('#code-input');
     assert.ok(code.startsWith('<svg'));
-    await page.fill('#code-input', code.replace('#facc15', '#00ff00'));
+    await page.fill('#code-input', code.replaceAll('#fadc1e', '#00ff00'));
     await page.press('#code-input', 'Control+Enter');
-    await page.locator('#code-status', { hasText: 'Applied · 11 colors' }).waitFor();
+    await page.locator('#code-status', { hasText: 'Applied · 15 colors' }).waitFor();
     assert.equal(await page.textContent('#source-cancel'), 'Done');
     await page.click('#source-cancel');
     await page.locator('#file-size', { hasText: 'from code' }).waitFor();
-    assert.equal(await page.textContent('#file-name'), 'snail.svg');
+    assert.equal(await page.textContent('#file-name'), 'rainbow-snail.svg');
 });
 
 test('pasting SVG code into a fresh page works', async () => {
@@ -214,12 +214,12 @@ test('request budget: no API calls on load, one per settings change (keeps hosti
     await page.locator('#status-text', { hasText: 'colors' }).waitFor();
     await page.locator('.style .thumb img').nth(5).waitFor();
     await page.waitForTimeout(700);
-    assert.equal(calls.length, 0, 'the example is the page\'s own sample, so its colors are already known');
+    assert.equal(calls.length, 1, 'preview and all six thumbnails share one call');
     await page.click('.preset[data-hex="#3ECF8E"]');
     await page.locator('#status-text', { hasText: '#3ECF8E' }).waitFor();
     await page.waitForTimeout(700);
-    assert.equal(calls.length, 1, 'one call per color change (preview and all six thumbnails share it)');
+    assert.equal(calls.length, 2, 'one call per color change');
     await page.click('.style[data-mode="solid"]');
     await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
-    assert.equal(calls.length, 1, 'switching style reuses what was already fetched');
+    assert.equal(calls.length, 2, 'switching style reuses what was already fetched');
 });
