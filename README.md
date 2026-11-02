@@ -215,8 +215,11 @@ Clone the repository (with submodules) and install the dependencies using pipenv
 ```sh
 git clone --recurse-submodules https://github.com/Snailedlt/svg-recolor.git
 cd svg-recolor
-pipenv install
+pipenv install --dev   # the app, plus ruff, pytest and `fastapi dev`
 ```
+
+`Pipfile` keeps only what the app imports at runtime in `[packages]` (that is all Vercel installs);
+tools live in `[dev-packages]`. After changing it, run `pipenv lock` and commit `Pipfile.lock`.
 
 Compile svgshift (a submodule) by running the following command
 Replace `<your-environment>` with your environment (e.g. windows, linux).
@@ -258,8 +261,7 @@ pipenv run colorize path/to/input.svg path/to/output.svg --color "255,0,0"
 ### Tests
 
 ```sh
-pip install pytest          # once
-pytest -q                   # engine, API, MCP, and browser/server engine parity (needs Node.js)
+pipenv run pytest -q   # engine, API, MCP, and browser/server engine parity (needs Node.js)
 ```
 
 ```sh
