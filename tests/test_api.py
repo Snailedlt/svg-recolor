@@ -337,3 +337,20 @@ def test_head_on_a_missing_page_is_still_404(client):
 def test_post_only_routes_still_reject_head(client):
     # /api/recolor/batch only takes POST: HEAD runs as GET there, which isn't allowed either.
     assert client.head("/api/recolor/batch").status_code == 405
+
+
+def test_web_analytics_is_on_the_page_and_allowed_by_the_csp(client):
+    import base64
+    import hashlib
+    import re
+
+    res = client.get("/")
+    assert '<script defer src="/_vercel/insights/script.js"></script>' in res.text
+    csp = res.headers["content-security-policy"]
+    inline = re.findall(r"<script>([\s\S]*?)</script>", res.text)
+    assert any("window.va=" in body for body in inline), "the queue stub runs before the script loads"
+    for body in inline:  # every inline script, the analytics stub included, is allowed by its hash
+        digest = base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()
+        assert f"'sha256-{digest}'" in csp
+    # The script and its beacons are same-origin (/_vercel/insights/...), so 'self' covers both.
+    assert "script-src 'self'" in csp and "connect-src 'self'" in csp
