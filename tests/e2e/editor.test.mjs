@@ -13,8 +13,16 @@ let browser;
 before(async () => { browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}); });
 after(async () => { await browser?.close(); });
 
-async function open(options = {}) {
+// Vercel serves /_vercel/insights/script.js (Web Analytics) at its edge, so the app
+// doesn't have it; stand in for Vercel with an empty script so local runs match.
+async function newPage(options = {}) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, ...options });
+    await page.route('**/_vercel/insights/script.js', (route) => route.fulfill({ status: 200, contentType: 'text/javascript', body: '' }));
+    return page;
+}
+
+async function open(options = {}) {
+    const page = await newPage(options);
     const problems = [];
     page.on('pageerror', (e) => problems.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') problems.push(m.text()); });
@@ -198,7 +206,7 @@ test('phone layout has no horizontal scroll', async () => {
 });
 
 test('request budget: no API calls on load, one per settings change (keeps hosting cheap)', async () => {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const page = await newPage();
     const calls = [];
     const files = [];
     page.on('request', (r) => {
@@ -209,7 +217,7 @@ test('request budget: no API calls on load, one per settings change (keeps hosti
     await page.goto(BASE + '/');
     await page.locator('.style .thumb img').nth(5).waitFor(); // thumbnails come from data in the page
     assert.deepEqual(calls, [], 'no API calls on page load');
-    assert.ok(files.length <= 7, `page load uses at most 7 files (page, CSS, script, 2 fonts, favicon, thumbnail snail), got ${files.length}: ${files}`);
+    assert.ok(files.length <= 8, `page load uses at most 8 files (page, CSS, script, 2 fonts, favicon, thumbnail snail, analytics), got ${files.length}: ${files}`);
     await page.click('#try-example');
     await page.locator('#status-text', { hasText: 'colors' }).waitFor();
     await page.locator('.style .thumb img').nth(5).waitFor();
