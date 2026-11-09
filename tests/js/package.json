@@ -8,7 +8,7 @@
   },
   "devDependencies": {
     "@astrojs/compiler": "4.0.0",
-    "@vue/compiler-sfc": "3.5.44",
+    "@vue/compiler-sfc": "3.5.45",
     "esbuild": "0.28.2",
     "svelte": "5.57.3"
   }
