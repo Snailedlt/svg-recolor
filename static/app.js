@@ -109,6 +109,13 @@
     function setStatus(kind, text) {
         $('status').className = 'status ' + (kind || '');
         $('status-text').textContent = text;
+        if (kind === 'work') {
+            // The overlay on the picture says the same, with a bar when there's a percentage.
+            $('work-text').textContent = text;
+            const pct = /(\d+)%\s*$/.exec(text);
+            $('work-overlay').classList.toggle('indeterminate', !pct);
+            $('work-bar').style.width = pct ? pct[1] + '%' : '';
+        }
     }
     async function copyText(text, label) {
         try {
@@ -320,6 +327,9 @@
         set('place-x', tx);
         set('place-y', ty);
         $('canvas-reset').hidden = !state.canvas && !state.place;
+        $('canvas-size').hidden = !doc;
+        $('canvas-size').classList.toggle('changed', !!state.canvas);
+        updateFolds();
     }
     function canvasChanged() {
         syncCanvasUI();
@@ -352,6 +362,20 @@
     }
     async function fitToCanvas(center) {
         if (!state.doc) return showError('Add an SVG first: drop a file, paste one, or load a link.');
+        const btn = $(center ? 'center-btn' : 'fit-btn');
+        btn.classList.add('loading');
+        btn.disabled = true;
+        setBusy(true);
+        setStatus('work', 'Measuring the drawing…');
+        try {
+            await fitToCanvasNow(center);
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            setBusy(false);
+        }
+    }
+    async function fitToCanvasNow(center) {
         const doc = state.doc;
         const [x0, y0] = origBox(doc);
         const [W, H] = canvasSize(doc);
@@ -387,6 +411,30 @@
     $('center-btn').addEventListener('click', () => fitToCanvas(true));
     $('canvas-reset').addEventListener('click', () => { state.canvas = null; state.place = null; canvasChanged(); });
 
+    // Collapsible sections: closed by default (less scrolling), the header says what's set,
+    // and each remembers being opened.
+    const foldsOpen = store.get('folds', {});
+    $$('details.fold').forEach((d) => {
+        if (foldsOpen[d.dataset.fold]) d.open = true;
+        d.addEventListener('toggle', () => { foldsOpen[d.dataset.fold] = d.open; store.set('folds', foldsOpen); });
+    });
+    function updateFolds() {
+        const shape = [];
+        if (state.gap) shape.push('gaps ' + unitText(state.gap));
+        if (state.line) shape.push((state.lineInner ? 'line ' : 'outline ') + unitText(state.line));
+        $('shape-sub').textContent = shape.length ? shape.join(' · ') : 'gaps and line versions';
+        $('shape-step').classList.toggle('active', shape.length > 0);
+        const placedNow = !!(state.canvas || state.place);
+        let sub = 'as it is';
+        if (placedNow && state.doc) {
+            const [W, H] = canvasSize(state.doc);
+            sub = fmt(W) + ' × ' + fmt(H) + ' · ' + fmt(placement(state.doc)[2] * 100) + ' %';
+        }
+        $('canvas-sub').textContent = sub;
+        $('canvas-step').classList.toggle('active', placedNow);
+        $('adjust-step').classList.toggle('active', Object.values(state.adj).some((v) => v));
+    }
+
     // ------------------------------------------------------------------
     // Optimize: SVGO in a worker, with devicon's settings by default (its svg-icons
     // svgo.config.js: SVGO 3.3.2, multipass, precision 3, every preset plugin but
@@ -400,7 +448,13 @@
         'removeEmptyContainers', 'mergePaths', 'removeUnusedNS', 'sortAttrs', 'sortDefsChildren', 'removeTitle', 'removeDesc'];
     const SVGO_EXTRA = ['removeDimensions', 'removeStyleElement', 'convertStyleToAttrs', 'removeScriptElement', 'removeOffCanvasPaths',
         'convertOneStopGradients', 'removeSvgXY', 'removeXMLNS', 'removeRasterImages', 'removeXlink', 'reusePaths'];
-    const SVGO_LABEL = { removeSvgXY: 'removeAttrs (x and y on <svg>)' };
+    const SVGO_LABEL = {
+        removeSvgXY: 'Remove x and y on <svg>', removeXMLProcInst: 'Remove XML instructions', removeEditorsNSData: 'Remove editor data',
+        removeViewBox: 'Remove viewBox', removeXMLNS: 'Remove xmlns', removeNonInheritableGroupAttrs: 'Remove non-inheritable group attributes',
+        cleanupAttrs: 'Clean up attributes', cleanupIds: 'Clean up IDs', removeUselessDefs: 'Remove unused defs', removeElemsAttrs: 'Remove element attributes',
+        moveElemsAttrsToGroup: 'Move attributes to group', moveGroupAttrsToElems: 'Move group attributes to elements', removeEmptyAttrs: 'Remove empty attributes',
+        sortAttrs: 'Sort attributes', removeOffCanvasPaths: 'Remove off-canvas paths', removeXlink: 'Remove xlink', convertOneStopGradients: 'Convert one-stop gradients',
+    };
     const SVGO_OFF = new Set(['removeViewBox', 'removeXMLNS', 'removeRasterImages', 'removeXlink', 'reusePaths']);
     const svgoDefaults = () => ({
         precision: 3, multipass: true, newline: true,
@@ -431,24 +485,50 @@
         $('svgo-newline').checked = !!svgoSettings.newline;
         const box = $('svgo-plugins');
         box.replaceChildren();
-        [...SVGO_PRESET, ...SVGO_EXTRA].forEach((n) => {
-            const label = document.createElement('label');
-            label.className = 'check';
-            const cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.checked = !!svgoSettings.plugins[n];
-            cb.dataset.plugin = n;
-            label.append(cb, ' ' + (SVGO_LABEL[n] || n));
-            label.title = SVGO_PRESET.includes(n) ? 'In SVGO\'s preset-default' : 'An extra SVGO plugin';
-            box.appendChild(label);
-        });
-        $('svgo-preset').textContent = isDeviconSvgo() ? 'devicon\'s' : 'custom';
+        // removeUselessStrokeAndFill -> "Remove useless stroke and fill", with the plugin name under it
+        const human = (n) => (SVGO_LABEL[n] || n.replace(/([A-Z]+)/g, ' $1').toLowerCase().replace(/^./, (c) => c.toUpperCase()))
+            .replace(/\bxml\b/gi, 'XML').replace(/\bns\b/gi, 'NS').replace(/\bids\b/gi, 'IDs').replace(/\bsvg\b/gi, 'SVG').replace(/\bxmlns\b/gi, 'xmlns');
+        for (const [title, names] of [['Preset (preset-default)', SVGO_PRESET], ['Extra plugins', SVGO_EXTRA]]) {
+            const h = document.createElement('h3');
+            h.textContent = title;
+            box.appendChild(h);
+            names.forEach((n) => {
+                const label = document.createElement('label');
+                label.className = 'check';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = !!svgoSettings.plugins[n];
+                cb.dataset.plugin = n;
+                const text = document.createElement('span');
+                text.textContent = human(n);
+                const small = document.createElement('small');
+                small.textContent = n === 'removeSvgXY' ? 'removeAttrs svg:(x|y)' : n;
+                text.appendChild(small);
+                label.append(cb, text);
+                box.appendChild(label);
+            });
+        }
+        syncSvgoLabels();
+    }
+    function syncSvgoLabels() {
+        const name = isDeviconSvgo() ? 'Default' : 'Custom';
+        $('svgo-preset').textContent = name;
+        $('svgo-preset-dialog').textContent = name;
+        updateOptimizeFold();
+    }
+    function updateOptimizeFold() {
+        const sub = state.svgo ? 'on · ' + (isDeviconSvgo() ? 'default settings' : 'custom settings') : 'off';
+        $('optimize-sub').textContent = sub;
+        $('optimize-step').classList.toggle('active', state.svgo);
     }
     function svgoSettingsChanged() {
         store.set('svgo-settings', svgoSettings);
-        $('svgo-preset').textContent = isDeviconSvgo() ? 'devicon\'s' : 'custom';
+        syncSvgoLabels();
         if (state.svgo && state.doc) recolor();
     }
+    $('svgo-open').addEventListener('click', () => $('svgo-dialog').showModal());
+    $('svgo-close').addEventListener('click', () => $('svgo-dialog').close());
+    $('svgo-done').addEventListener('click', () => $('svgo-dialog').close());
     $('svgo-precision').addEventListener('change', () => { svgoSettings.precision = parseInt($('svgo-precision').value, 10) || 0; svgoSettingsChanged(); });
     $('svgo-multipass').addEventListener('change', (e) => { svgoSettings.multipass = e.target.checked; svgoSettingsChanged(); });
     $('svgo-newline').addEventListener('change', (e) => { svgoSettings.newline = e.target.checked; svgoSettingsChanged(); });
@@ -458,13 +538,14 @@
         svgoSettingsChanged();
     });
     $('svgo-reset').addEventListener('click', () => { svgoSettings = svgoDefaults(); renderSvgoSettings(); svgoSettingsChanged(); });
-    $('svgo-toggle').addEventListener('change', (e) => { state.svgo = e.target.checked; editsChanged(); });
+    $('svgo-toggle').addEventListener('change', (e) => { state.svgo = e.target.checked; updateOptimizeFold(); editsChanged(); });
     renderSvgoSettings();
 
     let svgoWorker = null, svgoJobs = 0;
     const svgoPending = new Map();
     function optimizeSvg(svg) {
         if (!svgoWorker) {
+            setStatus('work', 'Loading SVGO…');
             svgoWorker = new Worker(CFG.optimizeUrl || '/static/optimize-worker.js', { type: 'module' });
             svgoWorker.onmessage = (e) => {
                 const job = svgoPending.get(e.data.id);
@@ -507,6 +588,7 @@
     function loadGeometry() {
         if (window.SvgGeometry) return Promise.resolve(window.SvgGeometry);
         if (!geometryReady) {
+            setStatus('work', 'Loading the geometry library…');
             geometryReady = new Promise((resolve, reject) => {
                 const s = document.createElement('script');
                 s.src = CFG.geometryUrl || '/assets/geometry.js';
@@ -553,6 +635,7 @@
     function syncGap() {
         state.gap = Math.max(0, Math.min(parseFloat(gapInput.max), parseFloat(gapInput.value) || 0));
         $('adj-gap-out').textContent = unitText(state.gap);
+        updateFolds();
     }
     function setUnit(unit, user) {
         if (unit === state.unit) return;
@@ -582,6 +665,7 @@
         state.lineInner = $('line-inner').checked;
         $('adj-line-out').textContent = unitText(state.line);
         $('line-inner-row').hidden = !state.line;
+        updateFolds();
         if (!editPanel.hidden) $('color-edit-keep-row').hidden = !state.line;
     }
     lineInput.addEventListener('input', () => { syncLine(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
@@ -639,6 +723,19 @@
         if (user) settingsChanged();
     }
     $('color-input').addEventListener('input', (e) => setColor(e.target.value.toUpperCase(), true));
+    // The big swatch opens a popover: presets, recent colors and the full picker.
+    const colorPop = $('color-pop');
+    function setColorPop(open) {
+        colorPop.hidden = !open;
+        $('swatch-btn').setAttribute('aria-expanded', String(open));
+        if (open) { const first = colorPop.querySelector('[aria-pressed="true"]') || colorPop.querySelector('button'); if (first) first.focus(); }
+    }
+    $('swatch-btn').addEventListener('click', () => setColorPop(colorPop.hidden));
+    colorPop.addEventListener('click', (e) => { if (e.target.closest('.preset, .recent button')) { setColorPop(false); $('swatch-btn').focus(); } });
+    colorPop.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); setColorPop(false); $('swatch-btn').focus(); } });
+    document.addEventListener('pointerdown', (e) => {
+        if (!colorPop.hidden && !colorPop.contains(e.target) && !e.target.closest('#swatch-btn')) setColorPop(false);
+    });
     hexInput.addEventListener('input', () => {
         const hex = normalizeHex(hexInput.value);
         if (hex) setColor(hex, true);
@@ -760,6 +857,7 @@
         if (state.adj.lightness) parts.push('lightness ' + (state.adj.lightness > 0 ? '+' : '') + state.adj.lightness);
         $('adjust-sub').textContent = parts.length ? parts.join(', ') : 'optional, applied last';
         $('adj-reset').hidden = !parts.length;
+        $('adjust-step').classList.toggle('active', parts.length > 0);
         if (user) settingsChanged();
     }
     ADJ.forEach(([k]) => $('adj-' + k).addEventListener('input', () => syncAdjust(true)));
@@ -1228,7 +1326,11 @@
     function setBusy(on) {
         $('submit-btn').classList.toggle('loading', on);
         clearTimeout(busyTimer);
-        const dim = (v) => { const img = $('result-container').querySelector('img'); if (img) img.classList.toggle('busy', v); };
+        const dim = (v) => {
+            const img = $('result-container').querySelector('img');
+            if (img) img.classList.toggle('busy', v);
+            $('work-overlay').hidden = !v; // spinner, message and progress on the picture
+        };
         if (on) busyTimer = setTimeout(() => dim(true), 300);
         else dim(false);
     }
@@ -1311,6 +1413,12 @@
     // Colors strip: each original color and what it became. Click a color to give it its
     // own color, hide it, or remove its shapes (see the color-edit panel below).
     const EDIT_LABEL = { replace: 'own color', hide: 'invisible', remove: 'invisible', cut: 'cut out' };
+    const BADGE = { // [icon paths, meaning]
+        replace: ['<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>', 'Own color'],
+        remove: ['<path d="M9.9 4.2A10 10 0 0 1 12 4c7 0 10 8 10 8a13 13 0 0 1-1.7 2.7"/><path d="M6.6 6.6A13 13 0 0 0 2 12s3 8 10 8a9.7 9.7 0 0 0 5.4-1.6"/><path d="m2 2 20 20"/>', 'Invisible'],
+        cut: ['<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>', 'Cut out'],
+        keep: ['<rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor"/>', 'Kept filled in the line version'],
+    };
     function renderPalette(entries) {
         const list = $('palette-list');
         list.replaceChildren();
@@ -1328,14 +1436,24 @@
             const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.textContent = '→';
             const b = document.createElement('i');
             if (e.to.startsWith('#')) b.style.background = e.to; else b.className = 'gone';
-            const t = document.createElement('span'); t.textContent = shown + (kept ? ' · filled' : '');
+            const t = document.createElement('span'); t.textContent = shown;
             btn.append(a, arrow, b, t);
+            // A tiny badge says what this color does, at a glance.
+            const op = e.edit ? (e.edit.op === 'hide' ? 'remove' : e.edit.op) : kept ? 'keep' : null;
+            if (op) {
+                const badge = document.createElement('span');
+                badge.className = 'badge';
+                badge.dataset.op = op;
+                badge.title = BADGE[op][1];
+                badge.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + BADGE[op][0] + '</svg>';
+                btn.appendChild(badge);
+            }
             btn.addEventListener('click', () => openColorEdit(e.from.slice(1), btn));
             li.appendChild(btn);
             list.appendChild(li);
         });
         $('palette').hidden = entries.length === 0;
-        $('edits-reset').hidden = !Object.keys(state.edits).length && !state.keep.size;
+        $('edits-reset').disabled = !Object.keys(state.edits).length && !state.keep.size;
     }
 
     // Color-edit panel: Follow style / Own color / Hide / Remove shapes, for one color.
@@ -1408,6 +1526,7 @@
     window.addEventListener('resize', placeEditPanel);
     $('palette-list').addEventListener('scroll', placeEditPanel, { passive: true });
     $('edits-reset').addEventListener('click', () => {
+        if ($('edits-reset').disabled) return;
         state.edits = {};
         state.keep.clear();
         closeColorEdit(false);
@@ -1914,6 +2033,7 @@
     state.unit = start.get('unit') === 'pct' ? '%' : 'px';
     state.svgo = start.get('optimize') === '1';
     $('svgo-toggle').checked = state.svgo;
+    updateOptimizeFold();
     {
         const c = (start.get('canvas') || '').split('x').map(Number);
         if (c.length === 2 && c.every((v) => v > 0)) state.canvas = c;
@@ -1934,6 +2054,8 @@
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));
     renderRecent();
+    // Open the sections that are in use (say, from a shared link); the rest stay closed.
+    $$('details.fold').forEach((d) => { if (d.classList.contains('active')) d.open = true; });
     state.format = formatList.get();
     state.snippet = snippetList.get();
     updateSnippet();

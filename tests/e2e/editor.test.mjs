@@ -184,6 +184,11 @@ test('code blocks are highlighted and copy their full text', async () => {
 const EDIT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 10"><rect width="30" height="10" fill="#ffffff"/>'
     + '<path d="M1 1h8v8H1z" fill="#5e97f6"/><path d="M11 1h8v8h-8z" fill="#e879f9"/><path d="M21 1h8v8h-8z" fill="#0f766e"/></svg>';
 
+// The Adjust, Shapes, Placement and Optimize sections are closed until opened.
+async function openFold(page, name) {
+    await page.click(`details.fold[data-fold="${name}"]:not([open]) > summary`).catch(() => {});
+}
+
 async function pasteSvg(page, svg) {
     await page.click('[data-source="code"]');
     await page.fill('#code-input', svg);
@@ -298,6 +303,26 @@ test('"Copy image" from a page (a PNG plus <img src>) loads the SVG itself', asy
     assert.deepEqual(problems, []);
 });
 
+test('each color shows its mode at a glance, and Reset colors clears them all', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, EDIT_SVG);
+    await page.click('.style[data-mode="solid"]');
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    assert.equal(await page.isDisabled('#edits-reset'), true, 'nothing to reset yet');
+    await page.click('.chip[data-color="ffffff"]');
+    await page.check('#color-edit [value="remove"]');
+    await page.click('.chip[data-color="0f766e"]');
+    await page.check('#color-edit [value="cut"]');
+    await page.keyboard.press('Escape');
+    await page.locator('.chip[data-color="ffffff"] .badge[data-op="remove"]').waitFor();
+    await page.locator('.chip[data-color="0f766e"] .badge[data-op="cut"]').waitFor();
+    assert.equal(await page.locator('.chip[data-color="5e97f6"] .badge').count(), 0, 'colors that follow the style have no badge');
+    await page.click('#edits-reset');
+    await page.locator('.chip .badge').first().waitFor({ state: 'detached' });
+    assert.equal(await page.isDisabled('#edits-reset'), true);
+    assert.deepEqual(problems, []);
+});
+
 // Two facets with an outline ring drawn over their shared edge, like the JAX logo.
 const CUT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">'
     + '<rect x="0" y="0" width="20" height="20" fill="#5e97f6"/><rect x="20" y="0" width="20" height="20" fill="#9c27b0"/>'
@@ -383,6 +408,7 @@ test('gap and line sizes: px in the SVG\'s units, or % of the icon', async () =>
     await page.locator('#adj-gap').evaluate((el) => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
     assert.equal(await page.textContent('#adj-gap-out'), '2 px');
     // Switching units keeps the look: 2 px of 128 is 1.56 %, which the 0.1 % steps round to 1.6.
+    await openFold(page, 'shape');
     await page.click('#unit-tabs [data-unit="%"]');
     assert.equal(await page.textContent('#adj-gap-out'), '1.6 %');
     await page.waitForURL(/gap=1\.6&unit=pct/);
@@ -401,6 +427,7 @@ test('line version: only the edges stay, colors can stay filled', async () => {
     await pasteSvg(page, LINE_SVG);
     await page.click('.style[data-mode="solid"]');
     await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    await openFold(page, 'shape');
     assert.equal(await page.isVisible('#line-inner-row'), false, 'the line options show once lines are on');
     const hitsAt = async (points) => {
         await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
@@ -471,6 +498,7 @@ test('canvas: a new viewBox, and Fit with padding (strokes count)', async () => 
     await page.press('#canvas-w', 'Enter');
     await page.fill('#canvas-h', '128');
     await page.press('#canvas-h', 'Enter');
+    await openFold(page, 'canvas');
     await page.fill('#fit-pad', '1');
     await page.click('#fit-btn');
     await page.waitForURL(/canvas=128x128&place=-50\.545%2C-50\.545%2C5\.727/);
@@ -496,6 +524,7 @@ test('optimize with SVGO (devicon\'s settings), and the code next to the picture
     await page.click('#view-tabs [data-view="code"]');
     assert.equal(await page.isVisible('#preview-container'), false, 'the code takes the original\'s place');
     await page.locator('#side-code', { hasText: '<title>' }).waitFor();
+    await openFold(page, 'optimize');
     await page.check('#svgo-toggle');
     await page.waitForURL(/optimize=1/);
     await page.locator('#side-code', { hasText: 'path' }).waitFor();
@@ -505,12 +534,14 @@ test('optimize with SVGO (devicon\'s settings), and the code next to the picture
     assert.match(code, /64\.123/, 'precision 3');
     assert.ok(code.endsWith('</svg>\n') || code.endsWith('</svg>'), 'one line, newline at the end');
     // Settings: turn off removeTitle and the title comes back.
-    await page.click('#svgo-settings summary');
+    await page.click('#svgo-open');
     await page.uncheck('#svgo-plugins [data-plugin="removeTitle"]');
-    assert.equal(await page.textContent('#svgo-preset'), 'custom');
+    assert.equal(await page.textContent('#svgo-preset'), 'Custom');
+    assert.match(await page.textContent('#optimize-sub'), /custom/, 'the section header says so');
     await page.locator('#side-code', { hasText: '<title>' }).waitFor();
     await page.click('#svgo-reset');
-    assert.equal(await page.textContent('#svgo-preset'), "devicon's");
+    assert.equal(await page.textContent('#svgo-preset'), 'Default');
+    await page.click('#svgo-done');
     await page.click('#view-tabs [data-view="side"]');
     assert.deepEqual(problems, []);
 });
@@ -585,7 +616,9 @@ test('request budget: no API calls on load, one per settings change (keeps hosti
     await page.locator('.style .thumb img').nth(5).waitFor();
     await page.waitForTimeout(700);
     assert.equal(calls.length, 0, 'the example is the thumbnail snail, so its colors are already known');
+    await page.click('#swatch-btn'); // presets are in the popover on the swatch
     await page.click('.preset[data-hex="#3ECF8E"]');
+    assert.equal(await page.isVisible('#color-pop'), false, 'picking a preset closes the popover');
     await page.locator('#status-text', { hasText: '#3ECF8E' }).waitFor();
     await page.waitForTimeout(700);
     assert.equal(calls.length, 1, 'one call per color change (preview and all six thumbnails share it)');

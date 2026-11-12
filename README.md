@@ -67,7 +67,7 @@ same code (paper.js and SVGO in QuickJS, with picosvg reading the shapes), so th
   along the edges is kept: inside the outer edge, and centered on the boundaries between colors (switch off **Lines
   between colors** for just the outline). In the color panel, **Keep filled** keeps a color solid, for small details.
 
-**Canvas** (step 4; API: `canvas=128x128`, `place=x,y,scale`, `fit=1`): set the canvas size (the viewBox), the drawing's size and position, or
+**Canvas** (the viewBox size is on the picture; the rest is under **Placement**; API: `canvas=128x128`, `place=x,y,scale`, `fit=1`): set the canvas size, the drawing's size and position, or
 **Fit to canvas** with a padding: the visible drawing (strokes included, invisible colors not) is scaled and centered
 so it ends exactly that far from every edge. For devicon: canvas 128 × 128, padding 1, Fit. The drawing is wrapped in
 one `<g transform>`, so every other feature works on top.
@@ -76,6 +76,8 @@ All three handle flat colors and plain shapes; text, embedded images, gradients,
 message instead of a guess.
 
 In the editor, click a color in the **Colors** strip under the preview, or click the shape itself in the picture, to edit it.
+Each chip shows a small badge for what its color does (own color, invisible, cut out, kept filled), and **Reset colors**
+puts every color back to following the style.
 
 Before recoloring, colors are normalized so the tools can handle them: CSS color names, `rgb()`/`hsl()`
 (with alpha), and 3/4-digit hex are converted to hex, and icons that rely on the default black fill
@@ -179,7 +181,7 @@ How:
 - The page URL keeps your settings and color edits (`?mode=colorize&color=ff0066&remove=ffffff&url=...`), so you can bookmark a setup. Opening a link with `url=` loads that SVG.
 - **Paste** (Ctrl+V) takes an `.svg` file copied in the file manager, SVG code, an SVG copied from a web page, a link, or
   the result of a browser's **Copy image** on an SVG (the browser copies a PNG, plus the image's address, which is used to get the SVG itself).
-- **Optimize** (step 5; API `optimize=true`, `precision=3`) runs SVGO 3.3.2, with devicon's settings by default (precision 3, multipass,
+- **Optimize** (API `optimize=true`, `precision=3`) runs SVGO 3.3.2, with devicon's settings by default (precision 3, multipass,
   every preset plugin but removeViewBox, devicon's extra plugins, a newline at the end): the same bytes as devicon's
   svg-icons `optimize.js`. Every plugin can be switched; the settings are saved in your browser.
 - **With code** (next to Side by side and Slider) shows the result's SVG code beside the picture.
