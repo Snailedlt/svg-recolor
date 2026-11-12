@@ -61,6 +61,7 @@
         line: 0, // line version: band width along the edges (same units); 0 = off
         unit: 'px', // gap and line sizes: 'px' (the SVG's own units) or '%' of the icon
         svgo: false, // optimize the result with SVGO
+        recipe: null, // { name, params }: the recipe in use, shown at the top
         canvas: null, // [w, h] of a new viewBox (null = the SVG's own)
         batch: null, // [{ name, text, size, failed }]: several SVGs with the same settings
         fit: null, // auto Fit: padding (each SVG is fitted to the canvas), or null
@@ -2281,7 +2282,11 @@
             link.title = 'Copy a link to this recipe';
             link.setAttribute('aria-label', 'Copy a link to ' + r.name);
             link.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
-            link.addEventListener('click', () => copyText(SITE + '/?' + r.params, 'Link to ' + r.name));
+            link.addEventListener('click', () => {
+                const q = new URLSearchParams(r.params);
+                q.set('recipe', r.name);
+                copyText(SITE + '/?' + q, 'Link to ' + r.name);
+            });
             const del = document.createElement('button');
             del.type = 'button';
             del.className = 'icon-btn';
@@ -2302,8 +2307,34 @@
         closeColorEdit(false);
         setRecipes(false);
         settingsApplied();
-        toast('Recipe: ' + r.name);
+        showRecipe(r.name, r.params);
     }
+    // The recipe in use (from a link or the list), named at the top of the settings so
+    // whoever opens a recipe link sees what it is. Marked edited once the settings move.
+    function showRecipe(name, params) {
+        state.recipe = name ? { name: name.slice(0, 60), params: new URLSearchParams(params).toString() } : null;
+        $('recipe-banner').hidden = !state.recipe;
+        if (!state.recipe) return;
+        $('recipe-banner-name').textContent = state.recipe.name;
+        $('recipe-banner-desc').textContent = describeRecipe(state.recipe.params);
+        syncRecipeBanner();
+    }
+    function recipeIntact() { return !!state.recipe && recipeParams().toString() === state.recipe.params; }
+    function syncRecipeBanner() {
+        if (!state.recipe) return;
+        $('recipe-banner-edited').hidden = recipeIntact();
+        const saved = recipes.some((r) => r.name.toLowerCase() === state.recipe.name.toLowerCase() && r.params === state.recipe.params);
+        $('recipe-banner-save').hidden = saved;
+    }
+    $('recipe-banner-close').addEventListener('click', () => { showRecipe(null); syncPageUrl(); });
+    $('recipe-banner-save').addEventListener('click', () => {
+        const { name, params } = state.recipe;
+        const at = recipes.findIndex((r) => r.name.toLowerCase() === name.toLowerCase());
+        if (at >= 0) recipes[at] = { name, params }; else recipes.push({ name, params });
+        store.set('recipes', recipes);
+        syncRecipeBanner();
+        toast('Saved recipe: ' + name);
+    });
     function setRecipes(open) {
         $('recipes-pop').hidden = !open;
         $('recipes-btn').setAttribute('aria-expanded', String(open));
@@ -2323,6 +2354,7 @@
         $('recipe-name').value = '';
         renderRecipes();
         toast('Saved recipe: ' + name);
+        syncRecipeBanner();
     }
     $('recipe-save-btn').addEventListener('click', saveRecipe);
     $('recipe-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveRecipe(); } });
@@ -2362,6 +2394,7 @@
     function shareParams() {
         const q = editParams(settingsParams());
         if (state.doc && state.doc.fromUrl) q.set('url', state.doc.fromUrl);
+        if (recipeIntact()) q.set('recipe', state.recipe.name);
         return q;
     }
     function syncPageUrl() {
@@ -2369,6 +2402,7 @@
         urlTimer = setTimeout(() => {
             try { history.replaceState(null, '', location.pathname + '?' + shareParams().toString() + location.hash); } catch (e) { /* ignore */ }
             recordHistory();
+            syncRecipeBanner();
         }, 300);
     }
     // A pasted or uploaded SVG travels in the link itself: compressed, after the #, which
@@ -2510,6 +2544,10 @@
     // ------------------------------------------------------------------
     const start = new URLSearchParams(location.search);
     applySettings(start);
+    if (start.get('recipe')) {
+        // Named by the link; its settings are the ones just applied (less the per-SVG ones).
+        showRecipe(start.get('recipe'), recipeParams().toString());
+    }
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));
     renderRecent();

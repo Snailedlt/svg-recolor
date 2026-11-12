@@ -132,6 +132,16 @@
                     <!-- Controls -->
                     <form id="controls" class="panel" novalidate aria-label="Recolor settings">
                         <div class="controls-body">
+                            <div class="recipe-banner" id="recipe-banner" role="status" hidden>
+                                <svg class="recipe-banner-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+                                <div class="recipe-banner-text">
+                                    <span class="recipe-banner-label">Recipe <span id="recipe-banner-edited" hidden>· edited</span></span>
+                                    <b id="recipe-banner-name"></b>
+                                    <small id="recipe-banner-desc"></small>
+                                    <button type="button" class="btn btn-ghost btn-sm" id="recipe-banner-save">Save to my recipes</button>
+                                </div>
+                                <button type="button" class="icon-btn" id="recipe-banner-close" aria-label="Hide the recipe name">✕</button>
+                            </div>
                             <section aria-labelledby="src-title">
                                 <h2 class="section-title" id="src-title">SVG <span class="aside kbd-hint" id="paste-hint">or paste with <kbd>Ctrl</kbd>+<kbd>V</kbd></span><button type="button" class="link-btn aside" id="source-cancel" hidden>Keep current SVG</button></h2>
                                 <div class="segmented full" role="group" aria-label="SVG source" id="source-tabs">

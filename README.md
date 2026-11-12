@@ -196,6 +196,8 @@ How:
   **Download all** recolors each one the same way (Fit per file) into a ZIP. Files that fail are named; the rest go in.
 - **Recipes** (by Reset settings): save the current settings under a name and apply them to other SVGs later, or copy
   a recipe's link. They keep style, color, adjustments, shapes, canvas, Fit and Optimize, not the edits of single colors.
+  A recipe's link carries its name (`recipe=`), shown at the top of the settings with a button to save it; add
+  `url=` to open an SVG with it.
 - **Undo / redo** settings changes with the buttons by Reset settings, or <kbd>Ctrl</kbd>+<kbd>Z</kbd> /
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>.
 - **Share** copies a link with your SVG and settings. A linked SVG is shared by its address; a pasted or uploaded one travels in the link itself, compressed, after the `#` (never sent to the server). Very large SVGs don't fit in a link: share them from a public URL instead.

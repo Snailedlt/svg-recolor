@@ -700,6 +700,33 @@ test('recipes: save settings, apply them later; Fit stays on for the next SVG', 
     await page.click('.recipe-apply');
     await page.waitForURL(/mode=solid/);
     assert.match(page.url(), /fit=1/);
+    assert.equal(await page.textContent('#recipe-banner-name'), 'Icon 128');
+    await page.waitForURL(/recipe=Icon\+128/);
+    assert.deepEqual(problems, []);
+});
+
+test('a recipe link names its recipe, and says when the settings have moved on', async () => {
+    const { page, problems } = await open();
+    await page.goto(BASE + '/?mode=solid&color=000000&gap=1.5&unit=pct&canvas=128x128&fit=0&optimize=1&recipe=Devicon+plain');
+    await page.locator('#recipe-banner:not([hidden])').waitFor();
+    assert.equal(await page.textContent('#recipe-banner-name'), 'Devicon plain');
+    assert.match(await page.textContent('#recipe-banner-desc'), /Solid #000000 · gaps 1\.5 % · 128 × 128, fit 0 · optimized/);
+    assert.equal(await page.isVisible('#recipe-banner-edited'), false);
+    // Save it to my recipes: the button goes, the recipe is in the list.
+    await page.click('#recipe-banner-save');
+    assert.equal(await page.isVisible('#recipe-banner-save'), false);
+    await page.click('#recipes-btn');
+    await page.locator('.recipe-apply', { hasText: 'Devicon plain' }).waitFor();
+    await page.click('#recipes-close');
+    // Change a setting: marked edited, and the address no longer claims the recipe.
+    await page.click('.style[data-mode="hue"]');
+    await page.waitForURL((u) => /mode=hue/.test(u) && !/recipe=/.test(u));
+    await page.locator('#recipe-banner-edited:not([hidden])').waitFor();
+    // Back again (undo): the name returns to the address.
+    await page.click('#undo-btn');
+    await page.waitForURL(/recipe=Devicon\+plain/);
+    await page.click('#recipe-banner-close');
+    assert.equal(await page.isVisible('#recipe-banner'), false);
     assert.deepEqual(problems, []);
 });
 
