@@ -106,7 +106,14 @@ jobs:
           ruby-version: "3.3"
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Kotlin
-        run: sudo snap install kotlin --classic
+        # The snap store drops connections now and then; retry before failing the job.
+        run: |
+          for attempt in 1 2 3; do
+            sudo snap install kotlin --classic && exit 0
+            echo "snap install failed (attempt $attempt), retrying in 20 s"
+            sleep 20
+          done
+          exit 1
       - name: Install the app and Python clients
         run: |
           pip install pipenv

@@ -389,6 +389,9 @@ def test_cut_is_editor_only_with_a_clear_error(client):
     assert res.status_code == 400 and "only available in the editor" in res.json()["detail"]
     res = client.post("/api/recolor", json={"svg": EDIT_SVG, "cut": ["ffffff"]})
     assert res.status_code == 400
+    res = client.post("/api/recolor?gap=2", content=EDIT_SVG, headers=SVG_CT)
+    assert res.status_code == 400 and "gap" in res.json()["detail"]
+    assert client.post("/api/recolor?gap=0", content=EDIT_SVG, headers=SVG_CT).status_code == 200
 
 
 def test_geometry_bundle_is_served_hashed_and_cached(client):

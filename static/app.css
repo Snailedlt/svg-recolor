@@ -468,6 +468,7 @@ kbd {
 .palette .chip.remove span:last-child, .palette .chip.hide span:last-child { text-decoration: line-through; }
 .palette .chip.cut i.gone { background: none; border-style: dashed; }
 .palette-reset { flex: none; margin-left: auto; font-size: 0.78rem; }
+.gap-hint { margin: -2px 0 0; }
 /* Color-edit panel (one color: follow style / own color / hide / remove) */
 .color-edit {
     position: fixed; z-index: 70; width: 268px; padding: 10px; border-radius: var(--radius-sm);

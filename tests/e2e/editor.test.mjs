@@ -252,7 +252,39 @@ test('cut out: a color becomes a real gap, and the result is one path per color'
         return [[10, 10], [30, 10], [20, 10], [19.2, 5], [20.8, 15]].map(([x, y]) => ctx.isPointInPath(p, x, y, 'nonzero'));
     }, d);
     assert.deepEqual(hits, [true, true, false, false, false]);
-    assert.match(await page.textContent('#api-hint'), /Cut out only works here in the editor/);
+    assert.match(await page.textContent('#api-hint'), /Cut out and gaps only work here in the editor/);
+    assert.deepEqual(problems, []);
+});
+
+// Four touching color pieces with no outline between them, like the rqlite logo.
+const GAP_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">'
+    + '<rect width="64" height="64" fill="#013397"/><rect x="64" width="64" height="64" fill="#0169c9"/>'
+    + '<rect y="64" width="64" height="64" fill="#0197fd"/><rect x="64" y="64" width="64" height="64" fill="#b3defd"/></svg>';
+
+test('gaps: color boundaries become gaps, so a one-color version keeps its parts', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, GAP_SVG);
+    await page.click('.style[data-mode="solid"]');
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    await page.locator('#adj-gap').evaluate((el) => { el.value = '4'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+    assert.equal(await page.textContent('#adj-gap-out'), '4');
+    await page.waitForURL(/gap=4/);
+    await page.click('#tab-btn-code');
+    await page.locator('#code-view', { hasText: '<path' }).waitFor();
+    const code = await page.textContent('#code-view');
+    assert.equal((code.match(/<path/g) || []).length, 1, 'Solid + gaps = one path');
+    const d = /\sd="([^"]+)"/.exec(code)[1];
+    const hits = await page.evaluate((d) => {
+        const ctx = document.createElement('canvas').getContext('2d');
+        const p = new Path2D(d);
+        // Inside each piece; on the seams (4 units wide, centered); the outer edge stays put.
+        return [[32, 32], [96, 32], [32, 96], [96, 96], [64, 32], [62.5, 96], [32, 65.5], [0.5, 10], [127.5, 120]]
+            .map(([x, y]) => ctx.isPointInPath(p, x, y, 'nonzero'));
+    }, d);
+    assert.deepEqual(hits, [true, true, true, true, false, false, false, true, true]);
+    await page.click('#tab-btn-preview');
+    await page.click('#reset-all');
+    assert.equal(await page.textContent('#adj-gap-out'), 'Off');
     assert.deepEqual(problems, []);
 });
 

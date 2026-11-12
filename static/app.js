@@ -57,6 +57,7 @@
         // { op: 'replace', to: '#rrggbb' } | { op: 'remove' } (Invisible) | { op: 'cut' } (Cut out)
         // | { op: 'hide' } (older links; shown as Invisible)
         edits: {},
+        gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
     };
     const mapCache = new Map();
     let reqId = 0;
@@ -232,6 +233,7 @@
         const by = { replace: [], hide: [], remove: [], cut: [] };
         for (const [c, e] of Object.entries(state.edits)) by[e.op].push(e.op === 'replace' ? c + ':' + e.to.slice(1).toLowerCase() : c);
         for (const k of ['replace', 'hide', 'remove', 'cut']) if (by[k].length) q.set(k, by[k].join(','));
+        if (state.gap) q.set('gap', String(state.gap));
         return q;
     }
     function editsFromParams(q) {
@@ -275,8 +277,14 @@
     }
     async function cutOutSvg(edited, cut, merged) {
         const Geo = await loadGeometry();
-        return Geo.cutOut(edited, { cut, map: merged });
+        return Geo.cutOut(edited, { cut, map: merged, gap: state.gap });
     }
+    const gapInput = $('adj-gap');
+    function syncGap() {
+        state.gap = Math.max(0, Math.min(6, parseFloat(gapInput.value) || 0));
+        $('adj-gap-out').textContent = state.gap ? String(state.gap) : 'Off';
+    }
+    gapInput.addEventListener('input', () => { syncGap(); editsChanged(); });
     function settingsChanged() {
         scheduleThumbs();
         updateSnippet();
@@ -389,6 +397,8 @@
 
     $('reset-all').addEventListener('click', () => {
         ADJ.forEach(([k]) => { $('adj-' + k).value = 0; });
+        $('adj-gap').value = 0;
+        syncGap();
         syncAdjust(false);
         setColor('#FF0066', false);
         setMode('colorize', false);
@@ -789,8 +799,8 @@
             const parts = editedSvg(doc, mapping);
             const { merged } = parts;
             let svg = parts.svg;
-            if (parts.cut.length) {
-                setStatus('work', 'Cutting out…');
+            if (parts.cut.length || state.gap) {
+                setStatus('work', state.gap ? 'Cutting gaps…' : 'Cutting out…');
                 try {
                     svg = await cutOutSvg(parts.edited, parts.cut, merged);
                 } catch (err) {
@@ -1112,7 +1122,8 @@
     // ------------------------------------------------------------------
     function snippetContext() {
         const q = editParams(settingsParams());
-        q.delete('cut'); // Cut out is editor-only (path geometry); the API rejects it
+        q.delete('cut'); // Cut out and gaps are editor-only (path geometry); the API rejects cut
+        q.delete('gap');
         const params = {};
         for (const [k, v] of q) params[k] = /^(hue|saturation|lightness)$/.test(k) ? Number(v) : v;
         const getQ = new URLSearchParams(q);
@@ -1131,8 +1142,8 @@
         const code = $('snippet').textContent;
         $('api-hint').textContent = sn.prompt
             ? 'Paste this into ChatGPT, Claude, Copilot or any AI agent.'
-            : Object.values(state.edits).some((e) => e.op === 'cut')
-                ? 'Cut out only works here in the editor, so this request leaves it out. Download the result instead.'
+            : state.gap || Object.values(state.edits).some((e) => e.op === 'cut')
+                ? 'Cut out and gaps only work here in the editor, so this request leaves them out. Download the result instead.'
                 : code.includes('example.com%2Ficon.svg')
                     ? 'Links need a public SVG: replace example.com/icon.svg with yours, or load your SVG from a link.'
                     : 'Uses your current settings. No API key needed.';
@@ -1323,6 +1334,8 @@
     syncAdjust(false);
     setMode(MODES[start.get('mode')] ? start.get('mode') : 'colorize', false);
     state.edits = editsFromParams(start);
+    gapInput.value = String(parseFloat(start.get('gap')) || 0);
+    syncGap();
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));
     renderRecent();

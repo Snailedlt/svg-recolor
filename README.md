@@ -51,9 +51,19 @@ On top of any mode, single colors (the original ones, as listed by `/api/palette
 | Remove | `remove=ffffff,...` | Shapes painted with the color are deleted, including ones that inherit it from a group or a CSS class. A shape keeps its fill or stroke when only the other is removed. Shapes inside `<defs>`, `<clipPath>`, `<mask>` and similar are only hidden, never deleted. |
 
 A one-color icon, like a devicon `plain` version, is `mode=solid&color=000000&remove=ffffff` (Solid, then remove the
-background). Don't remove thin outlines drawn between parts of a logo: in Solid they take the same color and fill
-the hairline seams between the parts. For the JAX logo, plain Solid matches the hand-made devicon `plain`. This gets you one color without the background; devicon's other rules (a single path with white parts
-cut out as holes) need path operations, which tools like Inkscape or the svg-icons agent skill do.
+background).
+
+Two more edits need path geometry, so they run in the browser and are only in the editor (the API answers 400):
+
+- **Cut out** (a color's option in the color panel): the color becomes a real gap. Only the part you can see in the
+  original is cut, and the result is flattened to one path per color. For logos with outlines between their parts
+  (like JAX), Solid + Cut out on the outline gives a one-path plain version with gaps exactly where the outlines were.
+- **Gaps** (slider under Adjust, in units of a 128-unit icon): every boundary between two original colors gets a
+  gap of that width; the outer edge stays put. For logos whose parts just touch (like rqlite), Solid + Gaps keeps the
+  parts apart in one color.
+
+Both handle flat colors and plain shapes; text, embedded images, gradients, transparency and `<use>` get a clear
+message instead of a guess.
 
 In the editor, click a color in the **Colors** strip under the preview to edit it.
 

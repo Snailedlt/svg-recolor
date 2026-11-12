@@ -9,7 +9,12 @@
  * Built on paper.js and paperjs-offset (bundled before this file in
  * /assets/geometry.js), the same tools as devicon's svg-icons agent skill.
  *
- *   SvgGeometry.cutOut(svgText, { cut: ['dce0df'], map: { '5e97f6': 'ff0066' } }) -> Promise<svgText>
+ * Gaps: with `gap` > 0, every boundary between two different original colors gets a
+ * gap of that width (in units of a 128-unit icon, devicon's scale), centered on the
+ * boundary; each side gives up half. The outer edge stays where it is, and touching
+ * shapes of the same color merge. With Solid that keeps the color areas apart.
+ *
+ *   SvgGeometry.cutOut(svgText, { cut: ['dce0df'], map: { '5e97f6': 'ff0066' }, gap: 2 }) -> Promise<svgText>
  */
 (function (global) {
     'use strict';
@@ -154,28 +159,54 @@
 
             // Top to bottom: what each shape shows is what's not covered by the shapes above it.
             // A cut-out shape shows nothing but still covers (so it leaves a gap below it).
-            const regions = new Map(); // output color -> [visible paths]
+            const regions = new Map(); // original color -> [visible paths]
             let covered = null;
             for (let i = shapes.length - 1; i >= 0; i--) {
                 const { path, color } = shapes[i];
                 if (!cut.has(color)) {
                     const visible = covered ? path.subtract(covered, { insert: false }) : path.clone({ insert: false });
                     if (!visible.isEmpty()) {
-                        const to = (map[color] || color).toLowerCase();
-                        if (!regions.has(to)) regions.set(to, []);
-                        regions.get(to).push(visible);
+                        if (!regions.has(color)) regions.set(color, []);
+                        regions.get(color).push(visible);
                     }
                 }
                 covered = covered ? covered.unite(path, { insert: false }) : path.clone({ insert: false });
                 if (i % 25 === 0) await new Promise((r) => setTimeout(r)); // keep the page responsive
             }
 
-            // One path per color, in the order the colors first appear (bottom first).
+            const unite = (list) => list.reduce((a, p) => (a ? a.unite(p, { insert: false }) : p), null);
+            // One region per original color, in the order the colors first appear (bottom first).
             const order = [...regions.keys()].reverse();
+            let byColor = order.map((c) => [c, unite(regions.get(c))]).filter(([, p]) => p && !p.isEmpty());
+
+            const gap = Number(opts.gap) || 0;
+            if (gap > 0 && byColor.length > 1) {
+                if (!PaperOffset) throw new GeometryError('Gaps need the offset library, which did not load.');
+                const b = root.bounds;
+                const vb = (viewBox || '').split(/[\s,]+/).map(Number);
+                const size = vb.length === 4 && vb.every(Number.isFinite) ? Math.max(vb[2], vb[3]) : Math.max(b.width, b.height);
+                const half = (gap * size) / 128 / 2;
+                // A band of half the gap on each side of a color's edge; other colors lose what it covers.
+                const bands = byColor.map(([, p]) => PaperOffset.offsetStroke(p, half, { join: 'round', cap: 'butt', insert: false }));
+                byColor = byColor.map(([c, p], i) => {
+                    let out = p;
+                    bands.forEach((band, j) => { if (j !== i) out = out.subtract(band, { insert: false }); });
+                    return [c, out];
+                }).filter(([, p]) => !p.isEmpty());
+                await new Promise((r) => setTimeout(r));
+            }
+
+            // One path per output color: colors the style maps to the same color merge.
+            const outColors = [];
+            const outRegions = new Map();
+            for (const [c, p] of byColor) {
+                const to = (map[c] || c).toLowerCase();
+                if (!outRegions.has(to)) { outRegions.set(to, []); outColors.push(to); }
+                outRegions.get(to).push(p);
+            }
             const paths = [];
-            for (const color of order) {
-                let merged = null;
-                for (const p of regions.get(color)) merged = merged ? merged.unite(p, { insert: false }) : p;
+            for (const color of outColors) {
+                const merged = unite(outRegions.get(color));
                 if (!merged || merged.isEmpty()) continue;
                 merged.reorient(true, true); // outer shapes clockwise, holes the other way (icon fonts fill nonzero)
                 paths.push('<path fill="#' + color + '" d="' + merged.getPathData(null, PRECISION) + '"/>');
