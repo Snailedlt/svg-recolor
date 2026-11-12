@@ -371,6 +371,8 @@ body.code-expanded { overflow: hidden; }
 .history-btns { display: inline-flex; align-items: center; gap: 4px; }
 .history-btns .icon-btn:disabled { opacity: .35; cursor: default; }
 .history-btns #reset-all { margin-left: 6px; }
+.foot-meta .link-btn, .foot-meta .kbd-hint { white-space: nowrap; }
+.recipes-list .empty { text-align: left; }
 .foot-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 0.78rem; color: var(--text-faint); }
 
 /* Buttons */
