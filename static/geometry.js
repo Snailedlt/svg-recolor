@@ -161,9 +161,13 @@
             if (viewBox) { live.removeAttribute('width'); live.removeAttribute('height'); }
             const root = scope.project.importSVG(live, { expandShapes: true, insert: true, applyMatrix: false });
             // Bake each shape's own transform into its points before turning it into path data.
+            // paper moves the drawing so the viewBox starts at 0,0; move it back, so the
+            // shapes stay in the original coordinates (the output keeps the original viewBox).
+            const undo = root.matrix.inverted();
             const shapes = leaves(scope, root).map(({ path, color }) => {
+                path.transform(undo);
                 path.applyMatrix = true;
-                return { d: path.pathData, rule: path.fillRule || 'nonzero', color };
+                return { d: path.getPathData(null, 12), rule: path.fillRule || 'nonzero', color };
             });
             const b = root.bounds;
             return { shapes, viewBox, width, height, bounds: [b.width, b.height] };

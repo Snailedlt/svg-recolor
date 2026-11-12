@@ -328,6 +328,11 @@ test('cut out: a color becomes a real gap, and the result is one path per color'
         return [[10, 10], [30, 10], [20, 10], [19.2, 5], [20.8, 15]].map(([x, y]) => ctx.isPointInPath(p, x, y, 'nonzero'));
     }, d);
     assert.deepEqual(hits, [true, true, false, false, false]);
+    // A viewBox that doesn't start at 0,0: the shapes keep their coordinates.
+    const shifted = await page.evaluate(() => SvgGeometry.cutOut('<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 50 40 20">'
+        + '<rect x="100" y="50" width="20" height="20" fill="#5e97f6"/><rect x="118" y="50" width="4" height="20" fill="#dce0df"/></svg>', { cut: ['dce0df'] }));
+    assert.match(shifted, /viewBox="100 50 40 20"/);
+    assert.match(shifted, /d="M100,70v-20h18[lv]/, "the cut leaves 100..118 at its own coordinates");
     assert.match(await page.textContent('#api-hint'), /Cut out, gaps and lines only work here in the editor/);
     assert.deepEqual(problems, []);
 });
@@ -413,6 +418,22 @@ test('line version: only the edges stay, colors can stay filled', async () => {
     assert.deepEqual(await hitsAt(points), [true, false, false, false, false]);
     assert.match(await (async () => { await page.click('#tab-btn-api'); return page.textContent('#api-hint'); })(), /lines only work here in the editor/);
     assert.ok(!(await page.textContent('#snippet')).includes('line='), 'API snippets leave lines out');
+    assert.deepEqual(problems, []);
+});
+
+test('the SVG\'s own colors (and gradient middles) can be picked as the color', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><defs><linearGradient id="g">'
+        + '<stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/></linearGradient></defs>'
+        + '<rect width="10" height="10" fill="url(#g)"/><rect x="10" width="5" height="10" fill="#00ff00"/><rect x="15" width="5" height="10" fill="#00ff00"/></svg>');
+    await page.locator('#logo-colors:not([hidden])').waitFor();
+    const colors = await page.$$eval('#logo-colors button', (bs) => bs.map((b) => b.dataset.hex + (b.classList.contains('mid') ? ' mid' : '')));
+    assert.equal(colors[0], '#00FF00', 'most used first');
+    assert.ok(colors.includes('#FF0000') && colors.includes('#0000FF'), 'both ends of the gradient');
+    assert.ok(colors.includes('#800080 mid'), 'the middle of the gradient');
+    await page.click('#logo-colors button[data-hex="#800080"]');
+    assert.equal(await page.inputValue('#hex-input'), '800080');
+    assert.equal(await page.getAttribute('#logo-colors button[data-hex="#800080"]', 'aria-pressed'), 'true');
     assert.deepEqual(problems, []);
 });
 

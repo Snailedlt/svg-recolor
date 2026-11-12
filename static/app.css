@@ -339,6 +339,9 @@ body.code-expanded { overflow: hidden; }
 .recent { display: flex; gap: 6px; margin-top: 8px; align-items: center; min-height: 20px; }
 .recent > span { font-size: 0.72rem; color: var(--text-faint); margin-right: 2px; }
 .recent button { width: 20px; height: 20px; border-radius: 5px; border: 1px solid rgba(127,127,127,.3); cursor: pointer; padding: 0; }
+.logo-colors { flex-wrap: wrap; }
+.logo-colors button[aria-pressed="true"] { outline: 2px solid var(--text); outline-offset: 1px; }
+.logo-colors button.mid { border-radius: 50%; }
 
 /* Footer of controls */
 .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 0.84rem; color: var(--text-muted); }

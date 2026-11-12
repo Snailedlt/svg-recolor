@@ -358,7 +358,7 @@
         if (document.activeElement !== hexInput) hexInput.value = hex.slice(1);
         $('hex-field').classList.remove('invalid');
         root.style.setProperty('--pick', hex);
-        $$('.preset').forEach((p) => p.setAttribute('aria-pressed', String(p.dataset.hex === hex)));
+        $$('.preset, .logo-colors button').forEach((p) => p.setAttribute('aria-pressed', String(p.dataset.hex === hex)));
         if (user) settingsChanged();
     }
     $('color-input').addEventListener('input', (e) => setColor(e.target.value.toUpperCase(), true));
@@ -373,6 +373,75 @@
         const list = [hex].concat(store.get('recent', []).filter((c) => c !== hex)).slice(0, 8);
         store.set('recent', list);
         renderRecent();
+    }
+    // "In this SVG": its colors, most used first. Each gradient adds its two ends and the
+    // color halfway along it (sRGB, as the browser draws it).
+    function gradientStops(norm) {
+        const out = [];
+        const grads = norm.match(/<(linear|radial)Gradient\b[\s\S]*?<\/\1Gradient>/gi) || [];
+        for (const g of grads) {
+            const stops = [];
+            for (const [tag] of g.matchAll(/<stop\b[^>]*>/gi)) {
+                const color = /stop-color\s*[:=]\s*["']?\s*#([0-9a-f]{6})/i.exec(tag);
+                if (!color) continue;
+                const off = /offset\s*[:=]\s*["']?\s*([\d.]+)(%?)/i.exec(tag);
+                let at = off ? parseFloat(off[1]) / (off[2] ? 100 : 1) : NaN;
+                if (!Number.isFinite(at)) at = stops.length ? stops[stops.length - 1].at : 0;
+                // Offsets never go back: a smaller one counts as the previous one.
+                at = Math.max(Math.min(at, 1), stops.length ? stops[stops.length - 1].at : 0);
+                stops.push({ at, hex: color[1].toLowerCase() });
+            }
+            if (stops.length >= 2) out.push(stops);
+        }
+        return out;
+    }
+    function gradientColorAt(stops, t) {
+        const rgb = (h) => [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+        const i = stops.findIndex((s) => s.at >= t);
+        if (i === -1) return stops[stops.length - 1].hex;
+        if (i === 0) return stops[0].hex;
+        const a = stops[i - 1], b = stops[i];
+        const f = b.at === a.at ? 0 : (t - a.at) / (b.at - a.at);
+        const [ra, rb] = [rgb(a.hex), rgb(b.hex)];
+        return ra.map((v, k) => Math.round(v + (rb[k] - v) * f).toString(16).padStart(2, '0')).join('');
+    }
+    function logoColors(doc) {
+        const list = [];
+        const seen = new Set();
+        const add = (hex, title, mid) => {
+            if (seen.has(hex)) return;
+            seen.add(hex);
+            list.push({ hex, title, mid });
+        };
+        [...doc.palette].sort((a, b) => b[1] - a[1]).slice(0, 16)
+            .forEach(([hex, n]) => add(hex, '#' + hex.toUpperCase() + ' · used ' + n + '×'));
+        gradientStops(doc.norm).forEach((stops) => {
+            const [first, last] = [stops[0].hex, stops[stops.length - 1].hex];
+            add(first, '#' + first.toUpperCase() + ' · start of a gradient');
+            const mid = gradientColorAt(stops, 0.5);
+            add(mid, '#' + mid.toUpperCase() + ' · middle of a gradient', true);
+            add(last, '#' + last.toUpperCase() + ' · end of a gradient');
+        });
+        return list.slice(0, 24);
+    }
+    function renderLogoColors() {
+        const box = $('logo-colors');
+        box.querySelectorAll('button').forEach((b) => b.remove());
+        const list = state.doc ? logoColors(state.doc) : [];
+        list.forEach(({ hex, title, mid }) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            const up = '#' + hex.toUpperCase();
+            b.style.background = up;
+            b.title = title;
+            b.dataset.hex = up;
+            if (mid) b.className = 'mid';
+            b.setAttribute('aria-label', 'Use ' + title);
+            b.setAttribute('aria-pressed', String(state.color === up));
+            b.addEventListener('click', () => setColor(up, true));
+            box.appendChild(b);
+        });
+        box.hidden = list.length === 0;
     }
     function renderRecent() {
         const list = store.get('recent', []).filter((c) => !PRESETS.includes(c));
@@ -587,6 +656,7 @@
         const norm = Engine.normalize(text);
         source = source || (fromUrl ? 'link' : 'file');
         state.doc = { name, size, text, norm, palette: Engine.palette(norm), fromUrl: fromUrl || null, source };
+        renderLogoColors();
         state.result = null;
         // Edits belong to colors: keep the ones this SVG still has (live code edits, shared links).
         const present = new Set(state.doc.palette.map((p) => p[0]));
