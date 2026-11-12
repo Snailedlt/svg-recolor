@@ -47,10 +47,21 @@ def bad_request(e: Exception, status: int = 400):
     raise HTTPException(status_code=status, detail=str(e))
 
 
-def options(mode, color, hue, saturation, lightness) -> engine.Options:
+def _edit_list(value) -> tuple:
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(str(v) for v in value)
+    return engine.parse_edit_list(str(value))
+
+
+def options(mode, color, hue, saturation, lightness, replace=None, hide=None, remove=None) -> engine.Options:
+    """Options from request values. replace/hide/remove take strings from query strings
+    and forms ("5e97f6:ff0000,..." / "ffffff,...") or an object/list from JSON and MCP."""
     try:
         return engine.Options(
-            mode=mode, color=color, hue=hue, saturation=saturation, lightness=lightness
+            mode=mode, color=color, hue=hue, saturation=saturation, lightness=lightness,
+            replace=engine.parse_replace(replace or {}), hide=_edit_list(hide), remove=_edit_list(remove),
         ).validate()
     except engine.RecolorError as e:
         bad_request(e)

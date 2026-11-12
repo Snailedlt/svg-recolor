@@ -308,7 +308,8 @@
                                 </div>
                                 <div class="palette" id="palette" hidden>
                                     <span>Colors</span>
-                                    <ul id="palette-list" aria-label="Original color to new color" tabindex="0"></ul>
+                                    <ul id="palette-list" aria-label="Original color to new color. Click a color to edit it." tabindex="0"></ul>
+                                    <button type="button" class="link-btn palette-reset" id="edits-reset" hidden>Reset edits</button>
                                 </div>
                             </div>
 
@@ -374,6 +375,24 @@
                         </div>
                     </section>
                 </div>
+            </div>
+
+            <div class="color-edit" id="color-edit" role="dialog" aria-labelledby="color-edit-title" hidden>
+                <div class="color-edit-head">
+                    <i id="color-edit-from" aria-hidden="true"></i>
+                    <b id="color-edit-title"></b>
+                    <span id="color-edit-count"></span>
+                    <button type="button" class="icon-btn" id="color-edit-close" aria-label="Close">✕</button>
+                </div>
+                <fieldset>
+                    <legend class="sr-only">What happens to this color</legend>
+                    <label><input type="radio" name="color-edit-op" value="style"><span><b>Follow style</b>Recolored like the rest</span></label>
+                    <label class="own"><input type="radio" name="color-edit-op" value="replace"><span><b>Own color</b>Just this color</span>
+                        <input type="color" id="color-edit-own" aria-label="Own color"></label>
+                    <label><input type="radio" name="color-edit-op" value="hide"><span><b>Hide</b>Invisible; the shapes stay</span></label>
+                    <label><input type="radio" name="color-edit-op" value="remove"><span><b>Remove shapes</b>Delete what's painted with it</span></label>
+                </fieldset>
+                <p class="color-edit-tip">One-color icon: pick <b>Solid</b>, then remove the background color.</p>
             </div>
 
             <section class="more" id="how">

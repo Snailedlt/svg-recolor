@@ -60,6 +60,12 @@ Base URL: {base}
 - `mode`: one of {", ".join(f"`{k}`" for k in engine.MODES)}. Default `{engine.DEFAULT_MODE}`.
 - `hue`: rotate hue, -360..360 degrees. `saturation`, `lightness`: -100..100 points. Applied after the mode.
 - `format`: `svg` (default) or `json`. `download`: `true` to get an attachment.
+- Per-color edits on top of the mode, keyed by the original colors (see `/api/palette`):
+  `replace=5e97f6:ff0000,...` gives single colors their own new color; `hide=ffffff,...` makes colors
+  invisible (shapes stay, painted `none`); `remove=ffffff,...` deletes the shapes painted with them
+  (a shape keeps its stroke or fill when only the other is removed). In JSON and MCP, `replace` is an
+  object and `hide`/`remove` are lists. In the JSON palette, `to` is then `"none"` or `"removed"`.
+  One-color icon (like a devicon "plain" version): `mode=solid&color=000000&remove=ffffff`.
 
 ## Modes
 
@@ -106,6 +112,11 @@ MCP_TOOLS = [
                 "hue": {"type": "integer", "minimum": -360, "maximum": 360, "default": 0, "description": "Rotate hue (degrees), applied after the mode."},
                 "saturation": {"type": "integer", "minimum": -100, "maximum": 100, "default": 0},
                 "lightness": {"type": "integer", "minimum": -100, "maximum": 100, "default": 0},
+                "replace": {"type": "object", "additionalProperties": {"type": "string"},
+                            "description": "Give single original colors their own new color, on top of the mode: {\"#5e97f6\": \"#ff0000\"}."},
+                "hide": {"type": "array", "items": {"type": "string"}, "description": "Original colors to make invisible (shapes stay)."},
+                "remove": {"type": "array", "items": {"type": "string"},
+                           "description": "Original colors whose shapes are deleted. For a one-color icon: mode solid plus remove the background color."},
             },
         },
         "annotations": {"readOnlyHint": True, "openWorldHint": True},
@@ -146,7 +157,8 @@ async def _mcp_call(name: str, args: dict) -> dict:
             return {"content": [{"type": "text", "text": json.dumps(data)}], "structuredContent": data}
         if name == "recolor_svg":
             opts = options(args.get("mode") or engine.DEFAULT_MODE, args.get("color") or "ff0066",
-                            args.get("hue", 0), args.get("saturation", 0), args.get("lightness", 0))
+                           args.get("hue", 0), args.get("saturation", 0), args.get("lightness", 0),
+                           args.get("replace"), args.get("hide"), args.get("remove"))
             svg_text, src_name = await _mcp_source(args)
             result = await run(svg_text, opts)
             data = {"filename": output_name(safe_stem(src_name), opts), "palette": result.palette(), "svg": result.svg}

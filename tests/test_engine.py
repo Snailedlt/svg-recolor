@@ -162,3 +162,75 @@ def test_largest_allowed_file_is_fast():
     res = r.recolor(r.decode_svg(svg.encode()), r.Options(mode="hue", color="red"))
     assert res.svg.count("<path") == 55_000
     assert time.monotonic() - start < 5
+
+
+# --------------------------------------------------------------------------
+# Per-color edits (replace / hide / remove)
+# --------------------------------------------------------------------------
+
+def edited(svg, **kw):
+    return r.recolor(svg, r.Options(mode="adjust", **kw)).svg
+
+
+def test_remove_deletes_shapes_painted_with_the_color():
+    svg = '<svg><rect fill="#fff"/><path fill="#5E97F6" d="M0"/><circle style="fill: white"/></svg>'
+    assert edited(svg, remove=["white"]) == '<svg fill="#000000"><path fill="#5e97f6" d="M0"/></svg>'
+
+
+def test_remove_follows_inheritance_and_keeps_other_paint():
+    svg = ('<svg><g fill="#fff"><path d="M0"/><path fill="red" d="M1"/></g>'
+           '<path fill="#fff" stroke="#000" d="M2"/><path stroke="#fff" fill="#000" d="M3"/></svg>')
+    out = edited(svg, remove=["fff"])
+    assert '<path d="M0"/>' not in out and 'fill="#ff0000" d="M1"' in out
+    assert '<path fill="none" stroke="#000000" d="M2"/>' in out  # fill gone, stroke stays
+    assert '<path stroke="none" fill="#000000" d="M3"/>' in out  # stroke gone, fill stays
+
+
+def test_remove_reads_simple_class_rules():
+    svg = '<svg><style>.a{fill:#fff}.b{fill:#00f}</style><path class="a" d="M0"/><path class="b" d="M1"/></svg>'
+    out = edited(svg, remove=["fff"])
+    assert 'class="a"' not in out and 'class="b"' in out and ".a{fill:none}" in out
+
+
+def test_remove_never_deletes_clip_paths_or_gradient_stops():
+    svg = ('<svg><defs><clipPath id="c"><rect fill="#fff"/></clipPath><linearGradient id="g">'
+           '<stop stop-color="#fff"/></linearGradient></defs><rect fill="url(#g)" clip-path="url(#c)"/></svg>')
+    out = edited(svg, remove=["fff"])
+    assert '<clipPath id="c"><rect fill="none"/></clipPath>' in out
+    assert '<stop stop-color="transparent"/>' in out and 'fill="url(#g)"' in out
+
+
+def test_remove_deletes_whole_text_elements():
+    out = edited('<svg><text fill="#fff">Hi <tspan>there</tspan></text><path d="M0"/></svg>', remove=["fff"])
+    assert "<text" not in out and "there" not in out and '<path d="M0"/>' in out
+
+
+def test_hide_keeps_shapes_but_makes_them_invisible():
+    out = edited('<svg><path fill="#fff" d="M0"/><stop stop-color="#fff"/></svg>', hide=["fff"])
+    assert '<path fill="none" d="M0"/>' in out and 'stop-color="transparent"' in out
+
+
+def test_replace_overrides_the_mode_for_one_color():
+    res = r.recolor('<svg><path fill="#5e97f6"/><path fill="#e879f9"/></svg>',
+                    r.Options(mode="solid", color="000000", replace={"#e879f9": "tomato"}))
+    assert 'fill="#000000"' in res.svg and 'fill="#ff6347"' in res.svg
+
+
+def test_one_color_icon_recipe():
+    # A devicon-style "plain" version: one color, the background removed.
+    svg = '<svg viewBox="0 0 2 1"><rect fill="#fff" width="2" height="1"/><path fill="#5e97f6" d="M0"/><path fill="#e879f9" d="M1"/></svg>'
+    res = r.recolor(svg, r.Options(mode="solid", color="000000", remove=["ffffff"]))
+    assert "rect" not in res.svg and res.svg.count('fill="#000000"') == 3  # root + two paths
+    assert {p["from"]: p["to"] for p in res.palette()}["#ffffff"] == "removed"
+
+
+@pytest.mark.parametrize("kw", [{"hide": ["fff"], "remove": ["white"]}, {"replace": {"#fff": "red"}, "hide": ["fff"]},
+                                {"remove": ["nope"]}, {"replace": {"fff": "nope"}}])
+def test_bad_edits_are_rejected(kw):
+    with pytest.raises(r.RecolorError):
+        r.Options(**kw).validate()
+
+
+def test_no_edits_changes_nothing():
+    svg = '<svg><path fill="#5e97f6"/></svg>'
+    assert r.apply_edits(r.normalize_svg(svg)) == r.normalize_svg(svg)

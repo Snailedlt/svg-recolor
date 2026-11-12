@@ -181,6 +181,67 @@ test('code blocks are highlighted and copy their full text', async () => {
     assert.deepEqual(problems, []);
 });
 
+const EDIT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 10"><rect width="30" height="10" fill="#ffffff"/>'
+    + '<path d="M1 1h8v8H1z" fill="#5e97f6"/><path d="M11 1h8v8h-8z" fill="#e879f9"/><path d="M21 1h8v8h-8z" fill="#0f766e"/></svg>';
+
+async function pasteSvg(page, svg) {
+    await page.click('[data-source="code"]');
+    await page.fill('#code-input', svg);
+    await page.locator('#code-status', { hasText: 'Applied' }).waitFor();
+    await page.click('#source-cancel');
+}
+
+test('each color can get its own color, be hidden, or have its shapes removed', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, EDIT_SVG);
+    await page.click('.style[data-mode="solid"]');
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    await page.click('.chip[data-color="ffffff"]');
+    assert.equal(await page.isVisible('#color-edit'), true);
+    await page.check('#color-edit [value="remove"]');
+    await page.locator('.chip[data-color="ffffff"]', { hasText: 'Removed' }).waitFor();
+    await page.click('.chip[data-color="e879f9"]');
+    await page.check('#color-edit [value="hide"]');
+    await page.locator('.chip[data-color="e879f9"]', { hasText: 'Hidden' }).waitFor();
+    await page.click('.chip[data-color="0f766e"]');
+    await page.locator('#color-edit-own').evaluate((el) => { el.value = '#00aa55'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+    await page.locator('.chip[data-color="0f766e"]', { hasText: '#00AA55' }).waitFor();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.isVisible('#color-edit'), false, 'Esc closes the panel');
+    await page.click('#tab-btn-code');
+    const code = await page.textContent('#code-view');
+    assert.ok(!code.includes('<rect'), 'the removed color\'s shape is gone');
+    assert.match(code, /fill="none"/);
+    assert.match(code, /fill="#00aa55"/);
+    await page.waitForURL(/replace=0f766e%3A00aa55&hide=e879f9&remove=ffffff/); // the address is updated after a short pause
+    // The API snippet reproduces the same edits.
+    await page.click('#tab-btn-api');
+    assert.match(await page.textContent('#snippet'), /remove=ffffff/);
+    await page.click('#tab-btn-preview');
+    await page.click('#edits-reset');
+    await page.locator('.chip.edited').first().waitFor({ state: 'detached' });
+    assert.deepEqual(problems, []);
+});
+
+test('share links carry a pasted SVG and its edits', async () => {
+    const { page, problems } = await open();
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+    await pasteSvg(page, EDIT_SVG);
+    await page.click('.chip[data-color="ffffff"]');
+    await page.check('#color-edit [value="remove"]');
+    await page.locator('.chip[data-color="ffffff"]', { hasText: 'Removed' }).waitFor();
+    await page.click('#share-btn');
+    await page.locator('.toast', { hasText: 'Link with this SVG' }).waitFor();
+    const link = await page.evaluate(() => navigator.clipboard.readText());
+    assert.match(link, /#svg=/);
+    const other = await newPage();
+    await other.goto(BASE + link.slice(link.indexOf('/?')));
+    await other.locator('#file-name', { hasText: 'pasted.svg' }).waitFor({ state: 'attached' });
+    await other.locator('.chip[data-color="ffffff"]', { hasText: 'Removed' }).waitFor();
+    assert.ok(!other.url().includes('#svg='), 'the SVG is dropped from the address bar after loading');
+    assert.deepEqual(problems, []);
+});
+
 test('no accessibility violations (axe) in every tab, both themes', async () => {
     for (const colorScheme of ['dark', 'light']) {
         const { page } = await open({ colorScheme, bypassCSP: true });

@@ -139,6 +139,17 @@ FormatParam = Annotated[
     Query(description="`svg` returns the file; `json` returns the SVG plus the color mapping."),
 ]
 DownloadParam = Annotated[bool, Query(description="Send as an attachment instead of inline.")]
+ReplaceParam = Annotated[Optional[str], Query(
+    description="Give single colors their own new color, applied on top of the mode: `old:new` pairs, "
+                "comma-separated. Colors in any format (hex, rgb(), names).",
+    examples=["5e97f6:ff0000,ffffff:000000"])]
+HideParam = Annotated[Optional[str], Query(
+    description="Colors to make invisible (they become `none`/`transparent`; the shapes stay), comma-separated.",
+    examples=["ffffff"])]
+RemoveParam = Annotated[Optional[str], Query(
+    description="Colors whose shapes are deleted, comma-separated (handy for a one-color icon: "
+                "`mode=solid&remove=ffffff`). A shape whose fill or stroke alone is that color keeps the other.",
+    examples=["ffffff"])]
 
 
 # --------------------------------------------------------------------------
@@ -318,7 +329,7 @@ async def sitemap_xml(request: Request):
 # API
 # --------------------------------------------------------------------------
 
-OPTION_FIELDS = ("color", "mode", "hue", "saturation", "lightness", "format", "download")
+OPTION_FIELDS = ("color", "mode", "hue", "saturation", "lightness", "format", "download", "replace", "hide", "remove")
 
 
 async def _read_source(request: Request) -> tuple[str, str, dict]:
@@ -372,6 +383,12 @@ JSON_BODY_SCHEMA = {
         "saturation": {"type": "integer", "minimum": -100, "maximum": 100},
         "lightness": {"type": "integer", "minimum": -100, "maximum": 100},
         "format": {"type": "string", "enum": ["svg", "json"]},
+        "replace": {"oneOf": [{"type": "object", "additionalProperties": {"type": "string"}}, {"type": "string"}],
+                    "description": "Per-color new colors: {\"5e97f6\": \"ff0000\"} or \"5e97f6:ff0000,...\"."},
+        "hide": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
+                 "description": "Colors to make invisible."},
+        "remove": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
+                   "description": "Colors whose shapes are deleted."},
     },
 }
 
@@ -415,13 +432,16 @@ async def recolor_from_url(
     lightness: LightParam = 0,
     format: FormatParam = "svg",
     download: DownloadParam = False,
+    replace: ReplaceParam = None,
+    hide: HideParam = None,
+    remove: RemoveParam = None,
 ):
     """Fetches the SVG at `url` and returns it recolored. Responses are cacheable, so you can
     use the endpoint directly as an image source:
 
     `<img src="https://svg-recolor.jorgenkh.no/api/recolor?url=https://.../icon.svg&color=tomato&mode=solid">`
     """
-    opts = options(mode, color, hue, saturation, lightness)
+    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove)
     svg_text, name = await fetch_svg(url)
     result = await run(svg_text, opts)
     return respond(result, opts, output_name(safe_stem(name), opts), format, download, cache=True)
@@ -445,6 +465,9 @@ async def recolor_upload(
     lightness: LightParam = 0,
     format: FormatParam = "svg",
     download: DownloadParam = False,
+    replace: ReplaceParam = None,
+    hide: HideParam = None,
+    remove: RemoveParam = None,
 ):
     """Send the SVG in any of these ways:
 
@@ -455,10 +478,12 @@ async def recolor_upload(
     Options in a form or JSON body override the query string."""
     svg_text, name, body_opts = await _read_source(request)
     params = {"color": color, "mode": mode, "hue": hue, "saturation": saturation,
-              "lightness": lightness, "format": format, "download": download} | body_opts
+              "lightness": lightness, "format": format, "download": download,
+              "replace": replace, "hide": hide, "remove": remove} | body_opts
     if params["format"] not in ("svg", "json"):
         raise HTTPException(400, "'format' must be 'svg' or 'json'.")
-    opts = options(params["mode"], params["color"], params["hue"], params["saturation"], params["lightness"])
+    opts = options(params["mode"], params["color"], params["hue"], params["saturation"], params["lightness"],
+                   params["replace"], params["hide"], params["remove"])
     result = await run(svg_text, opts)
     download_flag = str(params["download"]).lower() in ("1", "true", "yes")
     return respond(result, opts, output_name(safe_stem(name), opts), params["format"], download_flag)
@@ -553,11 +578,14 @@ async def recolor_batch(
     hue: HueParam = 0,
     saturation: SatParam = 0,
     lightness: LightParam = 0,
+    replace: ReplaceParam = None,
+    hide: HideParam = None,
+    remove: RemoveParam = None,
 ):
     """Applies the same settings to every file and returns a ZIP archive."""
     if len(files) > 50:
         raise HTTPException(400, "Send at most 50 files per batch.")
-    opts = options(mode, color, hue, saturation, lightness)
+    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove)
     buf = io.BytesIO()
     used: set[str] = set()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:

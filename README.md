@@ -40,6 +40,22 @@ The website is hosted at [svg-recolor.jorgenkh.no](https://svg-recolor.jorgenkh.
 
 Every mode can be fine-tuned with `hue` (rotate, -360..360 degrees), `saturation` and `lightness` (-100..100).
 
+### Per-color edits
+
+On top of any mode, single colors (the original ones, as listed by `/api/palette`) can be edited:
+
+| Edit | API | What it does |
+| --- | --- | --- |
+| Own color | `replace=5e97f6:ff0000,...` | That color gets its own new color instead of the mode's. |
+| Hide | `hide=ffffff,...` | The color becomes `none` (fill/stroke) or `transparent` (gradient stops); the shapes stay in the file. |
+| Remove | `remove=ffffff,...` | Shapes painted with the color are deleted, including ones that inherit it from a group or a CSS class. A shape keeps its fill or stroke when only the other is removed. Shapes inside `<defs>`, `<clipPath>`, `<mask>` and similar are only hidden, never deleted. |
+
+A one-color icon, like a devicon `plain` version, is `mode=solid&color=000000&remove=ffffff` (Solid, then remove the
+background). This gets you one color without the background; devicon's other rules (a single path with white parts
+cut out as holes) need path operations, which tools like Inkscape or the svg-icons agent skill do.
+
+In the editor, click a color in the **Colors** strip under the preview to edit it.
+
 Before recoloring, colors are normalized so the tools can handle them: CSS color names, `rgb()`/`hsl()`
 (with alpha), and 3/4-digit hex are converted to hex, and icons that rely on the default black fill
 (or `currentColor`) get an explicit black so they recolor too. `url(#id)` and `href="#id"` references are left alone.
@@ -139,7 +155,8 @@ How:
 
 ### Website tips
 
-- The page URL keeps your settings (`?mode=colorize&color=ff0066&url=...`), so you can bookmark or share a setup. Opening a link with `url=` loads that SVG.
+- The page URL keeps your settings and color edits (`?mode=colorize&color=ff0066&remove=ffffff&url=...`), so you can bookmark a setup. Opening a link with `url=` loads that SVG.
+- **Share** copies a link with your SVG and settings. A linked SVG is shared by its address; a pasted or uploaded one travels in the link itself, compressed, after the `#` (never sent to the server). Very large SVGs don't fit in a link: share them from a public URL instead.
 - Everything fits on one screen: settings on the left, and Preview, Code and API tabs on the right, with Share, Copy and Download always visible.
 - Settings follow the order the engine applies them: **1 Style** (each tile shows your SVG in that style), **2 Color** (only for
   styles that use one) and **3 Adjust** (hue, saturation and lightness, applied last to any style). The "Original" style keeps

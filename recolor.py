@@ -100,6 +100,7 @@ DEFAULT_MODE = "tint"
 # Bump when the color math changes, so cached results (CDN, browsers) are not reused.
 ENGINE_VERSION = "2"
 MAX_PALETTE = 4096
+MAX_EDITS = 256
 
 
 # --------------------------------------------------------------------------
@@ -414,6 +415,173 @@ def apply_mapping(normalized_svg: str, mapping: dict[str, str]) -> str:
 
 
 # --------------------------------------------------------------------------
+# Per-color edits: hide a color, or remove the shapes painted with it
+# --------------------------------------------------------------------------
+# Edits work on the normalized SVG (lowercase hex colors) before the mapping, and
+# static/engine.js does exactly the same (tests/test_parity.py).
+
+_TOKEN_RE = re.compile(r"""<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<(/?)([A-Za-z][\w:.-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>""")
+_SHAPES = {"path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "use"}
+# Shapes in these are geometry for clipping, masks, markers, patterns and <use>: never deleted.
+_DEFS = {"defs", "clippath", "mask", "marker", "pattern", "symbol", "lineargradient", "radialgradient", "filter"}
+_HEX_PAINT_RE = re.compile(r"#([0-9a-f]{6})(?:[0-9a-f]{2})?$")
+_PAINT_CTX_RE = re.compile(r"(?:fill|stroke)\s*(?:=\s*[\"']\s*|:\s*)$", re.IGNORECASE)
+
+
+def _class_rules(svg: str) -> dict:
+    """fill/stroke set by simple class rules in <style> (".a{fill:#..}", ".a,.b{..}"):
+    {class: {prop: (rule order, value)}}. Other selectors are ignored."""
+    rules: dict = {}
+    order = 0
+    for block in re.finditer(r"<style\b[^>]*>([\s\S]*?)</style>", svg, re.IGNORECASE):
+        css = re.sub(r"/\*[\s\S]*?\*/", "", block.group(1))
+        for rule in re.finditer(r"([^{}]+)\{([^{}]*)\}", css):
+            order += 1
+            for selector in rule.group(1).split(","):
+                cls = re.fullmatch(r"\s*\.([\w-]+)\s*", selector)
+                if not cls:
+                    continue
+                for prop in ("fill", "stroke"):
+                    decl = re.search(r"(?:^|;)\s*" + prop + r"\s*:\s*([^;]+)", rule.group(2), re.IGNORECASE)
+                    if decl:
+                        rules.setdefault(cls.group(1), {})[prop] = (order, decl.group(1))
+    return rules
+
+
+def _paint(attrs: str, prop: str, rules: Optional[dict] = None) -> Optional[str]:
+    """The tag's own fill or stroke: a 6-digit hex, "none", "other" (url(), currentColor, ...) or None if unset.
+    Looks where CSS does: the style attribute, then class rules, then the attribute."""
+    value = None
+    style = re.search(r"""\sstyle\s*=\s*(["'])([\s\S]*?)\1""", attrs, re.IGNORECASE)
+    if style:
+        m = re.search(r"(?:^|;)\s*" + prop + r"\s*:\s*([^;]+)", style.group(2), re.IGNORECASE)
+        if m:
+            value = m.group(1)
+    if value is None and rules:
+        cls = re.search(r"""\sclass\s*=\s*(["'])([\s\S]*?)\1""", attrs, re.IGNORECASE)
+        if cls:
+            best = None
+            for name in cls.group(2).split():
+                hit = rules.get(name, {}).get(prop)
+                if hit and (best is None or hit[0] > best[0]):
+                    best = hit
+            if best:
+                value = best[1]
+    if value is None:
+        m = re.search(r"""\s""" + prop + r"""\s*=\s*(["'])([\s\S]*?)\1""", attrs, re.IGNORECASE)
+        if m:
+            value = m.group(2)
+    if value is None:
+        return None
+    v = value.strip().lower()
+    m = _HEX_PAINT_RE.match(v)
+    if m:
+        return m.group(1)
+    return "none" if v in ("none", "transparent") else "other"
+
+
+def _paint_off(attrs: str, prop: str) -> str:
+    """Set the tag's fill or stroke to none, wherever it is set (style or attribute)."""
+    found = False
+
+    def style_sub(m):
+        nonlocal found
+
+        def decl(d):
+            nonlocal found
+            found = True
+            return d.group(1) + "none"
+
+        return m.group(1) + re.sub(r"((?:^|;)\s*" + prop + r"\s*:\s*)[^;]+", decl, m.group(3), flags=re.IGNORECASE) + m.group(4)
+
+    attrs = re.sub(r"""(\sstyle\s*=\s*(["']))([\s\S]*?)(\2)""", style_sub, attrs, count=1, flags=re.IGNORECASE)
+
+    def attr_sub(m):
+        nonlocal found
+        found = True
+        return m.group(1) + "none" + m.group(4)
+
+    attrs = re.sub(r"""(\s""" + prop + r"""\s*=\s*(["']))([\s\S]*?)(\2)""", attr_sub, attrs, count=1, flags=re.IGNORECASE)
+    if not found:
+        closing = re.search(r"\s*/$", attrs)
+        at = closing.start() if closing else len(attrs)
+        attrs = attrs[:at] + f' {prop}="none"' + attrs[at:]
+    return attrs
+
+
+def apply_edits(normalized_svg: str, hide=(), remove=()) -> str:
+    """Hide colors (they become none/transparent) and remove the shapes painted with others.
+
+    A shape is removed when everything it paints (fill and stroke, own or inherited)
+    is a removed color; when only its fill or only its stroke is, that part is turned
+    off. Any other use of a hidden or removed color (groups, gradient stops, CSS)
+    becomes "none" for fill and stroke, else "transparent"."""
+    hide, remove = set(hide), set(remove)
+    if not hide and not remove:
+        return normalized_svg
+    svg = normalized_svg
+    if remove:
+        out, pos = [], 0
+        stack = [("", "000000", "none", False)]  # (name, fill, stroke, inside defs)
+        rules = _class_rules(svg)
+        skip_name, skip_depth = None, 0
+        for m in _TOKEN_RE.finditer(svg):
+            closing, name, attrs = m.group(1), m.group(2), m.group(3)
+            if name is None:  # comment or CDATA
+                continue
+            lname = name.lower()
+            self_closing = attrs.rstrip().endswith("/")
+            if skip_name is not None:  # inside a removed element: find its end
+                if lname == skip_name and not self_closing:
+                    skip_depth += -1 if closing else 1
+                    if skip_depth == 0:
+                        pos, skip_name = m.end(), None
+                continue
+            if closing:
+                if len(stack) > 1 and stack[-1][0] == lname:
+                    stack.pop()
+                continue
+            parent = stack[-1]
+            fill = _paint(attrs, "fill", rules)
+            stroke = _paint(attrs, "stroke", rules)
+            fill = parent[1] if fill is None else fill
+            stroke = parent[2] if stroke is None else stroke
+            in_defs = parent[3] or lname in _DEFS
+            if lname in _SHAPES and not parent[3]:
+                fill_hit, stroke_hit = fill in remove, stroke in remove
+                fill_shows = fill != "none" and not fill_hit and lname != "line"
+                stroke_shows = stroke != "none" and not stroke_hit
+                if (fill_hit or stroke_hit) and not fill_shows and not stroke_shows:
+                    out.append(svg[pos : m.start()])
+                    if self_closing:
+                        pos = m.end()
+                    else:
+                        skip_name, skip_depth, pos = lname, 1, m.end()
+                    continue
+                new_attrs = attrs
+                if fill_hit:
+                    new_attrs, fill = _paint_off(new_attrs, "fill"), "none"
+                if stroke_hit:
+                    new_attrs, stroke = _paint_off(new_attrs, "stroke"), "none"
+                if new_attrs != attrs:
+                    out.append(svg[pos : m.start(3)] + new_attrs)
+                    pos = m.end(3)
+            if not self_closing:
+                stack.append((lname, fill, stroke, in_defs))
+        out.append(svg[pos:] if skip_name is None else "")
+        svg = "".join(out)
+    gone = hide | remove
+    ref = svg
+
+    def sub(m):
+        if _is_reference(ref, m.start()) or len(m.group(1)) not in (6, 8) or m.group(1)[:6].lower() not in gone:
+            return m.group(0)
+        return "none" if _PAINT_CTX_RE.search(ref[max(0, m.start() - 30) : m.start()]) else "transparent"
+
+    return _HEX_RE.sub(sub, svg)
+
+
+# --------------------------------------------------------------------------
 # Recoloring
 # --------------------------------------------------------------------------
 
@@ -425,6 +593,10 @@ class Options:
     hue: int = 0  # hue rotation in degrees, -360..360
     saturation: int = 0  # saturation shift in percentage points, -100..100
     lightness: int = 0  # lightness shift in percentage points, -100..100
+    # Per-color edits, applied on top of the mode, keyed by original color:
+    replace: dict = field(default_factory=dict)  # {"5e97f6": "ff0000"}: give one color its own new color
+    hide: tuple = ()  # colors to make invisible (none/transparent); the shapes stay
+    remove: tuple = ()  # colors whose shapes are deleted
 
     def validate(self) -> Options:
         self.mode = (self.mode or DEFAULT_MODE).lower()
@@ -443,6 +615,20 @@ class Options:
             setattr(self, name, v)
         if MODES[self.mode]["uses_color"]:
             parse_color(self.color)
+        edits = {}
+        try:
+            self.replace = {_edit_key(k): rgb_to_hex(parse_color(v))[1:] for k, v in dict(self.replace or {}).items()}
+            self.hide = tuple(dict.fromkeys(_edit_key(c) for c in (self.hide or ())))
+            self.remove = tuple(dict.fromkeys(_edit_key(c) for c in (self.remove or ())))
+        except (TypeError, ValueError, AttributeError) as e:
+            raise RecolorError(f"Could not read the color edits: {e}")
+        for kind, colors in (("replace", self.replace), ("hide", self.hide), ("remove", self.remove)):
+            for c in colors:
+                if c in edits:
+                    raise RecolorError(f"#{c} is in both '{edits[c]}' and '{kind}'. Give each color one edit.")
+                edits[c] = kind
+        if len(edits) > MAX_EDITS:
+            raise RecolorError(f"Too many color edits ({len(edits)}). The limit is {MAX_EDITS}.")
         return self
 
 
@@ -451,12 +637,15 @@ class Result:
     svg: str
     mapping: dict[str, str] = field(default_factory=dict)
     counts: dict[str, int] = field(default_factory=dict)
+    hidden: set = field(default_factory=set)
+    removed: set = field(default_factory=set)
 
     def palette(self) -> list[dict]:
-        return [
-            {"from": "#" + c, "to": "#" + self.mapping.get(c, c), "count": n}
-            for c, n in self.counts.items()
-        ]
+        """Each original color and what it became: a hex color, "none" (hidden) or "removed"."""
+        def to(c):
+            return "removed" if c in self.removed else "none" if c in self.hidden else "#" + self.mapping.get(c, c)
+
+        return [{"from": "#" + c, "to": to(c), "count": n} for c, n in self.counts.items()]
 
 
 def _rotate_hue(colors: list[str], degrees: int) -> list[str]:
@@ -557,12 +746,37 @@ def map_colors(colors: list[str], opts: Options) -> dict[str, str]:
     return result
 
 
+def _edit_key(color) -> str:
+    """An original color to edit, as 6-digit lowercase hex without '#'."""
+    return rgb_to_hex(parse_color(str(color)))[1:]
+
+
+def parse_edit_list(value: Optional[str]) -> tuple:
+    """'ffffff,000000' (or with #) -> ("ffffff", "000000"). For query strings and forms."""
+    return tuple(c.strip() for c in (value or "").split(",") if c.strip())
+
+
+def parse_replace(value) -> dict:
+    """'5e97f6:ff0000,ffffff:teal' or a dict -> {"5e97f6": "ff0000", ...}."""
+    if isinstance(value, dict):
+        return value
+    out = {}
+    for pair in parse_edit_list(value):
+        old, sep, new = pair.partition(":")
+        if not sep or not old.strip() or not new.strip():
+            raise RecolorError(f"'{pair}' in 'replace' should look like old:new, for example 5e97f6:ff0000.")
+        out[old.strip()] = new.strip()
+    return out
+
+
 def recolor(svg: str, opts: Optional[Options] = None) -> Result:
     opts = (opts or Options()).validate()
     normalized = normalize_svg(svg)
     counts = extract_palette(normalized)
-    mapping = map_colors(list(counts), opts)
-    return Result(svg=apply_mapping(normalized, mapping), mapping=mapping, counts=counts)
+    mapping = {**map_colors(list(counts), opts), **{c: v for c, v in opts.replace.items() if c in counts}}
+    edited = apply_edits(normalized, hide=opts.hide, remove=opts.remove)
+    return Result(svg=apply_mapping(edited, mapping), mapping=mapping, counts=counts,
+                  hidden=set(opts.hide) & set(counts), removed=set(opts.remove) & set(counts))
 
 
 def palette(svg: str) -> list[dict]:

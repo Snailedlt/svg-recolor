@@ -354,3 +354,31 @@ def test_web_analytics_is_on_the_page_and_allowed_by_the_csp(client):
         assert f"'sha256-{digest}'" in csp
     # The script and its beacons are same-origin (/_vercel/insights/...), so 'self' covers both.
     assert "script-src 'self'" in csp and "connect-src 'self'" in csp
+
+
+EDIT_SVG = ('<svg xmlns="http://www.w3.org/2000/svg"><rect fill="#fff" width="9" height="9"/>'
+            '<path fill="#5e97f6" d="M0 0h4v4z"/><path fill="#e879f9" d="M5 5h4v4z"/></svg>')
+
+
+def test_color_edits_in_the_query_string(client):
+    res = client.post("/api/recolor?mode=solid&color=000000&remove=ffffff&replace=e879f9:red", content=EDIT_SVG, headers=SVG_CT)
+    assert res.status_code == 200
+    assert "<rect" not in res.text and 'fill="#ff0000"' in res.text and 'fill="#000000" d="M0 0h4v4z"' in res.text
+
+
+def test_color_edits_in_json_with_palette(client):
+    res = client.post("/api/recolor", json={"svg": EDIT_SVG, "mode": "adjust", "hide": ["#fff"],
+                                            "replace": {"5e97f6": "teal"}, "remove": "e879f9", "format": "json"})
+    palette = {p["from"]: p["to"] for p in res.json()["palette"]}
+    assert palette == {"#000000": "#000000", "#ffffff": "none", "#5e97f6": "#008080", "#e879f9": "removed"}
+
+
+def test_color_edits_in_a_form(client):
+    res = client.post("/api/recolor", data={"svg": EDIT_SVG, "mode": "solid", "color": "black", "remove": "white"})
+    assert res.status_code == 200 and "<rect" not in res.text
+
+
+@pytest.mark.parametrize("query", ["hide=fff&remove=white", "replace=oops", "remove=notacolor"])
+def test_bad_color_edits_are_400(client, query):
+    res = client.post("/api/recolor?" + query, content=EDIT_SVG, headers=SVG_CT)
+    assert res.status_code == 400 and res.json()["detail"]
