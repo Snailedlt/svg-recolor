@@ -265,6 +265,8 @@ def read_shapes(svg: str, lenient: bool = False) -> dict:
         raise engine.RecolorError("Cut out, gaps and lines work on shapes, and this SVG has an embedded image.")
     if not lenient and re.search(r"\smask\s*=|[\"';\s]mask\s*:", svg, re.IGNORECASE):
         raise engine.RecolorError("Cut out, gaps and lines don't support masks yet.")
+    if lenient:  # picosvg can't apply masks; for measuring, the unmasked drawing is close enough
+        svg = re.sub(r"\smask\s*=\s*(\"[^\"]*\"|'[^']*')", "", svg)
     try:
         pico = SVG.fromstring(svg).topicosvg()
     except Exception as e:  # noqa: BLE001 - picosvg raises many kinds; all mean "can't read this"
@@ -283,6 +285,8 @@ def read_shapes(svg: str, lenient: bool = False) -> dict:
             raise engine.RecolorError("Cut out, gaps and lines work with flat colors, and this SVG uses gradients or patterns.")
         if min(float(getattr(s, "opacity", 1) or 1), float(getattr(s, "fill_opacity", 1) or 1)) < 1:
             raise engine.RecolorError("Cut out, gaps and lines don't support semi-transparent colors yet.")
+        if fill.lower() == "currentcolor":
+            fill = "#000000"  # what a browser shows for it (the default text color)
         try:
             color = engine.rgb_to_hex(engine.parse_color(fill))[1:].lower()
         except engine.RecolorError:
@@ -353,7 +357,15 @@ def placed(svg: str, canvas, place) -> str:
 
 def fit_place(svg_edited: str, canvas, pad: float, deadline: Optional[float] = None) -> tuple:
     """Scale and center the visible drawing to fill the canvas, minus the padding."""
-    box = js("SvgGeometry.boundsOfShapes(args[0])", read_shapes(svg_edited, lenient=True)["shapes"], deadline=deadline)
+    try:
+        shapes = read_shapes(svg_edited, lenient=True)["shapes"]
+    except engine.RecolorError:  # can't measure the drawing: fit the SVG's own box instead
+        shapes = None
+    if shapes is None:
+        x0, y0, w0, h0 = orig_box(svg_edited)
+        box = [x0, y0, w0, h0]
+    else:
+        box = js("SvgGeometry.boundsOfShapes(args[0])", shapes, deadline=deadline)
     if not box:
         raise engine.RecolorError("Nothing visible to fit.")
     x0, y0, w0, h0 = orig_box(svg_edited)

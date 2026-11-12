@@ -199,6 +199,30 @@
 
     const tick = () => new Promise((r) => setTimeout(r));
 
+    // Outer outlines clockwise, holes counter-clockwise, by how deep each outline is nested
+    // (even: an outer edge, odd: a hole). paper.js's reorient() does the same in principle,
+    // but sometimes turns holes into filled shapes in some browsers.
+    function orient(p) {
+        // A region's outline never has the same contour twice, but boolean results sometimes do
+        // (in some JS engines): keep one of each, or the nesting count below goes wrong.
+        if (p.children) {
+            const seen = new Set();
+            for (const k of p.children.slice()) {
+                const b = k.bounds;
+                const key = [b.x, b.y, b.width, b.height, Math.abs(k.area)].map((v) => v.toFixed(3)).join(',');
+                if (seen.has(key)) k.remove(); else seen.add(key);
+            }
+        }
+        const kids = p.children ? p.children.slice() : [p];
+        if (kids.length < 2) { if (kids[0] && !kids[0].clockwise) kids[0].reverse(); return; }
+        const info = kids.map((k) => ({ k, size: Math.abs(k.area), pt: k.interiorPoint }));
+        for (const a of info) {
+            let depth = 0;
+            for (const b of info) if (b !== a && b.size > a.size && b.k.contains(a.pt)) depth++;
+            if (a.k.clockwise !== (depth % 2 === 0)) a.k.reverse();
+        }
+    }
+
     async function compute(input, opts, progress) {
         const report = progress || (() => {});
         const { shapes: raw, viewBox, width, height, bounds } = input;
@@ -245,10 +269,19 @@
                     if (!(b.width > 0 || b.height > 0)) continue;
                     // paperjs-offset can fail on slivers left by the boolean steps: retry on a finely
                     // flattened copy (within 0.02 units), else leave this one outline without a band.
+                    // A band is about perimeter x width; much more means the offset filled the shape
+                    // in instead (paperjs-offset does that now and then): treat that as a failure too.
+                    const sane = (r) => r && Math.abs(r.area) <= 1.35 * path.length * 2 * half + 4 * Math.PI * half * half;
                     const band = () => {
                         const opts = { join: 'round', cap: 'butt', insert: false };
-                        try { return PaperOffset.offsetStroke(path, half, opts); } catch (err) { /* retry below */ }
-                        try { const flat = path.clone({ insert: false }); flat.flatten(0.02); return PaperOffset.offsetStroke(flat, half, opts); } catch (err) { return null; }
+                        try { const r = PaperOffset.offsetStroke(path, half, opts); if (sane(r)) return r; } catch (err) { /* retry below */ }
+                        try {
+                            const flat = path.clone({ insert: false });
+                            flat.flatten(0.02);
+                            const r = PaperOffset.offsetStroke(flat, half, opts);
+                            if (sane(r)) return r;
+                        } catch (err) { /* give up on this outline */ }
+                        return null;
                     };
                     let part;
                     if (Math.min(b.width, b.height) > 2 * half) {
@@ -328,7 +361,7 @@
             for (const color of outColors) {
                 const merged = unite(outRegions.get(color));
                 if (!merged || merged.isEmpty()) continue;
-                merged.reorient(true, true); // outer shapes clockwise, holes the other way (icon fonts fill nonzero)
+                orient(merged); // outer shapes clockwise, holes the other way (icon fonts fill nonzero)
                 paths.push('<path fill="#' + color + '" d="' + merged.getPathData(null, PRECISION) + '"/>');
             }
             // These come from the input (already unescaped by the parser): escape them again.
