@@ -103,3 +103,62 @@ def test_mcp_does_the_same(client):
 @pytest.mark.parametrize("value", ["128x128", "128 128", [128, 128]])
 def test_canvas_formats(value):
     assert shapes.parse_extras(lambda v: v or [], canvas=value).canvas == (128.0, 128.0)
+
+
+# --- From the CodeRabbit review --------------------------------------------------------
+def test_color_functions_in_edit_lists_and_bad_replace(client):
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="#fff" width="1" height="1"/><circle fill="#000" r="1"/></svg>'
+    res = client.post("/api/recolor?mode=adjust&remove=rgb(255,255,255)", content=svg, headers=SVG_CT)
+    assert res.status_code == 200 and "<rect" not in res.text and "<circle" in res.text
+    res = client.post("/api/recolor", json={"svg": svg, "replace": ["fff:red"]})
+    assert res.status_code == 400, res.text
+
+
+def test_output_attributes_are_escaped(client):
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20" width="40&quot; onload=&quot;alert(1)" height="20">'
+           '<rect width="20" height="20" fill="#5e97f6"/><rect x="20" width="20" height="20" fill="#9c27b0"/></svg>')
+    res = client.post("/api/recolor?mode=adjust&gap=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    assert ' onload="' not in res.text and "&quot;" in res.text
+
+
+def test_masks_are_refused_not_dropped(client):
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><defs><mask id="m"><rect width="10" height="20" fill="#fff"/></mask></defs>'
+           '<rect width="20" height="20" fill="#00f"/><rect width="20" height="20" fill="#f00" mask="url(#m)"/></svg>')
+    res = client.post("/api/recolor?mode=adjust&gap=1", content=svg, headers=SVG_CT)
+    assert res.status_code == 400 and "masks" in res.json()["detail"]
+
+
+def test_root_transform_and_non_uniform_stroke_scale(client):
+    # A transform on the root <svg>: the drawing moves by it (x 10 -> 20).
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20" transform="translate(10 0)">'
+           '<rect x="10" width="10" height="20" fill="#5e97f6"/><rect x="0" width="10" height="20" fill="#9c27b0"/></svg>')
+    res = client.post("/api/recolor?mode=adjust&gap=0.0001", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    assert "M20," in res.text or "M30," in res.text, res.text
+    # A 2-wide stroke inside scale(10 1): 2 high, not 2 x sqrt(10).
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 20"><g transform="scale(10 1)">'
+           '<path d="M0 10H10" stroke="#5e97f6" stroke-width="2" fill="none"/></g><rect x="0" y="0" width="1" height="1" fill="#000"/></svg>')
+    res = client.post("/api/recolor?mode=adjust&gap=0.0001", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    stroke = next(d for c, d in paths(res.text) if c == "5e97f6")
+    assert re.search(r"(^|[^\d.])(9|11)(?!\.?\d)", stroke), stroke  # from y=9 to y=11
+
+
+def test_percent_units_with_a_spaced_viewbox(client):
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100 " overflow="visible">'
+           '<rect x="0" y="0" width="10" height="10" fill="#5e97f6"/></svg>')
+    res = client.post("/api/recolor?mode=adjust&line=10&unit=pct", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    # 10 % of 100 = a 10-unit band: the whole 10 x 10 square stays filled.
+    assert paths(res.text)[0][1] in ("M0,0h10v10h-10z", "M0,10v-10h10v10z", "M10,0v10h-10v-10z", "M0,0h10l0,10l-10,0z"), res.text
+
+
+def test_fit_measures_gradients_and_bad_values_are_refused(client):
+    gradient = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50"><defs><linearGradient id="g"><stop stop-color="#f00"/>'
+                '<stop offset="1" stop-color="#00f"/></linearGradient></defs><rect x="10" y="10" width="20" height="20" fill="url(#g)"/></svg>')
+    res = client.post("/api/recolor?mode=adjust&canvas=128x128&fit=0", content=gradient, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    assert '<g transform="matrix(6.4 0 0 6.4 -64 -64)">' in res.text  # 20 x 20 at 10,10 fills 128 x 128
+    assert client.post("/api/recolor?cut=notacolor", content=CUT_SVG, headers=SVG_CT).status_code == 400
+    assert client.post("/api/recolor", json={"svg": CUT_SVG, "optimize": "maybe"}).status_code == 400

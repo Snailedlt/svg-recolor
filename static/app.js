@@ -632,8 +632,10 @@
             input.max = String(Math.max(step, +(Math.round((max * size) / 128 / step) * step).toFixed(2), now || 0));
         }
     }
-    function syncGap() {
-        state.gap = Math.max(0, Math.min(parseFloat(gapInput.max), parseFloat(gapInput.value) || 0));
+    // read: take the value from the slider (a person moved it). Otherwise the state is what
+    // counts: a slider rounds to its step, and before the SVG loads its steps don't fit it yet.
+    function syncGap(read = true) {
+        if (read) state.gap = Math.max(0, Math.min(parseFloat(gapInput.max), parseFloat(gapInput.value) || 0));
         $('adj-gap-out').textContent = unitText(state.gap);
         updateFolds();
     }
@@ -650,8 +652,8 @@
         syncRanges();
         gapInput.value = String(gap);
         lineInput.value = String(line);
-        syncGap();
-        syncLine();
+        syncGap(false);
+        syncLine(false);
         if (user && (gap || line)) editsChanged(); else if (user) syncPageUrl();
     }
     $$('#unit-tabs button').forEach((b) => b.addEventListener('click', () => setUnit(b.dataset.unit, true)));
@@ -660,8 +662,8 @@
     gapInput.addEventListener('input', () => { syncGap(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
     // Line version: a band of this width along the edges (devicon "line" icons).
     const lineInput = $('adj-line');
-    function syncLine() {
-        state.line = Math.max(0, Math.min(parseFloat(lineInput.max), parseFloat(lineInput.value) || 0));
+    function syncLine(read = true) {
+        if (read) state.line = Math.max(0, Math.min(parseFloat(lineInput.max), parseFloat(lineInput.value) || 0));
         state.lineInner = $('line-inner').checked;
         $('adj-line-out').textContent = unitText(state.line);
         $('line-inner-row').hidden = !state.line;
@@ -669,7 +671,7 @@
         if (!editPanel.hidden) $('color-edit-keep-row').hidden = !state.line;
     }
     lineInput.addEventListener('input', () => { syncLine(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
-    $('line-inner').addEventListener('change', () => { syncLine(); editsChanged(); });
+    $('line-inner').addEventListener('change', () => { syncLine(false); editsChanged(); });
     function settingsChanged() {
         scheduleThumbs();
         updateSnippet();
@@ -1045,8 +1047,8 @@
         syncRanges();
         gapInput.value = String(state.gap);
         lineInput.value = String(state.line);
-        syncGap();
-        syncLine();
+        syncGap(false);
+        syncLine(false);
         state.result = null;
         // Edits belong to colors: keep the ones this SVG still has (live code edits, shared links).
         const present = new Set(state.doc.palette.map((p) => p[0]));
@@ -1506,7 +1508,8 @@
         updateSnippet();
         syncPageUrl();
         scheduleThumbs(150);
-        if (state.doc) recolor();
+        // With "Update the preview as you change settings" off, wait for the Recolor button.
+        if (state.doc && liveToggle.checked) recolor();
     }
     $$('#color-edit [name="color-edit-op"]').forEach((r) => r.addEventListener('change', () => setColorEdit(r.value)));
     $('color-edit-own').addEventListener('input', () => {
@@ -1957,7 +1960,21 @@
     async function unpackSvg(data) {
         const bin = atob(data.replace(/-/g, '+').replace(/_/g, '/'));
         const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-        return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+        // Read with a limit: a tiny link can't expand into gigabytes and freeze the page.
+        const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+        const chunks = [];
+        let total = 0;
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.length;
+            if (total > MAX_BYTES) {
+                reader.cancel().catch(() => {});
+                throw new Error('The SVG in this link is over 2 MB.');
+            }
+            chunks.push(value);
+        }
+        return new TextDecoder().decode(await new Blob(chunks).arrayBuffer());
     }
     async function shareLink() {
         const link = SITE + '/?' + shareParams().toString();
@@ -2046,11 +2063,11 @@
     state.line = Math.max(0, parseFloat(start.get('line')) || 0);
     syncRanges();
     gapInput.value = String(state.gap);
-    syncGap();
+    syncGap(false);
     lineInput.value = String(state.line);
     $('line-inner').checked = start.get('lines') !== 'outer';
     for (const v of (start.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }
-    syncLine();
+    syncLine(false);
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));
     renderRecent();
@@ -2078,6 +2095,6 @@
                 setCodeInput(text);
                 loadText(text, name, new Blob([text]).size, null, 'code');
             })
-            .catch(() => showError('The SVG in this link could not be read. The link may have been cut off when it was shared.'));
+            .catch((err) => showError(/2 MB/.test(err.message) ? err.message : 'The SVG in this link could not be read. The link may have been cut off when it was shared.'));
     }
 })();

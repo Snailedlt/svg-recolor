@@ -72,6 +72,9 @@ same code (paper.js and SVGO in QuickJS, with picosvg reading the shapes), so th
 so it ends exactly that far from every edge. For devicon: canvas 128 × 128, padding 1, Fit. The drawing is wrapped in
 one `<g transform>`, so every other feature works on top.
 
+On the API these get 20 seconds per request: most icons take well under a second, but very complex drawings
+(thousands of curves) may need the editor, which runs them in your browser without a limit.
+
 All three handle flat colors and plain shapes; text, embedded images, gradients, transparency and `<use>` get a clear
 message instead of a guess.
 

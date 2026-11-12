@@ -442,9 +442,9 @@ def _class_rules(svg: str) -> dict:
                 if not cls:
                     continue
                 for prop in ("fill", "stroke"):
-                    decl = re.search(r"(?:^|;)\s*" + prop + r"\s*:\s*([^;]+)", rule.group(2), re.IGNORECASE)
-                    if decl:
-                        rules.setdefault(cls.group(1), {})[prop] = (order, decl.group(1))
+                    decls = re.findall(r"(?:^|;)\s*" + prop + r"\s*:\s*([^;]+)", rule.group(2), re.IGNORECASE)
+                    if decls:  # the last declaration wins, as in CSS
+                        rules.setdefault(cls.group(1), {})[prop] = (order, decls[-1])
     return rules
 
 
@@ -454,9 +454,9 @@ def _paint(attrs: str, prop: str, rules: Optional[dict] = None) -> Optional[str]
     value = None
     style = re.search(r"""\sstyle\s*=\s*(["'])([\s\S]*?)\1""", attrs, re.IGNORECASE)
     if style:
-        m = re.search(r"(?:^|;)\s*" + prop + r"\s*:\s*([^;]+)", style.group(2), re.IGNORECASE)
-        if m:
-            value = m.group(1)
+        decls = re.findall(r"(?:^|;)\s*" + prop + r"\s*:\s*([^;]+)", style.group(2), re.IGNORECASE)
+        if decls:  # the last declaration wins, as in CSS
+            value = decls[-1]
     if value is None and rules:
         cls = re.search(r"""\sclass\s*=\s*(["'])([\s\S]*?)\1""", attrs, re.IGNORECASE)
         if cls:
@@ -509,6 +509,28 @@ def _paint_off(attrs: str, prop: str) -> str:
     return attrs
 
 
+def _painted_children(svg: str, start: int, name: str, rules: dict) -> bool:
+    """Whether the element whose start tag ends at `start` has a descendant with its own
+    fill or stroke (like a <tspan> with its own color inside a <text>)."""
+    depth = 1
+    for t in _TOKEN_RE.finditer(svg, start):
+        closing, tag, attrs = t.group(1), t.group(2), t.group(3)
+        if tag is None:
+            continue
+        lname = tag.lower()
+        if closing:
+            if lname == name:
+                depth -= 1
+                if depth == 0:
+                    return False
+            continue
+        if lname == name and not attrs.rstrip().endswith("/"):
+            depth += 1
+        if _paint(attrs, "fill", rules) is not None or _paint(attrs, "stroke", rules) is not None:
+            return True
+    return False
+
+
 def apply_edits(normalized_svg: str, hide=(), remove=()) -> str:
     """Hide colors (they become none/transparent) and remove the shapes painted with others.
 
@@ -551,7 +573,9 @@ def apply_edits(normalized_svg: str, hide=(), remove=()) -> str:
                 fill_hit, stroke_hit = fill in remove, stroke in remove
                 fill_shows = fill != "none" and not fill_hit and lname != "line"
                 stroke_shows = stroke != "none" and not stroke_hit
-                if (fill_hit or stroke_hit) and not fill_shows and not stroke_shows:
+                gone = (fill_hit or stroke_hit) and not fill_shows and not stroke_shows
+                # A shape with children painted their own way (a <tspan> in a <text>) stays, unpainted.
+                if gone and (self_closing or not _painted_children(svg, m.end(), lname, rules)):
                     out.append(svg[pos : m.start()])
                     if self_closing:
                         pos = m.end()
@@ -757,14 +781,21 @@ def _edit_key(color) -> str:
 
 
 def parse_edit_list(value: Optional[str]) -> tuple:
-    """'ffffff,000000' (or with #) -> ("ffffff", "000000"). For query strings and forms."""
-    return tuple(c.strip() for c in (value or "").split(",") if c.strip())
+    """'ffffff,000000' (or with #) -> ("ffffff", "000000"). For query strings and forms.
+    Commas inside a color function stay: 'rgb(255,0,102),fff' is two colors."""
+    if value is None:
+        return ()
+    if not isinstance(value, str):
+        raise RecolorError("Color lists must be text like 'ffffff,000000' (or a JSON list of colors).")
+    return tuple(c.strip() for c in re.split(r",(?![^()]*\))", value) if c.strip())
 
 
 def parse_replace(value) -> dict:
     """'5e97f6:ff0000,ffffff:teal' or a dict -> {"5e97f6": "ff0000", ...}."""
     if isinstance(value, dict):
         return value
+    if value is not None and not isinstance(value, str):
+        raise RecolorError("'replace' must be an object like {\"5e97f6\": \"ff0000\"} or text like '5e97f6:ff0000'.")
     out = {}
     for pair in parse_edit_list(value):
         old, sep, new = pair.partition(":")

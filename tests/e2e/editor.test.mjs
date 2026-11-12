@@ -546,6 +546,78 @@ test('optimize with SVGO (devicon\'s settings), and the code next to the picture
     assert.deepEqual(problems, []);
 });
 
+test('geometry: root transforms, stretched strokes, masks and escaping (from code review)', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, CUT_SVG);
+    await page.click('.chip[data-color="dce0df"]');
+    await page.check('#color-edit [value="cut"]'); // loads the geometry library
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => window.SvgGeometry);
+    const r = await page.evaluate(async () => {
+        const run = (svg, opts) => SvgGeometry.cutOut(svg, Object.assign({ worker: false }, opts)).catch((e) => 'ERR ' + e.message);
+        return {
+            // A transform on the root <svg> moves the drawing (x 10 -> 20).
+            rootT: await run('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20" transform="translate(10 0)"><rect x="10" width="10" height="20" fill="#5e97f6"/></svg>', {}),
+            // A 2-wide stroke inside scale(10 1) is 2 high (y 9..11), not 2 x sqrt(10).
+            stretched: await run('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 20"><g transform="scale(10 1)"><path d="M0 10H10" stroke="#5e97f6" stroke-width="2" fill="none"/></g></svg>', {}),
+            mask: await run('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><defs><mask id="m"><rect width="10" height="20" fill="#fff"/></mask></defs><rect width="20" height="20" fill="#f00" mask="url(#m)"/></svg>', {}),
+            escaped: await run('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20&quot; onload=&quot;alert(1)"><rect width="20" height="20" fill="#f00"/></svg>', {}),
+            spaced: await run('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100 " overflow="visible"><rect width="10" height="10" fill="#5e97f6"/></svg>', { line: 10, unit: '%' }),
+        };
+    });
+    assert.match(r.rootT, /d="M20,/, r.rootT);
+    assert.match(r.stretched, /d="M100,9(\.0+)?[^\d]|v2|h-100v-2|M0,11|M0,9[^\d]/, r.stretched);
+    assert.match(r.mask, /^ERR .*masks/);
+    assert.ok(!/ onload="/.test(r.escaped) && /&quot;/.test(r.escaped), r.escaped);
+    assert.match(r.spaced, /d="M[^"]+"/, '10 % of 100 fills the whole 10 x 10 square');
+    // (The browser warns in the console about the bad width while measuring: that's the test input.)
+    assert.deepEqual(problems.filter((p) => !/attribute width/.test(p)), []);
+});
+
+test('a share link with a decompression bomb is refused, not loaded', async () => {
+    const { page } = await open();
+    const bomb = await page.evaluate(async () => {
+        // 3 MB of spaces compresses to a few KB.
+        const big = '<svg xmlns="http://www.w3.org/2000/svg">' + ' '.repeat(3 * 1024 * 1024) + '</svg>';
+        const stream = new Blob([big]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+        const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+        let bin = '';
+        bytes.forEach((b) => { bin += String.fromCharCode(b); });
+        return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    });
+    await page.goto(BASE + '/?shared=1#svg=' + bomb + '&name=bomb.svg');
+    await page.locator('#error-text', { hasText: 'over 2 MB' }).waitFor();
+    assert.equal(await page.inputValue('#code-input'), '', 'nothing was loaded');
+});
+
+test('small shared gap widths survive loading, and the live toggle holds edits back', async () => {
+    const { page } = await open();
+    // A 24-unit icon shared with gap=0.1: before it loads, the slider's steps are coarser.
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="12" height="24" fill="#5e97f6"/><rect x="12" width="12" height="24" fill="#9c27b0"/></svg>';
+    const packed = await page.evaluate(async (svg) => {
+        const stream = new Blob([svg]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+        const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+        let bin = '';
+        bytes.forEach((b) => { bin += String.fromCharCode(b); });
+        return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }, svg);
+    await page.goto(BASE + '/?mode=solid&gap=0.1#svg=' + packed + '&name=small.svg');
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor({ timeout: 20000 });
+    assert.equal(await page.textContent('#adj-gap-out'), '0.1 px');
+    assert.match(page.url(), /gap=0\.1/);
+    // With live updates off, a color edit waits for the Recolor button.
+    await page.uncheck('#live-toggle');
+    const before = await page.textContent('#status-text');
+    await page.click('.chip[data-color="9c27b0"]');
+    await page.check('#color-edit [value="remove"]');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(600);
+    assert.equal(await page.textContent('#status-text'), before, 'nothing recolored yet');
+    await page.click('#submit-btn');
+    await page.locator('.chip[data-color="9c27b0"]', { hasText: 'Invisible' }).waitFor();
+    await page.check('#live-toggle');
+});
+
 test('cut out explains what it can\'t do instead of guessing', async () => {
     const { page } = await open();
     await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#f00"/></linearGradient></defs>'
@@ -590,7 +662,9 @@ test('no accessibility violations (axe) in every tab, both themes', async () => 
 
 test('phone layout has no horizontal scroll', async () => {
     const { page } = await open({ viewport: { width: 390, height: 844 } });
-    await page.click('#try-example');
+    // Phones start in the slider view: the empty preview's own button must still work.
+    assert.equal(await page.getAttribute('#stage', 'data-view'), 'slider');
+    await page.click('#stage [data-action="example"]');
     await page.waitForSelector('#file-chip:not([hidden])');
     for (const tab of ['preview', 'code', 'api']) {
         await page.click(`#tab-btn-${tab}`);

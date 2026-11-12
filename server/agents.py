@@ -77,7 +77,8 @@ Base URL: {base}
   - `canvas=128x128`: a new viewBox size, drawing centered. `place=x,y,scale` moves and scales it;
     `fit=1` scales and centers the visible drawing (strokes included) with that padding.
   - `optimize=true`: SVGO 3.3.2 with devicon's settings (precision 3, multipass); `precision=0..8`.
-  - Cut, gaps and lines need flat colors and shapes (no text, images, gradients or transparency).
+  - Cut, gaps and lines need flat colors and shapes (no text, images, gradients, masks or transparency).
+    The server gives them 20 s; very complex drawings may need the editor, which has no limit.
   - Devicon plain version: `mode=solid&color=...&remove=<background>&cut=<outlines>&canvas=128x128&fit=1&optimize=true`.
 
 ## Modes

@@ -118,10 +118,10 @@
                     const cls = /^\s*\.([\w-]+)\s*$/.exec(selector);
                     if (!cls) continue;
                     for (const prop of ['fill', 'stroke']) {
-                        const decl = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'i').exec(rule[2]);
-                        if (decl) {
+                        const decls = [...rule[2].matchAll(new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'gi'))];
+                        if (decls.length) { // the last declaration wins, as in CSS
                             if (!rules.has(cls[1])) rules.set(cls[1], {});
-                            rules.get(cls[1])[prop] = [order, decl[1]];
+                            rules.get(cls[1])[prop] = [order, decls[decls.length - 1][1]];
                         }
                     }
                 }
@@ -133,8 +133,8 @@
         let value = null;
         const style = /\sstyle\s*=\s*(["'])([\s\S]*?)\1/i.exec(attrs);
         if (style) {
-            const m = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'i').exec(style[2]);
-            if (m) value = m[1];
+            const decls = [...style[2].matchAll(new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'gi'))];
+            if (decls.length) value = decls[decls.length - 1][1]; // the last declaration wins, as in CSS
         }
         if (value === null && rules) {
             const cls = /\sclass\s*=\s*(["'])([\s\S]*?)\1/i.exec(attrs);
@@ -168,6 +168,26 @@
             attrs = attrs.slice(0, at) + ' ' + prop + '="none"' + attrs.slice(at);
         }
         return attrs;
+    }
+    // Whether the element whose start tag ends at `start` has a descendant with its own
+    // fill or stroke (like a <tspan> with its own color inside a <text>).
+    function paintedChildren(svg, start, name, rules) {
+        let depth = 1;
+        const re = new RegExp(TOKEN_RE.source, 'g');
+        re.lastIndex = start;
+        let t;
+        while ((t = re.exec(svg)) !== null) {
+            const closing = t[1], tag = t[2], attrs = t[3];
+            if (tag === undefined) continue;
+            const lname = tag.toLowerCase();
+            if (closing) {
+                if (lname === name && --depth === 0) return false;
+                continue;
+            }
+            if (lname === name && !attrs.trimEnd().endsWith('/')) depth += 1;
+            if (paint(attrs, 'fill', rules) !== null || paint(attrs, 'stroke', rules) !== null) return true;
+        }
+        return false;
     }
     function edit(norm, hide, remove) {
         hide = new Set(hide || []);
@@ -206,7 +226,9 @@
                     const fillHit = remove.has(fill), strokeHit = remove.has(stroke);
                     const fillShows = fill !== 'none' && !fillHit && lname !== 'line';
                     const strokeShows = stroke !== 'none' && !strokeHit;
-                    if ((fillHit || strokeHit) && !fillShows && !strokeShows) {
+                    const gone = (fillHit || strokeHit) && !fillShows && !strokeShows;
+                    // A shape with children painted their own way (a <tspan> in a <text>) stays, unpainted.
+                    if (gone && (selfClosing || !paintedChildren(svg, m.index + m[0].length, lname, rules))) {
                         out.push(svg.slice(pos, m.index));
                         if (selfClosing) pos = m.index + m[0].length;
                         else { skipName = lname; skipDepth = 1; pos = m.index + m[0].length; }

@@ -234,3 +234,27 @@ def test_bad_edits_are_rejected(kw):
 def test_no_edits_changes_nothing():
     svg = '<svg><path fill="#5e97f6"/></svg>'
     assert r.apply_edits(r.normalize_svg(svg)) == r.normalize_svg(svg)
+
+
+def test_remove_uses_the_last_declaration_like_css():
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg"><rect style="fill:#fff;fill:#000" width="1"/>'
+           '<style>.b{fill:#fff;fill:#000}</style><circle class="b" r="1"/><path fill="#fff" d="M0"/></svg>')
+    out = r.apply_edits(r.normalize_svg(svg), remove=["ffffff"])
+    assert "<rect" in out and "<circle" in out, "black (the last declaration) is not removed"
+    assert "<path" not in out
+
+
+def test_remove_keeps_children_painted_their_own_way():
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg"><text fill="#fff">White<tspan fill="#000">Black</tspan></text>'
+           '<text fill="#fff">plain</text></svg>')
+    out = r.apply_edits(r.normalize_svg(svg), remove=["ffffff"])
+    assert out.count("<text") == 1 and '<tspan fill="#000000">Black</tspan>' in out
+    assert 'fill="none"' in out, "the kept <text> stops painting white itself"
+    assert "plain" not in out
+
+
+def test_edit_lists_keep_color_functions_whole():
+    assert r.parse_edit_list("rgb(255,0,102), fff,hsl(1, 2%, 3%)") == ("rgb(255,0,102)", "fff", "hsl(1, 2%, 3%)")
+    assert r.parse_replace("rgb(255,0,102):red,fff:000") == {"rgb(255,0,102)": "red", "fff": "000"}
+    with pytest.raises(r.RecolorError):
+        r.parse_replace(["fff:red"])

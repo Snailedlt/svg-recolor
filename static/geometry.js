@@ -67,12 +67,26 @@
         }
         if (!lenient && svg.querySelector('text')) throw new GeometryError('Cut out, gaps and lines work on shapes, and this SVG has text. Convert the text to paths first (in Inkscape: Path → Object to Path).');
         if (!lenient && svg.querySelector('image')) throw new GeometryError('Cut out, gaps and lines work on shapes, and this SVG has an embedded image.');
+        // paper.js doesn't apply masks, so the result would silently show what the mask hides.
+        if (!lenient && [svg, ...svg.querySelectorAll('*')].some((el) => el.hasAttribute('mask') || /(^|;)\s*mask\s*:/i.test(el.getAttribute('style') || ''))) {
+            throw new GeometryError('Cut out, gaps and lines don\'t support masks yet.');
+        }
+        // paper.js folds a transform on the root <svg> into the same matrix as the viewBox shift
+        // (undone in readShapes). Keep it apart, on a group around the content.
+        if (svg.hasAttribute('transform')) {
+            const g = doc.createElementNS('http://www.w3.org/2000/svg', 'g');
+            g.setAttribute('transform', svg.getAttribute('transform'));
+            svg.removeAttribute('transform');
+            while (svg.firstChild) g.appendChild(svg.firstChild);
+            svg.appendChild(g);
+        }
 
-        // Measure computed styles in an invisible box on the page.
+        // Measure computed styles in an invisible box on the page, inside a closed shadow tree,
+        // so the SVG's own <style> rules can't reach the page (and the page's don't reach it).
         const box = document.createElement('div');
         box.style.cssText = 'position:absolute;left:-10000px;top:0;width:0;height:0;overflow:hidden';
         const live = document.importNode(svg, true);
-        box.appendChild(live);
+        box.attachShadow({ mode: 'closed' }).appendChild(live);
         document.body.appendChild(box);
         try {
             const props = ['fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'fill-rule', 'opacity', 'fill-opacity', 'stroke-opacity'];
@@ -139,9 +153,13 @@
             if (item.fillColor && item.fillColor.alpha !== 0) add(base.clone({ insert: false }), item.fillColor);
             if (item.strokeColor && item.strokeWidth > 0 && item.strokeColor.alpha !== 0) {
                 if (!PaperOffset) throw new GeometryError('Strokes need the offset library, which did not load.');
-                const g = item.parent.globalMatrix;
-                const w = item.strokeWidth * Math.sqrt(Math.abs(g.scaling.x * g.scaling.y));
-                add(PaperOffset.offsetStroke(base, w / 2, { cap: item.strokeCap || 'butt', join: item.strokeJoin || 'miter', insert: false }), item.strokeColor);
+                // The stroke width is in the shape's own coordinates: outline it there, then
+                // transform the outline, so a non-uniform scale stretches the stroke like it should.
+                const local = item.clone({ insert: false });
+                local.matrix = new scope.Matrix();
+                const outline = PaperOffset.offsetStroke(local, item.strokeWidth / 2, { cap: item.strokeCap || 'butt', join: item.strokeJoin || 'miter', insert: false });
+                outline.transform(item.globalMatrix);
+                add(outline, item.strokeColor);
             }
             if (out.length > MAX_SHAPES) throw new GeometryError('This SVG has too many shapes for cut out, gaps and lines (over ' + MAX_SHAPES + ').');
         };
@@ -213,11 +231,43 @@
             const order = [...regions.keys()].reverse();
             let byColor = order.map((c) => [c, unite(regions.get(c))]).filter(([, p]) => p && !p.isEmpty());
 
-            const vb = (viewBox || '').split(/[\s,]+/).map(Number);
+            const vb = (viewBox || '').trim().split(/[\s,]+/).map(Number);
             const size = vb.length === 4 && vb.every(Number.isFinite) ? Math.max(vb[2], vb[3]) : Math.max(bounds[0], bounds[1]);
             // Sizes are in the SVG's own units (px), or with unit '%' in percent of its larger side.
             const scale = opts.unit === '%' ? size / 100 : 1;
-            const stroke = (p, half) => PaperOffset.offsetStroke(p, half, { join: 'round', cap: 'butt', insert: false });
+            // A band of `half` on both sides of every outline of `p`. An outline narrower than the
+            // band is covered whole (its inward offset would turn inside out): filled, then grown.
+            const stroke = (p, half) => {
+                let acc = null;
+                for (const c of (p.children ? p.children : [p])) {
+                    const path = c.clone({ insert: false });
+                    const b = path.bounds;
+                    if (!(b.width > 0 || b.height > 0)) continue;
+                    // paperjs-offset can fail on slivers left by the boolean steps: retry on a finely
+                    // flattened copy (within 0.02 units), else leave this one outline without a band.
+                    const band = () => {
+                        const opts = { join: 'round', cap: 'butt', insert: false };
+                        try { return PaperOffset.offsetStroke(path, half, opts); } catch (err) { /* retry below */ }
+                        try { const flat = path.clone({ insert: false }); flat.flatten(0.02); return PaperOffset.offsetStroke(flat, half, opts); } catch (err) { return null; }
+                    };
+                    let part;
+                    if (Math.min(b.width, b.height) > 2 * half) {
+                        part = band();
+                        if (!part) continue;
+                    } else {
+                        // paperjs-offset can fail on tiny or odd outlines: fall back step by step.
+                        if (path.area < 0) path.reverse();
+                        try {
+                            part = PaperOffset.offset(path, half, { join: 'round', insert: false });
+                        } catch (err) {
+                            const b2 = band();
+                            part = b2 ? path.unite(b2, { insert: false }) : path;
+                        }
+                    }
+                    acc = acc ? acc.unite(part, { insert: false }) : part;
+                }
+                return acc || new scope.Path({ insert: false });
+            };
 
             // Lines, from the regions before gaps: a band inside the outer edge, plus (with
             // lineInner) a band centered on every boundary between two colors.
@@ -281,8 +331,10 @@
                 merged.reorient(true, true); // outer shapes clockwise, holes the other way (icon fonts fill nonzero)
                 paths.push('<path fill="#' + color + '" d="' + merged.getPathData(null, PRECISION) + '"/>');
             }
-            const sizeAttrs = (width ? ' width="' + width + '"' : '') + (height ? ' height="' + height + '"' : '');
-            const vbAttr = viewBox ? ' viewBox="' + viewBox + '"' : '';
+            // These come from the input (already unescaped by the parser): escape them again.
+            const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const sizeAttrs = (width ? ' width="' + esc(width) + '"' : '') + (height ? ' height="' + esc(height) + '"' : '');
+            const vbAttr = viewBox ? ' viewBox="' + esc(viewBox) + '"' : '';
             return '<svg xmlns="http://www.w3.org/2000/svg"' + vbAttr + sizeAttrs + '>' + paths.join('') + '</svg>\n';
         } finally {
             scope.project.remove();

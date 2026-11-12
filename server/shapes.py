@@ -15,9 +15,11 @@ memory limit per call.
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,7 +28,7 @@ from typing import Optional
 import recolor as engine
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
-TIME_LIMIT = 25  # seconds per call into JavaScript
+TIME_LIMIT = 20  # seconds for one request's JavaScript work, in total
 MEMORY_LIMIT = 768 * 1024 * 1024
 MAX_SHAPES = 1500  # same as the editor
 
@@ -117,8 +119,8 @@ def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None
                  canvas=None, place=None, fit=None, optimize=None, precision=None) -> Extras:
     """Extras from request values (strings from query strings and forms, or JSON values)."""
     ex = Extras()
-    ex.cut = tuple(edit_list(cut))
-    ex.keep = tuple(edit_list(keep))
+    ex.cut = tuple(engine._edit_key(c) for c in edit_list(cut))
+    ex.keep = tuple(engine._edit_key(c) for c in edit_list(keep))
     if unit not in (None, ""):
         u = str(unit).strip().lower()
         if u not in ("px", "pct", "%", "percent"):
@@ -144,9 +146,12 @@ def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None
         if s <= 0:
             raise engine.RecolorError("The scale in 'place' must be positive.")
         ex.place = (x, y, s)
-    if fit not in (None, "", False):
+    if fit is not None and fit is not False and fit != "":  # fit=0 is a fit with no padding
         ex.fit = 0.0 if fit is True or str(fit).lower() == "true" else _number("fit", fit, 0, 1e6)
     if optimize not in (None, ""):
+        v = str(optimize).strip().lower()
+        if optimize is not True and optimize is not False and v not in ("1", "0", "true", "false", "yes", "no", "on", "off"):
+            raise engine.RecolorError("'optimize' must be true or false.")
         ex.optimize = optimize is True or _flag(optimize)
     if precision not in (None, ""):
         ex.precision = int(_number("precision", precision, 0, 8))
@@ -193,14 +198,23 @@ def _run_js(expr: str, args: list):
     if _ctx is None:
         _ctx = _load()
     c = _ctx
+    # QuickJS's limit counts per call, and async work runs as many calls (jobs): keep one
+    # deadline for the whole thing, and give each job only the time that's left.
+    deadline = time.monotonic() + TIME_LIMIT
     c.set_time_limit(TIME_LIMIT)
     try:
         c.set("__args", json.dumps(args))
         c.eval("var __out = null, __err = null; (async (args) => (" + expr + "))(JSON.parse(__args))"
                ".then((r) => { __out = JSON.stringify(r === undefined ? null : r); },"
                " (e) => { __err = String((e && e.message) || e); });")
-        while c.execute_pending_job():
-            pass
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                _ctx = None
+                raise engine.RecolorError(f"This SVG took too long (over {TIME_LIMIT} s). Try a simpler one, or the editor.")
+            c.set_time_limit(max(1, int(left + 0.999)))
+            if not c.execute_pending_job():
+                break
         err, out = c.eval("__err"), c.eval("__out")
     except quickjs.JSException as e:
         _ctx = None  # start clean next time
@@ -212,6 +226,9 @@ def _run_js(expr: str, args: list):
     finally:
         c.set_time_limit(-1)
     if err:
+        if "interrupted" in err.lower():  # the time limit, hit inside an async step
+            _ctx = None
+            raise engine.RecolorError(f"This SVG took too long (over {TIME_LIMIT} s). Try a simpler one, or the editor.")
         raise engine.RecolorError(err)
     return json.loads(out) if out else None
 
@@ -235,15 +252,18 @@ def _root_attrs(svg: str) -> dict:
     return attrs
 
 
-def read_shapes(svg: str) -> dict:
-    """Plain filled paths in paint order, as geometry.js's compute() takes them."""
+def read_shapes(svg: str, lenient: bool = False) -> dict:
+    """Plain filled paths in paint order, as geometry.js's compute() takes them.
+    lenient: for measuring (Fit), where gradients, transparency, masks and text don't matter."""
     from picosvg.svg import SVG
 
-    if re.search(r"<text\b", svg, re.IGNORECASE):
+    if not lenient and re.search(r"<text\b", svg, re.IGNORECASE):
         raise engine.RecolorError("Cut out, gaps and lines work on shapes, and this SVG has text. "
                                   "Convert the text to paths first (in Inkscape: Path → Object to Path).")
-    if re.search(r"<image\b", svg, re.IGNORECASE):
+    if not lenient and re.search(r"<image\b", svg, re.IGNORECASE):
         raise engine.RecolorError("Cut out, gaps and lines work on shapes, and this SVG has an embedded image.")
+    if not lenient and re.search(r"\smask\s*=|[\"';\s]mask\s*:", svg, re.IGNORECASE):
+        raise engine.RecolorError("Cut out, gaps and lines don't support masks yet.")
     try:
         pico = SVG.fromstring(svg).topicosvg()
     except Exception as e:  # noqa: BLE001 - picosvg raises many kinds; all mean "can't read this"
@@ -253,6 +273,10 @@ def read_shapes(svg: str) -> dict:
     for s in pico.shapes():
         fill = (s.fill or "").strip()
         if not fill or fill == "none":
+            continue
+        if lenient:
+            if s.d:
+                shapes.append({"d": s.d, "rule": s.fill_rule or "nonzero", "color": "000000"})
             continue
         if fill.startswith("url("):
             raise engine.RecolorError("Cut out, gaps and lines work with flat colors, and this SVG uses gradients or patterns.")
@@ -268,8 +292,10 @@ def read_shapes(svg: str) -> dict:
             raise engine.RecolorError(f"This SVG has too many shapes for cut out, gaps and lines (over {MAX_SHAPES}).")
     attrs = _root_attrs(svg)
     box = orig_box(svg)
-    return {"shapes": shapes, "viewBox": attrs.get("viewBox"), "width": attrs.get("width"),
-            "height": attrs.get("height"), "bounds": [box[2], box[3]]}
+    # As the browser's DOM would give them (compute() escapes them again for the output).
+    raw = {k: html.unescape(v) for k, v in attrs.items()}
+    return {"shapes": shapes, "viewBox": raw.get("viewBox"), "width": raw.get("width"),
+            "height": raw.get("height"), "bounds": [box[2], box[3]]}
 
 
 # --------------------------------------------------------------------------
@@ -326,7 +352,7 @@ def placed(svg: str, canvas, place) -> str:
 
 def fit_place(svg_edited: str, canvas, pad: float) -> tuple:
     """Scale and center the visible drawing to fill the canvas, minus the padding."""
-    box = js("SvgGeometry.boundsOfShapes(args[0])", read_shapes(svg_edited)["shapes"])
+    box = js("SvgGeometry.boundsOfShapes(args[0])", read_shapes(svg_edited, lenient=True)["shapes"])
     if not box:
         raise engine.RecolorError("Nothing visible to fit.")
     x0, y0, w0, h0 = orig_box(svg_edited)

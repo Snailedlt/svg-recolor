@@ -31,6 +31,9 @@ EXTRA = [
      '<rect fill="url(#g)" stroke="#fff" clip-path="url(#c)"/><style>.a{fill:#fff}</style><path class="a" fill = \'#FFF\'/></svg>'),
     ('<svg><defs><style>/* x */.cls-1{fill:#5e97f6;}.cls-2,.cls-3{fill:#fff;stroke:#000}.cls-3{stroke:none} svg .cls-1{fill:red}</style></defs>'
      '<path class="cls-1" d="M0"/><path class="cls-2" d="M1"/><path class=" cls-1  cls-3 " d="M2"/><path class="cls-9" fill="#fff"/></svg>'),
+    # The last declaration wins; children painted their own way survive their parent's removal
+    ('<svg><rect style="fill:#fff;fill:#000" width="1"/><style>.b{fill:#fff;fill:#000}</style><circle class="b" r="1"/>'
+     '<path fill="#fff" d="M0"/><text fill="#fff">White<tspan fill="#000">Black</tspan></text><text fill="#fff">plain</text></svg>'),
 ]
 
 
