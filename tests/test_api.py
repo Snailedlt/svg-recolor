@@ -382,3 +382,20 @@ def test_color_edits_in_a_form(client):
 def test_bad_color_edits_are_400(client, query):
     res = client.post("/api/recolor?" + query, content=EDIT_SVG, headers=SVG_CT)
     assert res.status_code == 400 and res.json()["detail"]
+
+
+def test_cut_is_editor_only_with_a_clear_error(client):
+    res = client.post("/api/recolor?cut=ffffff", content=EDIT_SVG, headers=SVG_CT)
+    assert res.status_code == 400 and "only available in the editor" in res.json()["detail"]
+    res = client.post("/api/recolor", json={"svg": EDIT_SVG, "cut": ["ffffff"]})
+    assert res.status_code == 400
+
+
+def test_geometry_bundle_is_served_hashed_and_cached(client):
+    import re
+
+    url = re.search(r'"geometryUrl":"([^"]+)"', client.get("/").text).group(1)
+    assert url.startswith("/assets/geometry.js?v=")
+    res = client.get(url)
+    assert res.status_code == 200 and "immutable" in res.headers["cache-control"]
+    assert "SvgGeometry" in res.text and "Paper.js" in res.text and "PaperOffset" in res.text

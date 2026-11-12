@@ -54,7 +54,8 @@
         format: 'svg', // set from storage at start
         snippet: 'curl', // set from storage at start
         // Per-color edits on top of the style, keyed by original color (6-digit hex):
-        // { op: 'replace', to: '#rrggbb' } | { op: 'hide' } | { op: 'remove' }
+        // { op: 'replace', to: '#rrggbb' } | { op: 'remove' } (Invisible) | { op: 'cut' } (Cut out)
+        // | { op: 'hide' } (older links; shown as Invisible)
         edits: {},
     };
     const mapCache = new Map();
@@ -228,9 +229,9 @@
     // settingsParams, which also keys the cached /api/map-colors requests.
     function editParams(q) {
         q = q || new URLSearchParams();
-        const by = { replace: [], hide: [], remove: [] };
+        const by = { replace: [], hide: [], remove: [], cut: [] };
         for (const [c, e] of Object.entries(state.edits)) by[e.op].push(e.op === 'replace' ? c + ':' + e.to.slice(1).toLowerCase() : c);
-        for (const k of ['replace', 'hide', 'remove']) if (by[k].length) q.set(k, by[k].join(','));
+        for (const k of ['replace', 'hide', 'remove', 'cut']) if (by[k].length) q.set(k, by[k].join(','));
         return q;
     }
     function editsFromParams(q) {
@@ -240,18 +241,41 @@
             const [a, b] = pair.split(':'); const from = hex(a), to = normalizeHex(b || '');
             if (from && to) edits[from] = { op: 'replace', to };
         }
-        for (const op of ['hide', 'remove']) for (const v of (q.get(op) || '').split(',')) { const c = hex(v); if (c) edits[c] = { op }; }
+        for (const op of ['hide', 'remove', 'cut']) for (const v of (q.get(op) || '').split(',')) { const c = hex(v); if (c) edits[c] = { op }; }
         return edits;
     }
-    // The mapping with own colors applied, and the SVG with hidden/removed colors applied.
+    // The mapping with own colors applied, and the SVG with invisible colors applied.
+    // Cut-out colors are left in `edited` for the geometry step (cutOutSvg); `svg` treats
+    // them as invisible, which is what the quick style thumbnails show.
     function editedSvg(doc, mapping) {
         const merged = Object.assign({}, mapping);
-        const hide = [], remove = [];
+        const hide = [], remove = [], cut = [];
         for (const [c, e] of Object.entries(state.edits)) {
             if (e.op === 'replace') merged[c] = e.to.slice(1).toLowerCase();
-            else (e.op === 'hide' ? hide : remove).push(c);
+            else ({ hide, remove, cut })[e.op].push(c);
         }
-        return { svg: Engine.apply(Engine.edit(doc.norm, hide, remove), merged), merged };
+        const edited = Engine.edit(doc.norm, hide, remove);
+        const svg = cut.length ? Engine.apply(Engine.edit(edited, [], cut), merged) : Engine.apply(edited, merged);
+        return { svg, merged, edited, cut };
+    }
+    // Cut out: real geometry (paper.js), loaded the first time it's needed.
+    let geometryReady = null;
+    function loadGeometry() {
+        if (window.SvgGeometry) return Promise.resolve(window.SvgGeometry);
+        if (!geometryReady) {
+            geometryReady = new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = CFG.geometryUrl || '/assets/geometry.js';
+                s.onload = () => (window.SvgGeometry ? resolve(window.SvgGeometry) : reject(new Error('Cut out could not load.')));
+                s.onerror = () => { geometryReady = null; reject(new Error('Cut out could not load. Check your connection and try again.')); };
+                document.head.appendChild(s);
+            });
+        }
+        return geometryReady;
+    }
+    async function cutOutSvg(edited, cut, merged) {
+        const Geo = await loadGeometry();
+        return Geo.cutOut(edited, { cut, map: merged });
     }
     function settingsChanged() {
         scheduleThumbs();
@@ -762,10 +786,23 @@
             const colors = doc.palette.map((p) => p[0]);
             const mapping = colors.length ? await mappingFor(state.mode, colors) : {};
             if (id !== reqId || doc !== state.doc) return;
-            const { svg, merged } = editedSvg(doc, mapping);
+            const parts = editedSvg(doc, mapping);
+            const { merged } = parts;
+            let svg = parts.svg;
+            if (parts.cut.length) {
+                setStatus('work', 'Cutting out…');
+                try {
+                    svg = await cutOutSvg(parts.edited, parts.cut, merged);
+                } catch (err) {
+                    if (id !== reqId || doc !== state.doc) return;
+                    // Show the rest of the edits, with the cut colors left invisible, and say why.
+                    showError(err.message);
+                }
+                if (id !== reqId || doc !== state.doc) return;
+            }
             const to = (c) => {
                 const e = state.edits[c];
-                return e && e.op === 'remove' ? 'removed' : e && e.op === 'hide' ? 'none' : '#' + (merged[c] || c);
+                return e && e.op === 'cut' ? 'cut' : e && (e.op === 'remove' || e.op === 'hide') ? 'removed' : '#' + (merged[c] || c);
             };
             state.result = {
                 svg,
@@ -800,7 +837,7 @@
     }
     // Colors strip: each original color and what it became. Click a color to give it its
     // own color, hide it, or remove its shapes (see the color-edit panel below).
-    const EDIT_LABEL = { replace: 'own color', hide: 'hidden', remove: 'removed' };
+    const EDIT_LABEL = { replace: 'own color', hide: 'invisible', remove: 'invisible', cut: 'cut out' };
     function renderPalette(entries) {
         const list = $('palette-list');
         list.replaceChildren();
@@ -810,7 +847,7 @@
             btn.type = 'button';
             btn.className = 'chip' + (e.edit ? ' edited ' + e.edit.op : '');
             btn.dataset.color = e.from.slice(1);
-            const shown = e.to === 'removed' ? 'Removed' : e.to === 'none' ? 'Hidden' : e.to.toUpperCase();
+            const shown = e.to === 'cut' ? 'Cut out' : e.to === 'removed' ? 'Invisible' : e.to.toUpperCase();
             btn.title = e.from.toUpperCase() + ' → ' + shown + ' (used ' + e.count + '×). Click to edit this color.';
             btn.setAttribute('aria-label', 'Edit ' + e.from.toUpperCase() + ', now ' + shown + (e.edit ? ' (' + EDIT_LABEL[e.edit.op] + ')' : ''));
             const a = document.createElement('i'); a.style.background = e.from;
@@ -848,7 +885,7 @@
         $('color-edit-from').style.background = '#' + color;
         $('color-edit-title').textContent = '#' + color.toUpperCase();
         $('color-edit-count').textContent = entry ? 'used ' + entry.count + '×' : '';
-        const op = e ? e.op : 'style';
+        const op = e ? (e.op === 'hide' ? 'remove' : e.op) : 'style';
         $$('#color-edit [name="color-edit-op"]').forEach((r) => { r.checked = r.value === op; });
         const styleTo = entry && entry.edit ? null : entry && entry.to;
         $('color-edit-own').value = e && e.op === 'replace' ? e.to : (styleTo && styleTo.startsWith('#') ? styleTo : '#' + color);
@@ -1075,6 +1112,7 @@
     // ------------------------------------------------------------------
     function snippetContext() {
         const q = editParams(settingsParams());
+        q.delete('cut'); // Cut out is editor-only (path geometry); the API rejects it
         const params = {};
         for (const [k, v] of q) params[k] = /^(hue|saturation|lightness)$/.test(k) ? Number(v) : v;
         const getQ = new URLSearchParams(q);
@@ -1093,9 +1131,11 @@
         const code = $('snippet').textContent;
         $('api-hint').textContent = sn.prompt
             ? 'Paste this into ChatGPT, Claude, Copilot or any AI agent.'
-            : code.includes('example.com%2Ficon.svg')
-                ? 'Links need a public SVG: replace example.com/icon.svg with yours, or load your SVG from a link.'
-                : 'Uses your current settings. No API key needed.';
+            : Object.values(state.edits).some((e) => e.op === 'cut')
+                ? 'Cut out only works here in the editor, so this request leaves it out. Download the result instead.'
+                : code.includes('example.com%2Ficon.svg')
+                    ? 'Links need a public SVG: replace example.com/icon.svg with yours, or load your SVG from a link.'
+                    : 'Uses your current settings. No API key needed.';
         showCode($('mcp-cmd'), 'claude mcp add --transport http svg-recolor ' + SITE + '/mcp', 'sh');
         $('llms-url').textContent = SITE + '/llms.txt';
     }

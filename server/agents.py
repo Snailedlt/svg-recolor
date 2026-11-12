@@ -66,6 +66,7 @@ Base URL: {base}
   (a shape keeps its stroke or fill when only the other is removed). In JSON and MCP, `replace` is an
   object and `hide`/`remove` are lists. In the JSON palette, `to` is then `"none"` or `"removed"`.
   One-color icon (like a devicon "plain" version): `mode=solid&color=000000&remove=ffffff`.
+  Cutting a color out as gaps (one path per color) needs path geometry and is only in the editor on the website.
 
 ## Modes
 
@@ -158,7 +159,7 @@ async def _mcp_call(name: str, args: dict) -> dict:
         if name == "recolor_svg":
             opts = options(args.get("mode") or engine.DEFAULT_MODE, args.get("color") or "ff0066",
                            args.get("hue", 0), args.get("saturation", 0), args.get("lightness", 0),
-                           args.get("replace"), args.get("hide"), args.get("remove"))
+                           args.get("replace"), args.get("hide"), args.get("remove"), args.get("cut"))
             svg_text, src_name = await _mcp_source(args)
             result = await run(svg_text, opts)
             data = {"filename": output_name(safe_stem(src_name), opts), "palette": result.palette(), "svg": result.svg}

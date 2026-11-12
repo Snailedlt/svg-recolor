@@ -465,7 +465,8 @@ kbd {
 .palette .chip i.gone { background: repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 50% / 6px 6px; }
 .palette .chip .arrow { color: var(--text-faint); }
 .palette .chip.edited { border-color: var(--pick); color: var(--text); }
-.palette .chip.remove span:last-child { text-decoration: line-through; }
+.palette .chip.remove span:last-child, .palette .chip.hide span:last-child { text-decoration: line-through; }
+.palette .chip.cut i.gone { background: none; border-style: dashed; }
 .palette-reset { flex: none; margin-left: auto; font-size: 0.78rem; }
 /* Color-edit panel (one color: follow style / own color / hide / remove) */
 .color-edit {

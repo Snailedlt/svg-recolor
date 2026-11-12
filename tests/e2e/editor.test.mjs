@@ -191,7 +191,7 @@ async function pasteSvg(page, svg) {
     await page.click('#source-cancel');
 }
 
-test('each color can get its own color, be hidden, or have its shapes removed', async () => {
+test('each color can get its own color or become invisible', async () => {
     const { page, problems } = await open();
     await pasteSvg(page, EDIT_SVG);
     await page.click('.style[data-mode="solid"]');
@@ -199,10 +199,10 @@ test('each color can get its own color, be hidden, or have its shapes removed', 
     await page.click('.chip[data-color="ffffff"]');
     assert.equal(await page.isVisible('#color-edit'), true);
     await page.check('#color-edit [value="remove"]');
-    await page.locator('.chip[data-color="ffffff"]', { hasText: 'Removed' }).waitFor();
+    await page.locator('.chip[data-color="ffffff"]', { hasText: 'Invisible' }).waitFor();
     await page.click('.chip[data-color="e879f9"]');
-    await page.check('#color-edit [value="hide"]');
-    await page.locator('.chip[data-color="e879f9"]', { hasText: 'Hidden' }).waitFor();
+    await page.check('#color-edit [value="remove"]');
+    await page.locator('.chip[data-color="e879f9"]', { hasText: 'Invisible' }).waitFor();
     await page.click('.chip[data-color="0f766e"]');
     await page.locator('#color-edit-own').evaluate((el) => { el.value = '#00aa55'; el.dispatchEvent(new Event('input', { bubbles: true })); });
     await page.locator('.chip[data-color="0f766e"]', { hasText: '#00AA55' }).waitFor();
@@ -211,9 +211,8 @@ test('each color can get its own color, be hidden, or have its shapes removed', 
     await page.click('#tab-btn-code');
     const code = await page.textContent('#code-view');
     assert.ok(!code.includes('<rect'), 'the removed color\'s shape is gone');
-    assert.match(code, /fill="none"/);
     assert.match(code, /fill="#00aa55"/);
-    await page.waitForURL(/replace=0f766e%3A00aa55&hide=e879f9&remove=ffffff/); // the address is updated after a short pause
+    await page.waitForURL(/replace=0f766e%3A00aa55&remove=ffffff%2Ce879f9/); // the address is updated after a short pause
     // The API snippet reproduces the same edits.
     await page.click('#tab-btn-api');
     assert.match(await page.textContent('#snippet'), /remove=ffffff/);
@@ -223,13 +222,56 @@ test('each color can get its own color, be hidden, or have its shapes removed', 
     assert.deepEqual(problems, []);
 });
 
+// Two facets with an outline ring drawn over their shared edge, like the JAX logo.
+const CUT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">'
+    + '<rect x="0" y="0" width="20" height="20" fill="#5e97f6"/><rect x="20" y="0" width="20" height="20" fill="#9c27b0"/>'
+    + '<rect x="19" y="0" width="2" height="20" fill="#dce0df"/></svg>';
+
+test('cut out: a color becomes a real gap, and the result is one path per color', async () => {
+    const { page, problems } = await open();
+    const geometry = [];
+    page.on('request', (r) => { if (r.url().includes('/assets/geometry.js')) geometry.push(r.url()); });
+    await pasteSvg(page, CUT_SVG);
+    await page.click('.style[data-mode="solid"]');
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    assert.equal(geometry.length, 0, 'the geometry library loads only when needed');
+    await page.click('.chip[data-color="dce0df"]');
+    await page.check('#color-edit [value="cut"]');
+    await page.locator('.chip[data-color="dce0df"]', { hasText: 'Cut out' }).waitFor();
+    assert.equal(geometry.length, 1);
+    await page.keyboard.press('Escape');
+    await page.click('#tab-btn-code');
+    const code = await page.textContent('#code-view');
+    assert.equal((code.match(/<path/g) || []).length, 1, 'Solid + cut out = one path');
+    assert.match(code, /viewBox="0 0 40 20"/);
+    // Point tests on the real path: the facets are filled, the outline is a gap.
+    const d = /\sd="([^"]+)"/.exec(code)[1];
+    const hits = await page.evaluate((d) => {
+        const ctx = document.createElement('canvas').getContext('2d');
+        const p = new Path2D(d);
+        return [[10, 10], [30, 10], [20, 10], [19.2, 5], [20.8, 15]].map(([x, y]) => ctx.isPointInPath(p, x, y, 'nonzero'));
+    }, d);
+    assert.deepEqual(hits, [true, true, false, false, false]);
+    assert.match(await page.textContent('#api-hint'), /Cut out only works here in the editor/);
+    assert.deepEqual(problems, []);
+});
+
+test('cut out explains what it can\'t do instead of guessing', async () => {
+    const { page } = await open();
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#f00"/></linearGradient></defs>'
+        + '<rect width="10" height="10" fill="url(#g)"/><rect width="4" height="4" fill="#00ff00"/></svg>');
+    await page.click('.chip[data-color="00ff00"]');
+    await page.check('#color-edit [value="cut"]');
+    await page.locator('#error-text', { hasText: 'gradients' }).waitFor();
+});
+
 test('share links carry a pasted SVG and its edits', async () => {
     const { page, problems } = await open();
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
     await pasteSvg(page, EDIT_SVG);
     await page.click('.chip[data-color="ffffff"]');
     await page.check('#color-edit [value="remove"]');
-    await page.locator('.chip[data-color="ffffff"]', { hasText: 'Removed' }).waitFor();
+    await page.locator('.chip[data-color="ffffff"]', { hasText: 'Invisible' }).waitFor();
     await page.click('#share-btn');
     await page.locator('.toast', { hasText: 'Link with this SVG' }).waitFor();
     const link = await page.evaluate(() => navigator.clipboard.readText());
@@ -237,7 +279,7 @@ test('share links carry a pasted SVG and its edits', async () => {
     const other = await newPage();
     await other.goto(BASE + link.slice(link.indexOf('/?')));
     await other.locator('#file-name', { hasText: 'pasted.svg' }).waitFor({ state: 'attached' });
-    await other.locator('.chip[data-color="ffffff"]', { hasText: 'Removed' }).waitFor();
+    await other.locator('.chip[data-color="ffffff"]', { hasText: 'Invisible' }).waitFor();
     assert.ok(!other.url().includes('#svg='), 'the SVG is dropped from the address bar after loading');
     assert.deepEqual(problems, []);
 });

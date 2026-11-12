@@ -212,6 +212,20 @@ def _bundle() -> tuple[str, str]:
     return _bundle_cache
 
 
+# "Cut out" geometry (paper.js + offsets + static/geometry.js), loaded by the editor only
+# when someone cuts a color out. Vendored copies: static/vendor (scripts/vendor-geometry.sh).
+GEOMETRY = ("vendor/paper-core.min.js", "vendor/paperjs-offset.min.js", "geometry.js")
+_geometry_cache: Optional[tuple[str, str]] = None
+
+
+def _geometry() -> tuple[str, str]:
+    global _geometry_cache
+    if _geometry_cache is None or os.environ.get("SVG_RECOLOR_DEV"):
+        js = "\n;\n".join((BASE_DIR / "static" / name).read_text(encoding="utf-8") for name in GEOMETRY)
+        _geometry_cache = (js, hashlib.sha256(js.encode()).hexdigest()[:12])
+    return _geometry_cache
+
+
 def _page_config() -> str:
     """window.SVG_RECOLOR: the engine version, the sample image's URL (the rainbow
     snail, also "Try an example") and its colors in every style, so the style
@@ -230,7 +244,8 @@ def _page_config() -> str:
         log.exception("Could not precompute the style thumbnails")
         seed = {}
     sample_url = f"{SAMPLE_PATH}?v={hashlib.sha256(data).hexdigest()[:12]}"
-    config = {"engineVersion": engine.ENGINE_VERSION, "sampleUrl": sample_url, "seed": seed}
+    config = {"engineVersion": engine.ENGINE_VERSION, "sampleUrl": sample_url, "seed": seed,
+              "geometryUrl": f"/assets/geometry.js?v={_geometry()[1]}"}
     return json.dumps(config, separators=(",", ":")).replace("</", "<\\/")
 
 
@@ -252,6 +267,13 @@ def _landing_html() -> str:
             html = html.replace(f'src="{path}"', f'src="data:{mime};base64,{data}"')
         _landing_cache = html.replace("__CONFIG__", _page_config())
     return _landing_cache
+
+
+@app.get("/assets/geometry.js", include_in_schema=False)
+async def geometry_bundle(v: Optional[str] = None):
+    js, digest = _geometry()
+    cache = CACHE_IMMUTABLE if v == digest else CACHE_STATIC
+    return Response(js, media_type="text/javascript; charset=utf-8", headers={"Cache-Control": cache})
 
 
 @app.get("/assets/app.js", include_in_schema=False)
@@ -329,7 +351,7 @@ async def sitemap_xml(request: Request):
 # API
 # --------------------------------------------------------------------------
 
-OPTION_FIELDS = ("color", "mode", "hue", "saturation", "lightness", "format", "download", "replace", "hide", "remove")
+OPTION_FIELDS = ("color", "mode", "hue", "saturation", "lightness", "format", "download", "replace", "hide", "remove", "cut")
 
 
 async def _read_source(request: Request) -> tuple[str, str, dict]:
@@ -435,13 +457,14 @@ async def recolor_from_url(
     replace: ReplaceParam = None,
     hide: HideParam = None,
     remove: RemoveParam = None,
+    cut: Annotated[Optional[str], Query(include_in_schema=False)] = None,
 ):
     """Fetches the SVG at `url` and returns it recolored. Responses are cacheable, so you can
     use the endpoint directly as an image source:
 
     `<img src="https://svg-recolor.jorgenkh.no/api/recolor?url=https://.../icon.svg&color=tomato&mode=solid">`
     """
-    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove)
+    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, cut)
     svg_text, name = await fetch_svg(url)
     result = await run(svg_text, opts)
     return respond(result, opts, output_name(safe_stem(name), opts), format, download, cache=True)
@@ -468,6 +491,7 @@ async def recolor_upload(
     replace: ReplaceParam = None,
     hide: HideParam = None,
     remove: RemoveParam = None,
+    cut: Annotated[Optional[str], Query(include_in_schema=False)] = None,
 ):
     """Send the SVG in any of these ways:
 
@@ -479,11 +503,11 @@ async def recolor_upload(
     svg_text, name, body_opts = await _read_source(request)
     params = {"color": color, "mode": mode, "hue": hue, "saturation": saturation,
               "lightness": lightness, "format": format, "download": download,
-              "replace": replace, "hide": hide, "remove": remove} | body_opts
+              "replace": replace, "hide": hide, "remove": remove, "cut": cut} | body_opts
     if params["format"] not in ("svg", "json"):
         raise HTTPException(400, "'format' must be 'svg' or 'json'.")
     opts = options(params["mode"], params["color"], params["hue"], params["saturation"], params["lightness"],
-                   params["replace"], params["hide"], params["remove"])
+                   params["replace"], params["hide"], params["remove"], params["cut"])
     result = await run(svg_text, opts)
     download_flag = str(params["download"]).lower() in ("1", "true", "yes")
     return respond(result, opts, output_name(safe_stem(name), opts), params["format"], download_flag)
@@ -581,11 +605,12 @@ async def recolor_batch(
     replace: ReplaceParam = None,
     hide: HideParam = None,
     remove: RemoveParam = None,
+    cut: Annotated[Optional[str], Query(include_in_schema=False)] = None,
 ):
     """Applies the same settings to every file and returns a ZIP archive."""
     if len(files) > 50:
         raise HTTPException(400, "Send at most 50 files per batch.")
-    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove)
+    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, cut)
     buf = io.BytesIO()
     used: set[str] = set()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
