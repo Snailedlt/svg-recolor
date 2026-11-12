@@ -472,7 +472,7 @@ test('canvas: a new viewBox, and Fit with padding (strokes count)', async () => 
     await page.fill('#fit-pad', '1');
     await page.click('#fit-btn');
     await page.waitForURL(/canvas=128x128&place=-50\.545%2C-50\.545%2C5\.727/);
-    assert.equal(await page.inputValue('#place-s'), '572.727');
+    assert.equal(await page.inputValue('#place-s'), '572.73');
     await page.click('#tab-btn-code');
     await page.locator('#code-view', { hasText: 'matrix(' }).waitFor();
     const code = await page.textContent('#code-view');

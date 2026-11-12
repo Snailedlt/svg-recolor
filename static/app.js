@@ -316,7 +316,7 @@
         const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = fmt(v); };
         set('canvas-w', W);
         set('canvas-h', H);
-        set('place-s', s * 100);
+        set('place-s', +(s * 100).toFixed(2));
         set('place-x', tx);
         set('place-y', ty);
         $('canvas-reset').hidden = !state.canvas && !state.place;
