@@ -613,9 +613,133 @@
         }
         return geometryReady;
     }
-    async function cutOutSvg(edited, cut, merged, onProgress) {
+    // ------------------------------------------------------------------
+    // Text into shapes (for cut out, gaps and lines, which work on shapes): drawn with
+    // opentype.js in the font of your choice, or Inter when none is chosen. Loaded on use.
+    // ------------------------------------------------------------------
+    let textFont = null; // { name, font }
+    let opentypeReady = null;
+    function loadOpentype() {
+        if (window.opentype) return Promise.resolve(window.opentype);
+        if (!opentypeReady) {
+            setStatus('work', 'Loading fonts…');
+            opentypeReady = new Promise((resolve, reject) => {
+                const sc = document.createElement('script');
+                sc.src = '/static/vendor/opentype.min.js';
+                sc.onload = () => (window.opentype ? resolve(window.opentype) : reject(new Error('Fonts could not load.')));
+                sc.onerror = () => { opentypeReady = null; reject(new Error('Fonts could not load. Check your connection and try again.')); };
+                document.head.appendChild(sc);
+            });
+        }
+        return opentypeReady;
+    }
+    async function currentFont() {
+        if (textFont) return textFont;
+        const ot = await loadOpentype();
+        const res = await fetch('/static/vendor/inter-latin-400.woff');
+        if (!res.ok) throw new Error('The fallback font could not load.');
+        textFont = { name: 'Inter', font: ot.parse(await res.arrayBuffer()), fallback: true };
+        return textFont;
+    }
+    $('text-font-file').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            const ot = await loadOpentype();
+            textFont = { name: file.name.replace(/\.(ttf|otf|woff)$/i, ''), font: ot.parse(await file.arrayBuffer()) };
+            $('text-font-name').textContent = textFont.name;
+            toast('Text now drawn with ' + textFont.name);
+            if (state.doc) recolor();
+        } catch (err) {
+            showError('That font could not be read: ' + err.message + ' (TTF, OTF and WOFF work; WOFF2 doesn\'t yet).');
+        }
+    });
+    // Replace each <text> with paths of its glyphs, keeping its paint, class and transform.
+    async function textToShapes(svgText) {
+        if (!/<text\b/i.test(svgText)) return svgText;
+        const { font, name, fallback } = await currentFont();
+        const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+        const NS = 'http://www.w3.org/2000/svg';
+        const own = (el, prop) => {
+            const style = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'i').exec(el.getAttribute('style') || '');
+            return style ? style[1].trim() : el.getAttribute(prop);
+        };
+        const inherited = (el, prop, dflt) => {
+            for (let e = el; e && e.nodeType === 1; e = e.parentNode) { const v = own(e, prop); if (v !== null && v !== '') return v; }
+            return dflt;
+        };
+        const num = (v) => parseFloat(String(v || '').split(/[\s,]+/)[0]);
+        for (const text of [...doc.querySelectorAll('text')]) {
+            const size = num(inherited(text, 'font-size', '16')) || 16;
+            const anchor = inherited(text, 'text-anchor', 'start');
+            let x = num(text.getAttribute('x')) || 0, y = num(text.getAttribute('y')) || 0;
+            x += num(text.getAttribute('dx')) || 0;
+            y += num(text.getAttribute('dy')) || 0;
+            // Runs of text: the text's own characters and its <tspan>s (which may move the pen).
+            const runs = [];
+            const walk = (node, el) => {
+                for (const ch of node.childNodes) {
+                    if (ch.nodeType === 3) {
+                        const t = ch.textContent.replace(/\s+/g, ' ');
+                        if (t.trim() || runs.length) runs.push({ el, text: t });
+                    } else if (ch.nodeType === 1 && ch.localName === 'tspan') {
+                        runs.push({ el: ch, move: true });
+                        walk(ch, ch);
+                    }
+                }
+            };
+            walk(text, text);
+            const g = doc.createElementNS(NS, 'g');
+            for (const a of [...text.attributes]) if (!/^(x|y|dx|dy|font-.*|text-anchor|letter-spacing|word-spacing|dominant-baseline|style)$/.test(a.name)) g.setAttribute(a.name, a.value);
+            const style = (text.getAttribute('style') || '').split(';').filter((d) => d.trim() && !/^\s*(font|text-anchor|letter-spacing|word-spacing)/i.test(d)).join(';');
+            if (style) g.setAttribute('style', style);
+            const line = [];
+            let width = 0;
+            for (const run of runs) {
+                if (run.move) {
+                    if (run.el.hasAttribute('x')) { x = num(run.el.getAttribute('x')); }
+                    if (run.el.hasAttribute('y')) { y = num(run.el.getAttribute('y')); }
+                    x += num(run.el.getAttribute('dx')) || 0;
+                    y += num(run.el.getAttribute('dy')) || 0;
+                    continue;
+                }
+                const s = num(inherited(run.el, 'font-size', String(size))) || size;
+                const path = font.getPath(run.text, x, y, s);
+                const p = doc.createElementNS(NS, 'path');
+                p.setAttribute('d', path.toPathData(3));
+                if (run.el !== text) {
+                    for (const prop of ['fill', 'stroke', 'stroke-width', 'opacity', 'class']) { const v = own(run.el, prop); if (v) p.setAttribute(prop, v); }
+                }
+                line.push(p);
+                const adv = font.getAdvanceWidth(run.text, s);
+                x += adv;
+                width += adv;
+            }
+            if (anchor === 'middle' || anchor === 'end') {
+                const shift = 'translate(' + fmt(-(anchor === 'middle' ? width / 2 : width)) + ' 0)';
+                g.setAttribute('transform', ((g.getAttribute('transform') || '') + ' ' + shift).trim());
+            }
+            line.forEach((p) => g.appendChild(p));
+            text.replaceWith(g);
+        }
+        $('text-font-row').hidden = false;
+        $('text-font-name').textContent = name;
+        if (fallback && !textToShapes.told) { textToShapes.told = true; toast('Text turned into shapes with Inter. Choose its own font under Shapes.'); }
+        return new XMLSerializer().serializeToString(doc.documentElement);
+    }
+
+    // Everything one color (like Solid)? Then the geometry can ignore gradients and transparency.
+    function flatColor(doc, merged) {
+        const gone = new Set(Object.entries(state.edits).filter(([, e]) => e.op !== 'replace').map(([c]) => c));
+        const outs = new Set(doc.palette.map(([c]) => c).filter((c) => !gone.has(c)).map((c) => (merged[c] || c).toLowerCase()));
+        return outs.size === 1 ? [...outs][0] : null;
+    }
+    async function cutOutSvg(edited, cut, merged, onProgress, doc = state.doc) {
         const Geo = await loadGeometry();
+        edited = await textToShapes(edited);
         return Geo.cutOut(edited, {
+            flat: doc ? flatColor(doc, merged) : null,
             cut, map: merged, gap: state.gap, unit: state.unit, onProgress,
             line: state.line, lineInner: state.lineInner, keep: [...state.keep],
         });
@@ -1056,6 +1180,7 @@
         if (state.doc && !keepPlacement) state.place = null; // a new SVG starts centered on the same canvas
         keepPlacement = false;
         state.doc = { name, size, text, norm, palette: Engine.palette(norm), fromUrl: fromUrl || null, source };
+        $('text-font-row').hidden = !/<text\b/i.test(norm);
         syncCanvasUI();
         renderLogoColors();
         // The slider ranges follow the SVG's size; keep the chosen values.
@@ -1140,7 +1265,7 @@
         else if (doc === state.doc) place = state.place;
         const parts = editedSvg(doc, mapping, place);
         let svg = parts.svg;
-        if (parts.cut.length || state.gap || state.line) svg = await cutOutSvg(parts.edited, parts.cut, parts.merged);
+        if (parts.cut.length || state.gap || state.line) svg = await cutOutSvg(parts.edited, parts.cut, parts.merged, null, doc);
         if (state.svgo) svg = await optimizeSvg(svg);
         return svg;
     }

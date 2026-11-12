@@ -57,7 +57,9 @@
 
     // Parse the SVG, drop anything active, and copy the computed fill/stroke onto
     // every element: paper.js reads attributes, not <style> rules or classes.
-    function prepare(svgText, lenient) {
+    // flat: when everything ends up one color (like Solid), gradients and transparency don't
+    // matter: paints become that color and partial transparency counts as solid.
+    function prepare(svgText, lenient, flat) {
         const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
         const svg = doc.documentElement;
         if (svg.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) throw new GeometryError('This SVG could not be read.');
@@ -97,10 +99,15 @@
                     el.setAttribute('display', 'none');
                     continue;
                 }
-                if (!lenient && el.matches('path, rect, circle, ellipse, line, polyline, polygon') && /url\(/.test(cs.fill + cs.stroke)) {
+                if (!lenient && !flat && el.matches('path, rect, circle, ellipse, line, polyline, polygon') && /url\(/.test(cs.fill + cs.stroke)) {
                     throw new GeometryError('Cut out, gaps and lines work with flat colors, and this SVG uses gradients or patterns.');
                 }
-                for (const p of props) el.setAttribute(p, p === 'stroke-width' ? String(parseFloat(cs.strokeWidth) || 0) : cs.getPropertyValue(p));
+                for (const p of props) {
+                    let v = p === 'stroke-width' ? String(parseFloat(cs.strokeWidth) || 0) : cs.getPropertyValue(p);
+                    if (flat && (p === 'fill' || p === 'stroke') && /url\(/.test(v)) v = '#' + flat;
+                    if (flat && /opacity$/.test(p)) v = parseFloat(v) === 0 ? '0' : '1';
+                    el.setAttribute(p, v);
+                }
                 el.removeAttribute('style');
                 el.removeAttribute('class');
             }
@@ -170,8 +177,8 @@
     // Reading the SVG needs the page (DOM, computed styles); the heavy part (boolean
     // operations and offsets) runs in a worker when it can, so the page never freezes,
     // and a newer request stops an older one right away.
-    function readShapes(svgText) {
-        const live = prepare(svgText);
+    function readShapes(svgText, flat) {
+        const live = prepare(svgText, false, flat);
         const scope = new paper.PaperScope();
         scope.setup(document.createElement('canvas'));
         try {
@@ -187,11 +194,14 @@
             const undo = root.matrix.inverted();
             const shapes = leaves(scope, root).map(({ path, color }) => {
                 path.transform(undo);
-                path.applyMatrix = true;
+                // Bake the whole transform into a fresh copy (path data leaves an item's own matrix
+                // out, and applyMatrix doesn't bake it into a compound path's children).
+                const baked = new scope.CompoundPath({ pathData: path.pathData, fillRule: path.fillRule, insert: false });
+                baked.transform(path.matrix);
                 // Drop empty subpaths ("m0 0"): they upset the boolean steps, and the server's
                 // reader (picosvg) drops them too, so both sides start from the same shapes.
-                if (path.children) path.children.slice().forEach((k) => { if (k.segments.length < 2 || k.length < 1e-9) k.remove(); });
-                return { d: path.getPathData(null, 12), rule: path.fillRule || 'nonzero', color };
+                baked.children.slice().forEach((k) => { if (k.segments.length < 2 || k.length < 1e-9) k.remove(); });
+                return { d: baked.getPathData(null, 12), rule: path.fillRule || 'nonzero', color };
             }).filter((sh) => sh.d);
             const b = root.bounds;
             return { shapes, viewBox, width, height, bounds: [b.width, b.height] };
@@ -489,7 +499,7 @@
     async function cutOut(svgText, opts) {
         if (!paper) throw new GeometryError('The geometry library did not load.');
         opts = opts || {};
-        const input = readShapes(svgText);
+        const input = readShapes(svgText, opts.flat || null);
         if (scriptUrl && typeof Worker !== 'undefined' && opts.worker !== false) return runInWorker(input, opts);
         return compute(input, opts, opts.onProgress);
     }

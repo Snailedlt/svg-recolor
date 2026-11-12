@@ -523,6 +523,8 @@ kbd {
 .color-edit input[type="checkbox"] { accent-color: var(--pick); margin: 0; }
 .line-inner-row { margin: -2px 0 0; }
 .unit-row { margin: 2px 0 0; }
+.text-font-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.78rem; color: var(--text-muted); }
+.text-font-row .link-btn { white-space: nowrap; }
 .canvas-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 6px; align-items: center; }
 .num-field { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 8px; height: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font-size: 0.74rem; color: var(--text-faint); }
 .num-field:focus-within { border-color: var(--pick); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pick) 25%, transparent); }

@@ -253,9 +253,11 @@ def _root_attrs(svg: str) -> dict:
     return attrs
 
 
-def read_shapes(svg: str, lenient: bool = False) -> dict:
+def read_shapes(svg: str, lenient: bool = False, flat: Optional[str] = None) -> dict:
     """Plain filled paths in paint order, as geometry.js's compute() takes them.
-    lenient: for measuring (Fit), where gradients, transparency, masks and text don't matter."""
+    lenient: for measuring (Fit), where gradients, transparency, masks and text don't matter.
+    flat: when everything ends up this one color (like Solid), gradients and transparency
+    don't matter either: such paints become it, partial transparency counts as solid."""
     from picosvg.svg import SVG
 
     if not lenient and re.search(r"<text\b", svg, re.IGNORECASE):
@@ -281,9 +283,11 @@ def read_shapes(svg: str, lenient: bool = False) -> dict:
             if s.d:
                 shapes.append({"d": s.d, "rule": s.fill_rule or "nonzero", "color": "000000"})
             continue
+        if fill.startswith("url(") and flat:
+            fill = "#" + flat
         if fill.startswith("url("):
             raise engine.RecolorError("Cut out, gaps and lines work with flat colors, and this SVG uses gradients or patterns.")
-        if min(float(getattr(s, "opacity", 1) or 1), float(getattr(s, "fill_opacity", 1) or 1)) < 1:
+        if not flat and min(float(getattr(s, "opacity", 1) or 1), float(getattr(s, "fill_opacity", 1) or 1)) < 1:
             raise engine.RecolorError("Cut out, gaps and lines don't support semi-transparent colors yet.")
         if fill.lower() == "currentcolor":
             fill = "#000000"  # what a browser shows for it (the default text color)
@@ -396,7 +400,11 @@ def recolor(svg: str, opts: engine.Options) -> engine.Result:
     if ex.geometry:
         geo = {"cut": list(ex.cut), "map": mapping, "gap": ex.gap, "line": ex.line, "lineInner": ex.line_inner,
                "keep": list(ex.keep), "unit": ex.unit}
-        out = js("SvgGeometry.compute(args[0], args[1])", read_shapes(edited), geo, deadline=deadline)
+        # Everything one color (like Solid)? Then gradients and transparency don't matter.
+        gone = set(opts.hide) | set(opts.remove) | set(ex.cut)
+        outs = {mapping.get(c, c) for c in counts if c not in gone}
+        flat = next(iter(outs)) if len(outs) == 1 else None
+        out = js("SvgGeometry.compute(args[0], args[1])", read_shapes(edited, flat=flat), geo, deadline=deadline)
     else:
         out = engine.apply_mapping(edited, mapping)
     if ex.optimize:

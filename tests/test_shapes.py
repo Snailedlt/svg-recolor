@@ -162,3 +162,15 @@ def test_fit_measures_gradients_and_bad_values_are_refused(client):
     assert '<g transform="matrix(6.4 0 0 6.4 -64 -64)">' in res.text  # 20 x 20 at 10,10 fills 128 x 128
     assert client.post("/api/recolor?cut=notacolor", content=CUT_SVG, headers=SVG_CT).status_code == 400
     assert client.post("/api/recolor", json={"svg": CUT_SVG, "optimize": "maybe"}).status_code == 400
+
+
+def test_one_color_results_ignore_gradients_and_transparency(client):
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><defs><linearGradient id="g"><stop stop-color="#f00"/>'
+           '<stop offset="1" stop-color="#00f"/></linearGradient></defs><rect width="20" height="20" fill="url(#g)"/>'
+           '<rect x="20" width="20" height="20" fill="#9c27b0" fill-opacity=".5"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&gap=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    assert len(paths(res.text)) == 1 and "url(" not in res.text
+    # Several colors in the result: a gradient still can't be one flat color.
+    res = client.post("/api/recolor?mode=colorize&gap=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 400 and "gradients" in res.json()["detail"]

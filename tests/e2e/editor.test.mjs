@@ -508,7 +508,7 @@ test('canvas: a new viewBox, and Fit with padding (strokes count)', async () => 
     await openFold(page, 'canvas');
     await page.fill('#fit-pad', '1');
     await page.click('#fit-btn');
-    await page.waitForURL(/canvas=128x128&place=-50\.545%2C-50\.545%2C5\.727/);
+    await page.waitForURL(/canvas=128x128&fit=1/); // Fit stays on (the placement follows the SVG)
     assert.equal(await page.inputValue('#place-s'), '572.73');
     await page.click('#tab-btn-code');
     await page.locator('#code-view', { hasText: 'matrix(' }).waitFor();
@@ -570,6 +570,8 @@ test('geometry: root transforms, stretched strokes, masks and escaping (from cod
             mask: await run('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><defs><mask id="m"><rect width="10" height="20" fill="#fff"/></mask></defs><rect width="20" height="20" fill="#f00" mask="url(#m)"/></svg>', {}),
             escaped: await run('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20&quot; onload=&quot;alert(1)"><rect width="20" height="20" fill="#f00"/></svg>', {}),
             spaced: await run('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100 " overflow="visible"><rect width="10" height="10" fill="#5e97f6"/></svg>', { line: 10, unit: '%' }),
+            // A compound path (several outlines) in a moved group keeps the move.
+            compound: await run('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><g transform="translate(10 0)"><path d="M0 0h5v5H0zM6 0h4v5H6z" fill="#f00"/></g></svg>', {}),
         };
     });
     assert.match(r.rootT, /d="M20,/, r.rootT);
@@ -577,6 +579,8 @@ test('geometry: root transforms, stretched strokes, masks and escaping (from cod
     assert.match(r.mask, /^ERR .*masks/);
     assert.ok(!/ onload="/.test(r.escaped) && /&quot;/.test(r.escaped), r.escaped);
     assert.match(r.spaced, /d="M[^"]+"/, '10 % of 100 fills the whole 10 x 10 square');
+    assert.match(r.compound, /d="M1[0-9]/, 'the compound path moved by 10: ' + r.compound);
+    assert.ok(!/d="M0,/.test(r.compound), r.compound);
     // (The browser warns in the console about the bad width while measuring: that's the test input.)
     assert.deepEqual(problems.filter((p) => !/attribute width/.test(p)), []);
 });
@@ -702,9 +706,9 @@ test('recipes: save settings, apply them later; Fit stays on for the next SVG', 
 test('batch: several SVGs, the same settings, one ZIP (failures named, not fatal)', async () => {
     const { page } = await open();
     const svgFile = (name, svg) => ({ name, mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
-    const GRADIENT = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#f00"/></linearGradient></defs>'
-        + '<rect width="10" height="10" fill="url(#g)"/><rect width="4" height="4" fill="#dce0df"/></svg>';
-    await page.setInputFiles('#files', [svgFile('one.svg', CUT_SVG), svgFile('two.svg', GAP_SVG), svgFile('bad.svg', GRADIENT)]);
+    const MASKED = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><mask id="m"><rect width="5" height="10" fill="#fff"/></mask></defs>'
+        + '<rect width="10" height="10" fill="#f00" mask="url(#m)"/><rect width="4" height="4" fill="#dce0df"/></svg>';
+    await page.setInputFiles('#files', [svgFile('one.svg', CUT_SVG), svgFile('two.svg', GAP_SVG), svgFile('bad.svg', MASKED)]);
     await page.locator('#batch-bar:not([hidden])').waitFor();
     assert.equal(await page.textContent('#batch-count'), '3');
     await page.locator('#file-name', { hasText: 'one.svg' }).waitFor();
@@ -733,6 +737,45 @@ print(json.dumps({n: z.read(n).decode() for n in z.namelist()}))`, path], { enco
     await page.locator('#batch-files button.failed', { hasText: 'bad.svg' }).waitFor();
     await page.click('#batch-close');
     assert.equal(await page.isVisible('#batch-bar'), false);
+});
+
+test('one-color results: text becomes shapes, gradients and transparency are fine', async () => {
+    const { page, problems } = await open();
+    // Text: drawn with the fallback font (Inter), so gaps work on it.
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40"><rect width="120" height="40" fill="#5e97f6"/>'
+        + '<text x="10" y="30" font-size="28" fill="#ffffff">Hi <tspan fill="#9c27b0">there</tspan></text></svg>');
+    await page.click('.style[data-mode="solid"]');
+    await page.locator('#adj-gap').evaluate((el) => { el.value = '1'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    await page.click('#tab-btn-code');
+    await page.locator('#code-view', { hasText: '<path' }).waitFor();
+    assert.equal(await page.isVisible('#error-message'), false, 'no refusal for text');
+    const d = /\sd="([^"]+)"/.exec(await page.textContent('#code-view'))[1];
+    assert.ok(d.split(/[Mm]/).length > 8, 'the letters are cut out of the box as shapes');
+    // text-anchor="middle": the text is centered on its x.
+    await page.click('#tab-btn-preview');
+    await page.click('#change-file');
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40"><rect width="120" height="40" fill="#5e97f6"/>'
+        + '<text x="60" y="30" font-size="28" text-anchor="middle" fill="#ffffff">II</text></svg>');
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    await page.click('#tab-btn-code');
+    await page.locator('#code-view', { hasText: '<path' }).waitFor();
+    const xs = [...(await page.textContent('#code-view')).matchAll(/M([\d.]+),/g)].map((m) => +m[1]).filter((x) => x > 1 && x < 119);
+    assert.ok(Math.min(...xs) < 60 && Math.max(...xs) > 50, 'centered around x = 60: ' + xs);
+    await page.click('#tab-btn-preview');
+    await openFold(page, 'shape');
+    assert.equal(await page.textContent('#text-font-name'), 'Inter');
+    // A gradient and transparency in a one-color result.
+    await page.click('#change-file');
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><defs><linearGradient id="g"><stop stop-color="#f00"/><stop offset="1" stop-color="#00f"/></linearGradient></defs>'
+        + '<rect width="20" height="20" fill="url(#g)"/><rect x="20" width="20" height="20" fill="#9c27b0" fill-opacity=".5"/></svg>');
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    assert.equal(await page.isVisible('#error-message'), false, 'no refusal for a gradient in Solid');
+    await page.click('#tab-btn-code');
+    const code = await page.textContent('#code-view');
+    assert.equal((code.match(/<path/g) || []).length, 1, 'one path, one color');
+    assert.ok(!/url\(/.test(code));
+    assert.deepEqual(problems, []);
 });
 
 test('cut out explains what it can\'t do instead of guessing', async () => {
