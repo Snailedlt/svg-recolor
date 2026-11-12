@@ -270,7 +270,48 @@ def _alpha(v) -> float:
     return 1.0 if v is None or v == "" else float(v)
 
 
-def read_shapes(svg: str, lenient: bool = False, flat: Optional[str] = None) -> dict:
+def _middles(root) -> dict:
+    """Each gradient's color at its middle, by id (following href to the stops), as geometry.js."""
+    by_id = {el.get("id"): el for el in root.iter() if isinstance(el.tag, str) and el.get("id")}
+
+    def stops_of(el, hops=0):
+        stops = [k for k in el if isinstance(k.tag, str) and k.tag.split("}")[-1] == "stop"]
+        if stops or hops > 8:
+            return stops
+        ref = el.get("href") or el.get("{http://www.w3.org/1999/xlink}href") or ""
+        nxt = by_id.get(ref.lstrip("#")) if ref.startswith("#") else None
+        return stops_of(nxt, hops + 1) if nxt is not None else []
+
+    out = {}
+    for gid, el in by_id.items():
+        if not el.tag.split("}")[-1].endswith("Gradient"):
+            continue
+        stops = []
+        for s in stops_of(el):
+            style = dict(kv.split(":", 1) for kv in (s.get("style") or "").split(";") if ":" in kv)
+            color = (style.get("stop-color") or s.get("stop-color") or "#000").strip()
+            off = str(s.get("offset") or "0").strip()
+            try:
+                at = float(off[:-1]) / 100 if off.endswith("%") else float(off)
+                stops.append([min(1.0, max(0.0, at)), engine.rgb_to_hex(engine.parse_color(color))[1:].lower()])
+            except (ValueError, engine.RecolorError):
+                continue
+        if not stops:
+            continue
+        for i in range(1, len(stops)):
+            stops[i][0] = max(stops[i][0], stops[i - 1][0])
+        i = next((k for k, s in enumerate(stops) if s[0] >= 0.5), -1)
+        if i <= 0:
+            out[gid] = stops[0 if i == 0 else -1][1]
+            continue
+        (a_at, a), (b_at, b) = stops[i - 1], stops[i]
+        f = 0 if b_at == a_at else (0.5 - a_at) / (b_at - a_at)
+        out[gid] = "".join(f"{round(int(a[k:k + 2], 16) + (int(b[k:k + 2], 16) - int(a[k:k + 2], 16)) * f):02x}"
+                           for k in (0, 2, 4))
+    return out
+
+
+def read_shapes(svg: str, lenient: bool = False, flat: Optional[str] = None, mids: bool = False) -> dict:
     """Plain filled paths in paint order, as geometry.js's compute() takes them.
     lenient: for measuring (Fit), where gradients, transparency, masks and text don't matter.
     flat: when everything ends up this one color (like Solid), gradients and transparency
@@ -292,6 +333,7 @@ def read_shapes(svg: str, lenient: bool = False, flat: Optional[str] = None) -> 
         msg = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
         raise engine.RecolorError(f"This SVG could not be read for cut out, gaps or lines: {msg[:200]}")
     shapes = []
+    middles = _middles(pico.svg_root) if mids else {}
     stand: dict = {}  # flat: each gradient a color of its own (one the SVG doesn't use), as in geometry.js
     used = set()
     if flat:
@@ -319,14 +361,19 @@ def read_shapes(svg: str, lenient: bool = False, flat: Optional[str] = None) -> 
             if s.d:
                 shapes.append({"d": s.d, "rule": s.fill_rule or "nonzero", "color": "000000"})
             continue
+        if fill.startswith("url(") and mids:
+            m = re.match(r"url\(\s*[\"']?#([^\"')]+)", fill)
+            if not m or m.group(1) not in middles:
+                continue
+            fill = "#" + middles[m.group(1)]
         if fill.startswith("url(") and flat:
             fill = stand_in(re.sub(r"\s+", "", fill))
         if fill.startswith("url("):
             raise engine.RecolorError("Cut out, gaps and lines work with flat colors, and this SVG uses gradients or patterns.")
         alpha = min(_alpha(getattr(s, "opacity", None)), _alpha(getattr(s, "fill_opacity", None)))
-        if flat and alpha < 0.5:
+        if (flat or mids) and alpha < 0.5:
             continue  # one color: mostly see-through (shadows, glows) goes, the rest counts as solid
-        if not flat and alpha < 1:
+        if not flat and not mids and alpha < 1:
             raise engine.RecolorError("Cut out, gaps and lines don't support semi-transparent colors yet.")
         if fill.lower() == "currentcolor":
             fill = "#000000"  # what a browser shows for it (the default text color)
@@ -418,6 +465,19 @@ def fit_place(svg_edited: str, canvas, pad: float, deadline: Optional[float] = N
     if s <= 0:
         raise engine.RecolorError("The padding leaves no room on this canvas.")
     return ((W - s * bw) / 2 - s * (bx - x0), (H - s * bh) / 2 - s * (by - y0), s)
+
+
+def prominent_color(svg: str) -> str:
+    """The most prominent color (hex, no #): the one seen most, as the editor's color "Auto"."""
+    norm = engine.normalize_svg(svg)
+    try:
+        found = js("SvgGeometry.prominent(args[0])", read_shapes(norm, mids=True), deadline=time.monotonic() + TIME_LIMIT)
+    except engine.RecolorError:
+        found = None
+    if not found:  # nothing to measure: the most used color
+        counts = engine.extract_palette(norm)
+        found = max(counts, key=counts.get) if counts else "000000"
+    return found
 
 
 # --------------------------------------------------------------------------

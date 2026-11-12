@@ -57,7 +57,9 @@ Base URL: {base}
 ## Parameters
 
 - `color`: `ff0066`, `#ff0066` (encode `#` as `%23` in URLs), `f06`, `255,0,102`,
-  `rgb(255 0 102)`, `hsl(330 100% 50%)`, or a CSS name like `tomato`. Default `ff0066`.
+  `rgb(255 0 102)`, `hsl(330 100% 50%)`, or a CSS name like `tomato`. Default `ff0066`. `auto` takes the SVG's
+  most prominent color (the one seen most; shades of one color count together), each file of a batch its own.
+  The result's `color` (with `format=json`) says which. For devicon icons: what their wiki asks for.
 - `mode`: one of {", ".join(f"`{k}`" for k in engine.MODES)}. Default `{engine.DEFAULT_MODE}`.
 - `hue`: rotate hue, -360..360 degrees. `saturation`, `lightness`: -100..100 points. Applied after the mode.
 - `format`: `svg` (default) or `json`. `download`: `true` to get an attachment.
@@ -111,7 +113,7 @@ async def llms_txt(request: Request):
 
 
 MCP_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
-_COLOR_SCHEMA = {"type": "string", "description": "Target color: hex (ff0066, #f06), '255,0,102', rgb()/hsl() or a CSS name. Ignored by grayscale/adjust.", "default": "ff0066"}
+_COLOR_SCHEMA = {"type": "string", "description": "Target color: hex (ff0066, #f06), '255,0,102', rgb()/hsl() or a CSS name; 'auto' = the SVG's most prominent color. Ignored by grayscale/adjust.", "default": "ff0066"}
 _SOURCE_PROPS = {
     "svg": {"type": "string", "description": "SVG markup. Give this or `url`."},
     "url": {"type": "string", "description": "Public http(s) link to an SVG. Give this or `svg`."},
@@ -201,7 +203,7 @@ async def _mcp_call(name: str, args: dict) -> dict:
                            **{k: args.get(k) for k in EXTRA_FIELDS})
             svg_text, src_name = await _mcp_source(args)
             result = await run(svg_text, opts)
-            data = {"filename": output_name(safe_stem(src_name), opts), "palette": result.palette(), "svg": result.svg}
+            data = {"filename": output_name(safe_stem(src_name), opts, result), "palette": result.palette(), "svg": result.svg}
             summary = ", ".join(f"{p['from']}→{p['to']}" for p in data["palette"][:20])
             return {
                 "content": [

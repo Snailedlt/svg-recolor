@@ -59,7 +59,7 @@
     // every element: paper.js reads attributes, not <style> rules or classes.
     // flat: when everything ends up one color (like Solid), gradients and transparency don't
     // matter: paints become that color and partial transparency counts as solid.
-    function prepare(svgText, lenient, flat) {
+    function prepare(svgText, lenient, flat, mids) {
         const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
         const svg = doc.documentElement;
         if (svg.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) throw new GeometryError('This SVG could not be read.');
@@ -98,6 +98,27 @@
             // here, one the SVG doesn't use. compute() paints everything the one color at the end.
             const stand = new Map();
             let standIn = null;
+            // mids (for the most prominent color): a gradient counts as the color at its middle.
+            const hex = (v) => { const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(v); return m ? m.slice(1).map((n) => (+n).toString(16).padStart(2, '0')).join('') : null; };
+            const middleOf = (v) => {
+                const m = /url\(\s*["']?#([^"')]+)/.exec(v);
+                let el = m ? live.querySelector('[id="' + m[1].replace(/"/g, '') + '"]') : null;
+                for (let hops = 0; el && !el.querySelector('stop') && hops < 8; hops++) {
+                    const ref = /#(.+)$/.exec(el.getAttribute('href') || el.getAttribute('xlink:href') || '');
+                    el = ref ? live.querySelector('[id="' + ref[1].replace(/"/g, '') + '"]') : null;
+                }
+                const stops = el ? [...el.querySelectorAll('stop')].map((s) => {
+                    const o = String(s.getAttribute('offset') || '0').trim();
+                    return { at: Math.min(1, Math.max(0, o.endsWith('%') ? parseFloat(o) / 100 : parseFloat(o) || 0)), hex: hex(getComputedStyle(s).stopColor) };
+                }).filter((s) => s.hex) : [];
+                if (!stops.length) return 'none';
+                for (let i = 1; i < stops.length; i++) stops[i].at = Math.max(stops[i].at, stops[i - 1].at);
+                const i = stops.findIndex((s) => s.at >= 0.5);
+                if (i <= 0) return '#' + stops[i === 0 ? 0 : stops.length - 1].hex;
+                const a = stops[i - 1], b = stops[i];
+                const f = b.at === a.at ? 0 : (0.5 - a.at) / (b.at - a.at);
+                return '#' + [0, 2, 4].map((k) => { const x = parseInt(a.hex.slice(k, k + 2), 16), y = parseInt(b.hex.slice(k, k + 2), 16); return Math.round(x + (y - x) * f).toString(16).padStart(2, '0'); }).join('');
+            };
             if (flat) {
                 const used = new Set();
                 for (const el of all) {
@@ -121,14 +142,15 @@
                     el.setAttribute('display', 'none');
                     continue;
                 }
-                if (!lenient && !flat && el.matches('path, rect, circle, ellipse, line, polyline, polygon') && /url\(/.test(cs.fill + cs.stroke)) {
+                if (!lenient && !flat && !mids && el.matches('path, rect, circle, ellipse, line, polyline, polygon') && /url\(/.test(cs.fill + cs.stroke)) {
                     throw new GeometryError('Cut out, gaps and lines work with flat colors, and this SVG uses gradients or patterns.');
                 }
                 for (const p of props) {
                     let v = p === 'stroke-width' ? String(parseFloat(cs.strokeWidth) || 0) : cs.getPropertyValue(p);
+                    if (mids && (p === 'fill' || p === 'stroke') && /url\(/.test(v)) v = middleOf(v);
                     if (flat && (p === 'fill' || p === 'stroke') && /url\(/.test(v)) v = standIn(v.replace(/\s+/g, ''));
                     // One color: mostly see-through (shadows, glows) goes, the rest counts as solid.
-                    if (flat && /opacity$/.test(p)) v = parseFloat(v) < 0.5 ? '0' : '1';
+                    if ((flat || mids) && /opacity$/.test(p)) v = parseFloat(v) < 0.5 ? '0' : '1';
                     el.setAttribute(p, v);
                 }
                 el.removeAttribute('style');
@@ -200,8 +222,8 @@
     // Reading the SVG needs the page (DOM, computed styles); the heavy part (boolean
     // operations and offsets) runs in a worker when it can, so the page never freezes,
     // and a newer request stops an older one right away.
-    function readShapes(svgText, flat) {
-        const live = prepare(svgText, false, flat);
+    function readShapes(svgText, flat, mids) {
+        const live = prepare(svgText, false, flat, mids);
         const scope = new paper.PaperScope();
         scope.setup(document.createElement('canvas'));
         try {
@@ -646,5 +668,47 @@
         }
     }
 
-    global.SvgGeometry = { cutOut, bounds, compute, boundsOfShapes, GeometryError, expandArcFlags };
+    // The most prominent color: the one seen most, sampled on a grid over the drawing (each
+    // point takes the color of the topmost shape there; a gradient counts as its middle color).
+    // Near-white colors only count when there's nothing else. As in server/shapes.py.
+    function prominent(input) {
+        const scope = new paper.PaperScope();
+        scope.setup(new paper.Size(1, 1));
+        try {
+            const shapes = input.shapes.map(({ d, rule, color }) => ({ path: new scope.CompoundPath({ pathData: d, fillRule: rule, insert: false }), color }));
+            if (!shapes.length) return null;
+            const box = shapes.map((s) => s.path.bounds).reduce((a, b) => a.unite(b));
+            const N = 48, seen = new Map();
+            for (let i = 0; i < N; i++) {
+                for (let j = 0; j < N; j++) {
+                    const pt = new scope.Point(box.x + (box.width * (i + 0.5)) / N, box.y + (box.height * (j + 0.5)) / N);
+                    for (let k = shapes.length - 1; k >= 0; k--) {
+                        const { path, color } = shapes[k];
+                        if (path.bounds.contains(pt) && path.contains(pt)) { seen.set(color, (seen.get(color) || 0) + 1); break; }
+                    }
+                }
+            }
+            const light = (c) => [0, 2, 4].every((i) => parseInt(c.slice(i, i + 2), 16) >= 0xe0);
+            const rgb = (c) => [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16));
+            let pool = [...seen].filter(([c]) => !light(c));
+            if (!pool.length) pool = [...seen];
+            if (!pool.length) return null;
+            // Shades of one color (a logo drawn in several blues) count together: each color scores
+            // what's seen of it and of the colors close to it; the best scoring color wins.
+            const near = (a, b) => { const [x, y] = [rgb(a), rgb(b)]; return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) <= 80; };
+            // Grays (outlines, text, window frames) count a third: a logo's color is rarely its gray.
+            const gray = (c) => { const x = rgb(c); return Math.max(...x) - Math.min(...x) < 40; };
+            const score = (c) => pool.reduce((sum, [d, n]) => sum + (near(c, d) ? n : 0), 0) * (gray(c) ? 1 / 3 : 1);
+            pool.sort((a, b) => score(b[0]) - score(a[0]) || b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+            return pool[0][0];
+        } finally {
+            scope.project.remove();
+        }
+    }
+    function prominentColor(svgText) {
+        if (!paper) throw new GeometryError('The geometry library did not load.');
+        return prominent(readShapes(svgText, null, true));
+    }
+
+    global.SvgGeometry = { cutOut, bounds, compute, boundsOfShapes, prominent, prominentColor, GeometryError, expandArcFlags };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -826,6 +826,27 @@ test('light colors become holes: white parts stay see-through in one color', asy
     assert.deepEqual(problems, []);
 });
 
+test('color Auto: each SVG its most prominent color, until you pick one', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#ffffff"/>'
+        + '<rect width="30" height="40" fill="#a4c439"/><rect x="30" width="10" height="40" fill="#3ddc84"/></svg>');
+    await page.click('.style[data-mode="solid"]');
+    await page.click('#auto-color');
+    await page.waitForURL(/color=auto/);
+    await page.locator('#status-text', { hasText: /^Solid #A4C439/ }).waitFor();
+    assert.equal(await page.inputValue('#hex-input'), 'A4C439');
+    assert.equal(await page.getAttribute('#auto-color', 'aria-pressed'), 'true');
+    // Another SVG: its own color.
+    await page.click('#change-file');
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#019bc6"/></svg>');
+    await page.locator('#status-text', { hasText: /^Solid #019BC6/ }).waitFor();
+    // Picking a color yourself ends Auto.
+    await page.fill('#hex-input', '123456');
+    await page.waitForURL(/color=123456/);
+    assert.equal(await page.getAttribute('#auto-color', 'aria-pressed'), 'false');
+    assert.deepEqual(problems, []);
+});
+
 test('cut out explains what it can\'t do instead of guessing', async () => {
     const { page } = await open();
     await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#f00"/></linearGradient></defs>'

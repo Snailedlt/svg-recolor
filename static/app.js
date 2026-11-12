@@ -63,6 +63,7 @@
         svgo: false, // optimize the result with SVGO
         recipe: null, // { name, params }: the recipe in use, shown at the top
         holes: false, // light (near-white) colors become holes, unless edited
+        colorAuto: false, // the color is each SVG's most prominent one (state.color holds it)
         canvas: null, // [w, h] of a new viewBox (null = the SVG's own)
         batch: null, // [{ name, text, size, failed }]: several SVGs with the same settings
         fit: null, // auto Fit: padding (each SVG is fitted to the canvas), or null
@@ -244,10 +245,10 @@
     // ------------------------------------------------------------------
     // Settings: mode, color, fine-tune
     // ------------------------------------------------------------------
-    function settingsParams(mode) {
+    function settingsParams(mode, color = state.color) {
         mode = mode || state.mode;
         const q = new URLSearchParams();
-        if (MODES[mode].color) q.set('color', state.color.slice(1).toLowerCase());
+        if (MODES[mode].color) q.set('color', color.slice(1).toLowerCase());
         q.set('mode', mode);
         for (const k of ['hue', 'saturation', 'lightness']) if (state.adj[k]) q.set(k, state.adj[k]);
         return q;
@@ -867,6 +868,7 @@
         $('presets').appendChild(b);
     });
     function setColor(hex, user) {
+        if (user) { state.colorAuto = false; syncAutoColor(); }
         state.color = hex;
         $('color-input').value = hex.toLowerCase();
         if (document.activeElement !== hexInput) hexInput.value = hex.slice(1);
@@ -876,6 +878,13 @@
         if (user) settingsChanged();
     }
     $('color-input').addEventListener('input', (e) => setColor(e.target.value.toUpperCase(), true));
+    function syncAutoColor() { $('auto-color').setAttribute('aria-pressed', String(state.colorAuto)); }
+    $('auto-color').addEventListener('click', () => {
+        state.colorAuto = !state.colorAuto;
+        syncAutoColor();
+        if (state.colorAuto && !MODES[state.mode].color) setMode('solid', false);
+        settingsChanged();
+    });
     // The big swatch opens a popover: presets, recent colors and the full picker.
     const colorPop = $('color-pop');
     function setColorPop(open) {
@@ -1028,6 +1037,8 @@
         $('svgo-toggle').checked = false;
         state.holes = false;
         $('holes-toggle').checked = false;
+        state.colorAuto = false;
+        syncAutoColor();
         lineInput.value = 0;
         $('line-inner').checked = true;
         state.keep.clear();
@@ -1274,7 +1285,8 @@
     // One SVG through the same steps as the preview, with the current settings.
     async function renderDoc(doc) {
         const colors = doc.palette.map((p) => p[0]);
-        const mapping = colors.length ? await mappingFor(state.mode, colors) : {};
+        const color = state.colorAuto && MODES[state.mode].color ? await autoColorOf(doc) : state.color;
+        const mapping = colors.length ? await mappingFor(state.mode, colors, color) : {};
         let place = null; // a placement set by hand belongs to the SVG it was made on
         if (state.fit !== null) place = await fitPlacement(doc, state.fit, 0);
         else if (doc === state.doc) place = state.place;
@@ -1521,19 +1533,19 @@
     // adjustments, so the preview and all six thumbnails cost a single call (and
     // identical calls are CDN cache hits). Identical in-flight requests are shared.
     const inflight = new Map();
-    function sharedParams() {
-        const q = settingsParams('tint'); // color + adjustments
+    function sharedParams(color) {
+        const q = settingsParams('tint', color); // color + adjustments
         q.delete('mode');
         return q;
     }
-    async function fetchAllModes(colors) {
+    async function fetchAllModes(colors, color) {
         const missing = MODE_KEYS.filter((m) => {
-            const known = mapCache.get(settingsParams(m).toString());
+            const known = mapCache.get(settingsParams(m, color).toString());
             return !known || colors.some((c) => !(c in known));
         });
         if (!missing.length || !colors.length) return;
         const sorted = [...new Set(colors)].sort();
-        const shared = sharedParams();
+        const shared = sharedParams(color);
         const key = shared.toString() + '|' + sorted.join(',');
         if (!inflight.has(key)) {
             inflight.set(key, (async () => {
@@ -1569,9 +1581,29 @@
         }
         while (mapCache.size > 300) mapCache.delete(mapCache.keys().next().value);
     }
-    async function mappingFor(mode, colors) {
-        await fetchAllModes(colors);
-        return mapCache.get(settingsParams(mode).toString()) || {};
+    async function mappingFor(mode, colors, color = state.color) {
+        await fetchAllModes(colors, color);
+        return mapCache.get(settingsParams(mode, color).toString()) || {};
+    }
+    // Color "Auto": each SVG's most prominent color, the one seen most (measured with the
+    // geometry library, as the API's color=auto). Falls back to its most used color.
+    async function autoColorOf(doc) {
+        if (doc.auto) return doc.auto;
+        let hex = null;
+        try { hex = (await loadGeometry()).prominentColor(doc.norm); } catch (err) { /* text, masks: count instead */ }
+        if (!hex) {
+            const light = (c) => [0, 2, 4].every((i) => parseInt(c.slice(i, i + 2), 16) >= 0xe0);
+            const ranked = [...doc.palette].sort((a, b) => b[1] - a[1]);
+            hex = (ranked.find(([c]) => !light(c)) || ranked[0] || ['000000'])[0];
+        }
+        doc.auto = '#' + hex.toUpperCase();
+        return doc.auto;
+    }
+    // Settings as the page address, a recipe or the API take them: "auto" stays auto.
+    function publicParams() {
+        const q = editParams(settingsParams());
+        if (state.colorAuto && q.has('color')) q.set('color', 'auto');
+        return q;
     }
     // The page ships the sample image's colors for the default settings, so the
     // thumbnails on first load need no request.
@@ -1648,6 +1680,11 @@
         setStatus('work', 'Recoloring…');
         try {
             const colors = doc.palette.map((p) => p[0]);
+            if (state.colorAuto && MODES[state.mode].color) {
+                const auto = await autoColorOf(doc);
+                if (id !== reqId || doc !== state.doc) return;
+                if (auto !== state.color) { setColor(auto, false); scheduleThumbs(0); }
+            }
             const mapping = colors.length ? await mappingFor(state.mode, colors) : {};
             if (id !== reqId || doc !== state.doc) return;
             const parts = editedSvg(doc, mapping);
@@ -2122,7 +2159,7 @@
     // ------------------------------------------------------------------
     function snippetContext() {
         // The API takes the same names as the page address (it runs the same geometry and SVGO).
-        const q = editParams(settingsParams());
+        const q = publicParams();
         if (q.get('optimize')) {
             q.set('optimize', 'true');
             if (svgoSettings.precision !== 3) q.set('precision', String(svgoSettings.precision));
@@ -2258,13 +2295,13 @@
     // single colors (they belong to one SVG's colors). Saved in this browser; a recipe's
     // link (the same parameters as the page address) works anywhere.
     const PER_SVG = ['replace', 'hide', 'remove', 'cut', 'keep', 'place'];
-    const recipeParams = () => { const q = editParams(settingsParams()); PER_SVG.forEach((k) => q.delete(k)); return q; };
+    const recipeParams = () => { const q = publicParams(); PER_SVG.forEach((k) => q.delete(k)); return q; };
     let recipes = store.get('recipes', []);
     if (!Array.isArray(recipes)) recipes = [];
     function describeRecipe(params) {
         const q = new URLSearchParams(params);
         const parts = [MODES[q.get('mode')] ? MODES[q.get('mode')].label : 'Colorize'];
-        if (q.get('color') && MODES[q.get('mode') || 'colorize'] && MODES[q.get('mode') || 'colorize'].color) parts[0] += ' #' + q.get('color').toUpperCase();
+        if (q.get('color') && MODES[q.get('mode') || 'colorize'] && MODES[q.get('mode') || 'colorize'].color) parts[0] += q.get('color') === 'auto' ? ' · auto color' : ' #' + q.get('color').toUpperCase();
         const unit = q.get('unit') === 'pct' ? ' %' : ' px';
         if (q.get('gap')) parts.push('gaps ' + q.get('gap') + unit);
         if (q.get('line')) parts.push('line ' + q.get('line') + unit);
@@ -2378,7 +2415,7 @@
     // Undo / redo: snapshots of the settings (the same parameters as the page address).
     const undoStack = [];
     let undoAt = -1, restoring = false;
-    const snapshot = () => editParams(settingsParams()).toString();
+    const snapshot = () => publicParams().toString();
     function recordHistory() {
         if (restoring) return;
         const snap = snapshot();
@@ -2408,7 +2445,7 @@
     $('redo-btn').addEventListener('click', () => stepHistory(1));
 
     function shareParams() {
-        const q = editParams(settingsParams());
+        const q = publicParams();
         if (state.doc && state.doc.fromUrl) q.set('url', state.doc.fromUrl);
         if (recipeIntact()) q.set('recipe', state.recipe.name);
         return q;
@@ -2519,7 +2556,10 @@
     // Every setting from page-address parameters (start-up, undo/redo, recipes). What the
     // parameters don't mention goes back to its default.
     function applySettings(q) {
-        setColor(normalizeHex(q.get('color')) || '#FF0066', false);
+        state.colorAuto = q.get('color') === 'auto';
+        if (!state.colorAuto) setColor(normalizeHex(q.get('color')) || '#FF0066', false);
+        else if (state.doc) autoColorOf(state.doc).then((c) => { if (state.colorAuto) setColor(c, false); });
+        syncAutoColor();
         ADJ.forEach(([k, lim]) => {
             const v = parseInt(q.get(k), 10);
             $('adj-' + k).value = Number.isNaN(v) ? 0 : Math.max(-lim, Math.min(lim, v));

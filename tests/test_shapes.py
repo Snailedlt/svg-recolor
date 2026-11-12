@@ -224,3 +224,21 @@ def test_outlines_without_z_get_their_last_edge(client):
     assert res.status_code == 200, res.text
     (_, d), = paths(res.text)
     assert d.count("M") + d.count("m") == 2, "a closed ring (outline and hole), not a U: " + d
+
+
+def test_color_auto_takes_the_most_prominent_color(client):
+    # Three shades of blue (each smaller than the gray) count together; white doesn't count.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#ffffff"/>'
+           '<rect width="18" height="40" fill="#3a4d54"/><rect x="18" width="8" height="40" fill="#00acd3"/>'
+           '<rect x="26" width="7" height="40" fill="#019bc6"/><rect x="33" width="7" height="40" fill="#23c2ee"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=auto&format=json", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["color"].lower() in ("#00acd3", "#019bc6", "#23c2ee"), data["color"]
+    assert data["filename"].endswith(data["color"][1:].lower() + ".svg")
+    # A gradient counts as its middle color.
+    grad = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g">'
+            '<stop stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/></linearGradient></defs>'
+            '<rect width="10" height="10" fill="url(#g)"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=auto&format=json", content=grad, headers=SVG_CT)
+    assert res.status_code == 200 and res.json()["color"].lower() == "#800080", res.text

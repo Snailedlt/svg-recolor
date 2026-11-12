@@ -50,7 +50,7 @@ On top of any mode, single colors (the original ones, as listed by `/api/palette
 | Hide | `hide=ffffff,...` | The color becomes `none` (fill/stroke) or `transparent` (gradient stops); the shapes stay in the file. |
 | Remove | `remove=ffffff,...` | Shapes painted with the color are deleted, including ones that inherit it from a group or a CSS class. A shape keeps its fill or stroke when only the other is removed. Shapes inside `<defs>`, `<clipPath>`, `<mask>` and similar are only hidden, never deleted. |
 
-A one-color icon, like a devicon `plain` version, is `mode=solid&color=000000&holes=light` (Solid, and white or
+A one-color icon, like a devicon `plain` version, is `mode=solid&color=auto&holes=light` (Solid, and white or
 near-white parts become holes; in the editor, **Light colors become holes** under Color). `remove=ffffff` instead
 just drops a white background.
 
@@ -93,6 +93,10 @@ Before recoloring, colors are normalized so the tools can handle them: CSS color
 (or `currentColor`) get an explicit black so they recolor too. `url(#id)` and `href="#id"` references are left alone.
 
 Colors can be given as `ff0066`, `#ff0066`, `f06`, `255,0,102`, `rgb(255 0 102)`, `hsl(330 100% 50%)` or a CSS name like `tomato`.
+`color=auto` (the **Auto** button next to the color) takes each SVG's most prominent color: the one seen most, with
+shades of one color counted together (a gradient counts as its middle color, near-white only when there's nothing
+else). Recipes and batches with Auto give every SVG its own. For devicon icons, it's what their wiki asks for: "the
+most prominent color found in the original logo".
 
 ### API
 

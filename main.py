@@ -129,7 +129,8 @@ ModeParam = Annotated[
 ColorParam = Annotated[
     str,
     Query(
-        description="Target color: hex (ff0066, #ff0066, f06), RGB (255,0,102), rgb()/hsl() or a CSS name.",
+        description="Target color: hex (ff0066, #ff0066, f06), RGB (255,0,102), rgb()/hsl() or a CSS name. `auto`: the SVG's "
+                    "most prominent color (the one seen most; shades of one color count together).",
         examples=["ff0066"],
     ),
 ]
@@ -545,7 +546,7 @@ async def recolor_from_url(
     opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, **extra)
     svg_text, name = await fetch_svg(url)
     result = await run(svg_text, opts)
-    return respond(result, opts, output_name(safe_stem(name), opts), format, download, cache=True)
+    return respond(result, opts, output_name(safe_stem(name), opts, result), format, download, cache=True)
 
 
 @app.post(
@@ -588,7 +589,7 @@ async def recolor_upload(
                    params["replace"], params["hide"], params["remove"], **{k: params.get(k) for k in EXTRA_FIELDS})
     result = await run(svg_text, opts)
     download_flag = str(params["download"]).lower() in ("1", "true", "yes")
-    return respond(result, opts, output_name(safe_stem(name), opts), params["format"], download_flag)
+    return respond(result, opts, output_name(safe_stem(name), opts, result), params["format"], download_flag)
 
 
 def _parse_colors(raw) -> list[str]:
@@ -699,7 +700,7 @@ async def recolor_batch(
             except engine.RecolorError as e:
                 raise HTTPException(400, f"{f.filename}: {e}")
             result = await run(svg_text, opts)
-            out = output_name(safe_stem(f.filename), opts)
+            out = output_name(safe_stem(f.filename), opts, result)
             base, n = out, 2
             while out in used:
                 out = base.replace(".svg", f"_{n}.svg")
@@ -783,7 +784,7 @@ async def colorize(
     opts = options(mode, color, 0, 0, 0)
     svg_text = decode(await icon.read())
     result = await run(svg_text, opts)
-    return respond(result, opts, output_name(safe_stem(icon.filename), opts), "svg", True)
+    return respond(result, opts, output_name(safe_stem(icon.filename), opts, result), "svg", True)
 
 
 if __name__ == "__main__":

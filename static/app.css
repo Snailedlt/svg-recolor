@@ -536,6 +536,9 @@ kbd {
 .line-inner-row { margin: -2px 0 0; }
 .unit-row { margin: 2px 0 0; }
 .holes-row { margin-top: 10px; }
+.auto-color { flex: none; align-self: stretch; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-muted); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.auto-color:hover { color: var(--text); border-color: var(--border-strong); }
+.auto-color[aria-pressed="true"] { color: var(--text); border-color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 14%, transparent); }
 .holes-row .field-hint { display: block; margin: 1px 0 0; font-size: 0.75rem; }
 .text-font-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.78rem; color: var(--text-muted); }
 .text-font-row .link-btn { white-space: nowrap; }

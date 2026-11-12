@@ -392,3 +392,13 @@ def test_geometry_bundle_is_served_hashed_and_cached(client):
     res = client.get(url)
     assert res.status_code == 200 and "immutable" in res.headers["cache-control"]
     assert "SvgGeometry" in res.text and "Paper.js" in res.text and "PaperOffset" in res.text
+
+
+def test_batch_with_color_auto_gives_each_file_its_own_color(client):
+    red = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#e44d26"/></svg>'
+    blue = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#019bc6"/></svg>'
+    files = [("files", ("a.svg", red, "image/svg+xml")), ("files", ("b.svg", blue, "image/svg+xml"))]
+    res = client.post("/api/recolor/batch?mode=solid&color=auto", files=files)
+    assert res.status_code == 200, res.text
+    assert sorted(zipfile.ZipFile(io.BytesIO(res.content)).namelist()) == [
+        "a_recolored_solid_e44d26.svg", "b_recolored_solid_019bc6.svg"]
