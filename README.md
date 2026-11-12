@@ -66,6 +66,11 @@ Three more edits need path geometry, so they run in the browser and are only in 
   along the edges is kept: inside the outer edge, and centered on the boundaries between colors (switch off **Lines
   between colors** for just the outline). In the color panel, **Keep filled** keeps a color solid, for small details.
 
+**Canvas** (step 4, editor only): set the canvas size (the viewBox), the drawing's size and position, or
+**Fit to canvas** with a padding: the visible drawing (strokes included, invisible colors not) is scaled and centered
+so it ends exactly that far from every edge. For devicon: canvas 128 × 128, padding 1, Fit. The drawing is wrapped in
+one `<g transform>`, so every other feature works on top.
+
 All three handle flat colors and plain shapes; text, embedded images, gradients, transparency and `<use>` get a clear
 message instead of a guess.
 

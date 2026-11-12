@@ -496,6 +496,14 @@ kbd {
 .color-edit input[type="checkbox"] { accent-color: var(--pick); margin: 0; }
 .line-inner-row { margin: -2px 0 0; }
 .unit-row { margin: 4px 0 2px; }
+.canvas-grid { display: grid; grid-template-columns: 1fr 12px 1fr 1.4fr; gap: 6px; align-items: center; margin-top: 10px; }
+.canvas-grid .times { text-align: center; color: var(--text-faint); font-size: 0.8rem; }
+.num-field { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 0 8px; height: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font-size: 0.74rem; color: var(--text-faint); }
+.num-field:focus-within { border-color: var(--pick); box-shadow: 0 0 0 3px color-mix(in srgb, var(--pick) 25%, transparent); }
+.num-field input { flex: 1; min-width: 0; width: 100%; border: 0; background: none; outline: none; font-family: var(--mono); font-size: 0.8rem; color: var(--text); padding: 0; -moz-appearance: textfield; }
+.num-field input::-webkit-inner-spin-button { opacity: .5; }
+.num-field i { font-style: normal; }
+.canvas-actions { display: flex; gap: 8px; margin-top: 10px; }
 .unit-row .segmented button { padding: 3px 10px; font-size: 0.76rem; }
 .color-edit-tip { margin: 8px 2px 0; font-size: 0.74rem; color: var(--text-faint); }
 

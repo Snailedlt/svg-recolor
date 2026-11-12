@@ -333,7 +333,7 @@ test('cut out: a color becomes a real gap, and the result is one path per color'
         + '<rect x="100" y="50" width="20" height="20" fill="#5e97f6"/><rect x="118" y="50" width="4" height="20" fill="#dce0df"/></svg>', { cut: ['dce0df'] }));
     assert.match(shifted, /viewBox="100 50 40 20"/);
     assert.match(shifted, /d="M100,70v-20h18[lv]/, "the cut leaves 100..118 at its own coordinates");
-    assert.match(await page.textContent('#api-hint'), /Cut out, gaps and lines only work here in the editor/);
+    assert.match(await page.textContent('#api-hint'), /Cut out, gaps, lines and the canvas only work here in the editor/);
     assert.deepEqual(problems, []);
 });
 
@@ -437,7 +437,7 @@ test('line version: only the edges stay, colors can stay filled', async () => {
     await page.click('#line-inner-row .switch');
     await page.waitForURL(/lines=outer/);
     assert.deepEqual(await hitsAt(points), [true, false, false, false, false]);
-    assert.match(await (async () => { await page.click('#tab-btn-api'); return page.textContent('#api-hint'); })(), /lines only work here in the editor/);
+    assert.match(await (async () => { await page.click('#tab-btn-api'); return page.textContent('#api-hint'); })(), /the canvas only work here in the editor/);
     assert.ok(!(await page.textContent('#snippet')).includes('line='), 'API snippets leave lines out');
     assert.deepEqual(problems, []);
 });
@@ -455,6 +455,36 @@ test('the SVG\'s own colors (and gradient middles) can be picked as the color', 
     await page.click('#logo-colors button[data-hex="#800080"]');
     assert.equal(await page.inputValue('#hex-input'), '800080');
     assert.equal(await page.getAttribute('#logo-colors button[data-hex="#800080"]', 'aria-pressed'), 'true');
+    assert.deepEqual(problems, []);
+});
+
+test('canvas: a new viewBox, and Fit with padding (strokes count)', async () => {
+    const { page, problems } = await open();
+    // A 100 x 50 drawing with a 20 x 20 square at 10,10 and a 2-wide stroke: visible box 9,9 22 x 22.
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50">'
+        + '<rect x="10" y="10" width="20" height="20" fill="#5e97f6" stroke="#0f766e" stroke-width="2"/></svg>');
+    assert.equal(await page.inputValue('#canvas-w'), '100');
+    assert.equal(await page.inputValue('#canvas-h'), '50');
+    await page.fill('#canvas-w', '128');
+    await page.press('#canvas-w', 'Enter');
+    await page.fill('#canvas-h', '128');
+    await page.press('#canvas-h', 'Enter');
+    await page.fill('#fit-pad', '1');
+    await page.click('#fit-btn');
+    await page.waitForURL(/canvas=128x128&place=-50\.545%2C-50\.545%2C5\.727/);
+    assert.equal(await page.inputValue('#place-s'), '572.727');
+    await page.click('#tab-btn-code');
+    await page.locator('#code-view', { hasText: 'matrix(' }).waitFor();
+    const code = await page.textContent('#code-view');
+    assert.match(code, /viewBox="0 0 128 128"/);
+    assert.match(code, /<g transform="matrix\(5\.727 0 0 5\.727 -50\.545 -50\.545\)">/);
+    // The API can't do this: the snippet leaves it out and says so.
+    await page.click('#tab-btn-api');
+    assert.match(await page.textContent('#api-hint'), /the canvas only work here in the editor/);
+    assert.ok(!(await page.textContent('#snippet')).includes('canvas='));
+    await page.click('#tab-btn-preview');
+    await page.click('#canvas-reset');
+    assert.equal(await page.inputValue('#canvas-w'), '100');
     assert.deepEqual(problems, []);
 });
 

@@ -57,7 +57,7 @@
 
     // Parse the SVG, drop anything active, and copy the computed fill/stroke onto
     // every element: paper.js reads attributes, not <style> rules or classes.
-    function prepare(svgText) {
+    function prepare(svgText, lenient) {
         const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
         const svg = doc.documentElement;
         if (svg.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) throw new GeometryError('This SVG could not be read.');
@@ -65,8 +65,8 @@
         for (const el of [svg, ...svg.querySelectorAll('*')]) {
             for (const a of [...el.attributes]) if (/^on/i.test(a.name)) el.removeAttribute(a.name);
         }
-        if (svg.querySelector('text')) throw new GeometryError('Cut out, gaps and lines work on shapes, and this SVG has text. Convert the text to paths first (in Inkscape: Path → Object to Path).');
-        if (svg.querySelector('image')) throw new GeometryError('Cut out, gaps and lines work on shapes, and this SVG has an embedded image.');
+        if (!lenient && svg.querySelector('text')) throw new GeometryError('Cut out, gaps and lines work on shapes, and this SVG has text. Convert the text to paths first (in Inkscape: Path → Object to Path).');
+        if (!lenient && svg.querySelector('image')) throw new GeometryError('Cut out, gaps and lines work on shapes, and this SVG has an embedded image.');
 
         // Measure computed styles in an invisible box on the page.
         const box = document.createElement('div');
@@ -83,7 +83,7 @@
                     el.setAttribute('display', 'none');
                     continue;
                 }
-                if (el.matches('path, rect, circle, ellipse, line, polyline, polygon') && /url\(/.test(cs.fill + cs.stroke)) {
+                if (!lenient && el.matches('path, rect, circle, ellipse, line, polyline, polygon') && /url\(/.test(cs.fill + cs.stroke)) {
                     throw new GeometryError('Cut out, gaps and lines work with flat colors, and this SVG uses gradients or patterns.');
                 }
                 for (const p of props) el.setAttribute(p, p === 'stroke-width' ? String(parseFloat(cs.strokeWidth) || 0) : cs.getPropertyValue(p));
@@ -342,5 +342,42 @@
         };
     }
 
-    global.SvgGeometry = { cutOut, GeometryError, expandArcFlags };
+    // The box around what's visible (strokes included, clipping respected), in the SVG's
+    // own coordinates: [x, y, width, height], or null for an empty drawing. For "Fit".
+    function bounds(svgText) {
+        if (!paper) throw new GeometryError('The geometry library did not load.');
+        const live = prepare(svgText, true);
+        const scope = new paper.PaperScope();
+        scope.setup(document.createElement('canvas'));
+        try {
+            if (live.getAttribute('viewBox')) { live.removeAttribute('width'); live.removeAttribute('height'); }
+            const root = scope.project.importSVG(live, { expandShapes: true, insert: true, applyMatrix: false });
+            const undo = root.matrix.inverted();
+            const globalRect = (rect, matrix) => {
+                const pts = [rect.topLeft, rect.topRight, rect.bottomLeft, rect.bottomRight].map((p) => undo.transform(matrix.transform(p)));
+                return new scope.Rectangle(pts[0], pts[3]).include(pts[1]).include(pts[2]);
+            };
+            let box = null;
+            for (const item of root.getItems({ recursive: true })) {
+                const drawn = item instanceof scope.PathItem || item instanceof scope.Shape || item instanceof scope.TextItem || item instanceof scope.Raster;
+                if (!drawn || item.clipMask || (item.parent instanceof scope.CompoundPath)) continue;
+                const painted = item instanceof scope.Raster || (item.fillColor && item.fillColor.alpha !== 0)
+                    || (item.strokeColor && item.strokeWidth > 0 && item.strokeColor.alpha !== 0);
+                if (!painted) continue;
+                let hidden = false;
+                let rect = globalRect(item.strokeBounds, item.parent.globalMatrix);
+                for (let a = item.parent; a && a !== root.parent; a = a.parent) {
+                    if (!a.visible || a.opacity === 0) { hidden = true; break; }
+                    if (a.clipped && a.children[0] && a.children[0] !== item) rect = rect.intersect(globalRect(a.children[0].bounds, a.globalMatrix));
+                }
+                if (hidden || !item.visible || item.opacity === 0 || rect.width <= 0 || rect.height <= 0) continue;
+                box = box ? box.unite(rect) : rect;
+            }
+            return box ? [box.x, box.y, box.width, box.height] : null;
+        } finally {
+            scope.project.remove();
+        }
+    }
+
+    global.SvgGeometry = { cutOut, bounds, GeometryError, expandArcFlags };
 })(typeof window !== 'undefined' ? window : globalThis);

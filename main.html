@@ -246,6 +246,28 @@
                                     <p class="field-hint gap-hint" id="line-hint">A line version: only the edges are kept. Click a color to keep it filled.</p>
                                 </div>
                             </section>
+
+                            <section class="step" aria-labelledby="canvas-title" id="canvas-step">
+                                <div class="step-head-row">
+                                    <h2 class="step-head" id="canvas-title"><span class="step-n">4</span>Canvas<span class="step-sub">size and placement</span></h2>
+                                    <button type="button" class="link-btn" id="canvas-reset" hidden>Reset</button>
+                                </div>
+                                <div class="canvas-grid">
+                                    <label class="num-field" title="Width of the canvas (the viewBox)"><span>W</span><input id="canvas-w" type="number" min="0.01" step="any" inputmode="decimal"></label>
+                                    <span class="times" aria-hidden="true">×</span>
+                                    <label class="num-field" title="Height of the canvas (the viewBox)"><span>H</span><input id="canvas-h" type="number" min="0.01" step="any" inputmode="decimal"></label>
+                                    <label class="num-field wide" title="Size of the drawing, in percent of its original size"><span>Size</span><input id="place-s" type="number" min="1" step="1" inputmode="decimal"><i>%</i></label>
+                                    <label class="num-field" title="Where the drawing's original top-left corner is, from the canvas's left edge"><span>X</span><input id="place-x" type="number" step="0.5" inputmode="decimal"></label>
+                                    <span class="times" aria-hidden="true"></span>
+                                    <label class="num-field" title="Where the drawing's original top-left corner is, from the canvas's top edge"><span>Y</span><input id="place-y" type="number" step="0.5" inputmode="decimal"></label>
+                                    <label class="num-field wide" title="Space to leave around the drawing when fitting it"><span>Padding</span><input id="fit-pad" type="number" min="0" step="0.5" value="0" inputmode="decimal"></label>
+                                </div>
+                                <div class="canvas-actions">
+                                    <button type="button" class="btn btn-ghost btn-sm" id="fit-btn" title="Scale and center the visible drawing to fill the canvas, minus the padding">Fit to canvas</button>
+                                    <button type="button" class="btn btn-ghost btn-sm" id="center-btn" title="Center the drawing on the canvas, keeping its size">Center</button>
+                                </div>
+                                <p class="field-hint" id="canvas-hint">The canvas is the viewBox. Fit scales the visible drawing (strokes included) to fill it, leaving the padding on every side.</p>
+                            </section>
                         </div>
 
                         <div class="controls-foot">

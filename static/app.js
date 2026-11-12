@@ -60,6 +60,8 @@
         gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
         line: 0, // line version: band width along the edges (same units); 0 = off
         unit: 'px', // gap and line sizes: 'px' (the SVG's own units) or '%' of the icon
+        canvas: null, // [w, h] of a new viewBox (null = the SVG's own)
+        place: null, // [x, y, scale]: where the original viewBox's top-left lands, and its scale (null = centered, 100 %)
         lineInner: true, // lines also between colors, not just around the whole shape
         keep: new Set(), // colors that stay filled in the line version
     };
@@ -239,6 +241,8 @@
         for (const k of ['replace', 'hide', 'remove', 'cut']) if (by[k].length) q.set(k, by[k].join(','));
         if (state.gap) q.set('gap', String(state.gap));
         if ((state.gap || state.line) && state.unit === '%') q.set('unit', 'pct');
+        if (state.canvas) q.set('canvas', state.canvas.map(fmt).join('x'));
+        if (state.place) q.set('place', state.place.map(fmt).join(','));
         if (state.line) {
             q.set('line', String(state.line));
             if (!state.lineInner) q.set('lines', 'outer');
@@ -256,6 +260,123 @@
         for (const op of ['hide', 'remove', 'cut']) for (const v of (q.get(op) || '').split(',')) { const c = hex(v); if (c) edits[c] = { op }; }
         return edits;
     }
+    // ------------------------------------------------------------------
+    // Canvas: a new viewBox size, and where the drawing sits on it. The drawing is wrapped
+    // in one <g transform>, so recoloring and the geometry steps work as before.
+    // ------------------------------------------------------------------
+    const fmt = (n) => String(+(+n).toFixed(3));
+    function rootTag(norm) { return (/<svg\b[^>]*>/i.exec(norm) || [''])[0]; }
+    // The SVG's own box: its viewBox, else its width and height, else 128 x 128.
+    function origBox(doc) {
+        const tag = doc ? rootTag(doc.norm) : '';
+        const vb = /\sviewBox\s*=\s*["']\s*([-\d.eE+]+)[\s,]+([-\d.eE+]+)[\s,]+([\d.eE+]+)[\s,]+([\d.eE+]+)/i.exec(tag);
+        if (vb && +vb[3] > 0 && +vb[4] > 0) return [+vb[1], +vb[2], +vb[3], +vb[4]];
+        const num = (name) => { const m = new RegExp('\\s' + name + '\\s*=\\s*["\']?\\s*([\\d.]+)(px)?["\'\\s>/]', 'i').exec(tag); return m ? +m[1] : 0; };
+        const w = num('width'), h = num('height');
+        return w > 0 && h > 0 ? [0, 0, w, h] : [0, 0, 128, 128];
+    }
+    function canvasSize(doc) { return state.canvas || origBox(doc).slice(2); }
+    function placement(doc) {
+        if (state.place) return state.place;
+        const [, , w0, h0] = origBox(doc);
+        const [W, H] = canvasSize(doc);
+        return [(W - w0) / 2, (H - h0) / 2, 1];
+    }
+    function placed(doc, norm) {
+        norm = norm || doc.norm;
+        if (!state.canvas && !state.place) return norm;
+        const tag = rootTag(norm);
+        const at = norm.indexOf(tag);
+        const end = norm.lastIndexOf('</svg');
+        if (!tag || end < at) return norm;
+        const [x0, y0, w0, h0] = origBox(doc);
+        const [W, H] = canvasSize(doc);
+        const [tx, ty, s] = placement(doc);
+        let open = tag.replace(/\sviewBox\s*=\s*("[^"]*"|'[^']*')/i, '');
+        // A width/height on the root keeps its scale: it grows with the canvas.
+        open = open.replace(/(\s(width|height)\s*=\s*["']?\s*)([\d.]+)/gi, (all, pre, name, v) => pre + fmt(+v * (/^w/i.test(name) ? W / w0 : H / h0)));
+        open = open.replace(/^<svg\b/i, '<svg viewBox="0 0 ' + fmt(W) + ' ' + fmt(H) + '"');
+        const g = '<g transform="matrix(' + [s, 0, 0, s, tx - s * x0, ty - s * y0].map(fmt).join(' ') + ')">';
+        return norm.slice(0, at) + open + g + norm.slice(at + tag.length, end) + '</g>' + norm.slice(end);
+    }
+    function syncCanvasUI() {
+        const doc = state.doc;
+        const [W, H] = canvasSize(doc);
+        const [tx, ty, s] = placement(doc);
+        const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = fmt(v); };
+        set('canvas-w', W);
+        set('canvas-h', H);
+        set('place-s', s * 100);
+        set('place-x', tx);
+        set('place-y', ty);
+        $('canvas-reset').hidden = !state.canvas && !state.place;
+    }
+    function canvasChanged() {
+        syncCanvasUI();
+        editsChanged();
+    }
+    function setCanvas(W, H) {
+        if (!(W > 0 && H > 0)) return;
+        const [W0, H0] = canvasSize(state.doc);
+        // Keep the drawing where it is relative to the middle of the canvas.
+        if (state.place) state.place = [state.place[0] + (W - W0) / 2, state.place[1] + (H - H0) / 2, state.place[2]];
+        const [, , w0, h0] = origBox(state.doc);
+        state.canvas = W === w0 && H === h0 && !state.place ? null : [W, H];
+        canvasChanged();
+    }
+    function setScale(s) {
+        if (!(s > 0)) return;
+        const [, , w0, h0] = origBox(state.doc);
+        const [tx, ty, s0] = placement(state.doc);
+        // Scale around the middle of the drawing.
+        const cx = tx + (s0 * w0) / 2, cy = ty + (s0 * h0) / 2;
+        state.place = [cx - (s * w0) / 2, cy - (s * h0) / 2, s];
+        if (!state.canvas) state.canvas = canvasSize(state.doc);
+        canvasChanged();
+    }
+    function setPosition(x, y) {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        state.place = [x, y, placement(state.doc)[2]];
+        if (!state.canvas) state.canvas = canvasSize(state.doc);
+        canvasChanged();
+    }
+    async function fitToCanvas(center) {
+        if (!state.doc) return showError('Add an SVG first: drop a file, paste one, or load a link.');
+        const doc = state.doc;
+        const [x0, y0] = origBox(doc);
+        const [W, H] = canvasSize(doc);
+        const pad = Math.max(0, parseFloat($('fit-pad').value) || 0);
+        let box;
+        try {
+            // Measure what's visible after the color edits (invisible and cut-out colors don't count).
+            const hidden = Object.entries(state.edits).filter(([, e]) => e.op !== 'replace').map(([c]) => c);
+            const Geo = await loadGeometry();
+            box = Geo.bounds(Engine.edit(doc.norm, [], hidden));
+        } catch (err) {
+            return showError(err.message);
+        }
+        if (doc !== state.doc) return;
+        if (!box) return showError('Nothing visible to fit.');
+        const [bx, by, bw, bh] = box;
+        const s = center ? placement(doc)[2] : Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh);
+        if (!(s > 0)) return showError('The padding leaves no room on this canvas.');
+        // Map the box's corner so the box is centered: s * (bx - x0) + tx = (W - s * bw) / 2.
+        state.place = [(W - s * bw) / 2 - s * (bx - x0), (H - s * bh) / 2 - s * (by - y0), s];
+        if (!state.canvas) state.canvas = [W, H];
+        canvasChanged();
+        toast(center ? 'Centered' : 'Fitted to ' + fmt(W) + ' × ' + fmt(H) + (pad ? ' with ' + fmt(pad) + ' padding' : ''));
+    }
+    const numVal = (id) => parseFloat($(id).value);
+    $('canvas-w').addEventListener('change', () => setCanvas(numVal('canvas-w'), canvasSize(state.doc)[1]));
+    $('canvas-h').addEventListener('change', () => setCanvas(canvasSize(state.doc)[0], numVal('canvas-h')));
+    $('place-s').addEventListener('change', () => setScale(numVal('place-s') / 100));
+    $('place-x').addEventListener('change', () => setPosition(numVal('place-x'), placement(state.doc)[1]));
+    $('place-y').addEventListener('change', () => setPosition(placement(state.doc)[0], numVal('place-y')));
+    $$('#canvas-step input').forEach((el) => el.addEventListener('blur', syncCanvasUI));
+    $('fit-btn').addEventListener('click', () => fitToCanvas(false));
+    $('center-btn').addEventListener('click', () => fitToCanvas(true));
+    $('canvas-reset').addEventListener('click', () => { state.canvas = null; state.place = null; canvasChanged(); });
+
     // The mapping with own colors applied, and the SVG with invisible colors applied.
     // Cut-out colors are left in `edited` for the geometry step (cutOutSvg); `svg` treats
     // them as invisible, which is what the quick style thumbnails show.
@@ -266,7 +387,7 @@
             if (e.op === 'replace') merged[c] = e.to.slice(1).toLowerCase();
             else ({ hide, remove, cut })[e.op].push(c);
         }
-        const edited = Engine.edit(doc.norm, hide, remove);
+        const edited = Engine.edit(placed(doc), hide, remove);
         const svg = cut.length ? Engine.apply(Engine.edit(edited, [], cut), merged) : Engine.apply(edited, merged);
         return { svg, merged, edited, cut };
     }
@@ -297,6 +418,7 @@
     // ranges follow the SVG's size, so a 24 px icon and a 1024 px logo both get useful steps.
     const unitText = (v) => (v ? +v.toFixed(2) + (state.unit === '%' ? ' %' : ' px') : 'Off');
     function docSize(doc) {
+        if (state.canvas) return Math.max(...state.canvas);
         const tag = doc && (/<svg\b[^>]*>/i.exec(doc.norm) || [''])[0];
         const vb = tag && /\sviewBox\s*=\s*["']\s*[-\d.eE+]+[\s,]+[-\d.eE+]+[\s,]+([\d.eE+]+)[\s,]+([\d.eE+]+)/i.exec(tag);
         if (vb) return Math.max(+vb[1], +vb[2]) || 128;
@@ -536,6 +658,9 @@
         ADJ.forEach(([k]) => { $('adj-' + k).value = 0; });
         $('adj-gap').value = 0;
         syncGap();
+        state.canvas = null;
+        state.place = null;
+        syncCanvasUI();
         lineInput.value = 0;
         $('line-inner').checked = true;
         state.keep.clear();
@@ -564,6 +689,7 @@
     // Three ways in: a file, a link, or SVG code. "Change" reopens them on the
     // source used last (and pre-fills the code), with a way back to the current SVG.
     const SOURCES = ['file', 'link', 'code'];
+    let keepPlacement = false; // a shared link's placement applies to the SVG it loads
     let codeName = null; // keeps the file name when editing the current SVG as code
     function showSource(kind) {
         SOURCES.forEach((k) => { $('source-' + k).hidden = k !== kind; });
@@ -699,7 +825,10 @@
         if (!/<svg[\s>]/i.test(text)) return showError('That doesn\'t look like an SVG: no <svg> element was found.');
         const norm = Engine.normalize(text);
         source = source || (fromUrl ? 'link' : 'file');
+        if (state.doc && !keepPlacement) state.place = null; // a new SVG starts centered on the same canvas
+        keepPlacement = false;
         state.doc = { name, size, text, norm, palette: Engine.palette(norm), fromUrl: fromUrl || null, source };
+        syncCanvasUI();
         renderLogoColors();
         // The slider ranges follow the SVG's size; keep the chosen values.
         syncRanges();
@@ -1173,7 +1302,9 @@
     // Where the picture is drawn inside the <img> box (object-fit: contain).
     function drawnRect(img) {
         const r = img.getBoundingClientRect();
-        const aspect = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : viewBoxAspect(state.doc) || r.width / r.height;
+        const onCanvas = state.canvas && img.closest('#result-container');
+        const aspect = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight
+            : onCanvas ? state.canvas[0] / state.canvas[1] : viewBoxAspect(state.doc) || r.width / r.height;
         const w = Math.min(r.width, r.height * aspect), h = w / aspect;
         return { left: r.left + (r.width - w) / 2, top: r.top + (r.height - h) / 2, width: w, height: h };
     }
@@ -1181,17 +1312,17 @@
         const m = /<svg\b[^>]*?\sviewBox\s*=\s*["']\s*[-\d.eE+]+[\s,]+[-\d.eE+]+[\s,]+([\d.eE+]+)[\s,]+([\d.eE+]+)/i.exec(doc.norm);
         return m && Number(m[1]) > 0 && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : null;
     }
-    function preparePick(doc, rect) {
+    function preparePick(doc, rect, text) {
         const w = Math.max(1, Math.round(rect.width * 2)), h = Math.max(1, Math.round(rect.height * 2));
-        if (pick && pick.doc === doc && pick.w === w && pick.h === h) return pick;
+        if (pick && pick.doc === doc && pick.text === text && pick.w === w && pick.h === h) return pick;
         const colors = doc.palette.map((p) => p[0]);
         const ids = pickIds(colors.length);
         const mapping = {};
         colors.forEach((c, i) => { mapping[c] = ids[i].map(hex2).join(''); });
-        const xml = new DOMParser().parseFromString(Engine.apply(doc.norm, mapping), 'image/svg+xml');
+        const xml = new DOMParser().parseFromString(Engine.apply(text, mapping), 'image/svg+xml');
         const root = xml.documentElement;
         let loaded;
-        const p = { doc, w, h, ids, colors, ready: false, ctx: null, loaded: new Promise((r) => { loaded = r; }) };
+        const p = { doc, text, w, h, ids, colors, ready: false, ctx: null, loaded: new Promise((r) => { loaded = r; }) };
         pick = p;
         if (root.localName !== 'svg' || xml.querySelector('parsererror')) { loaded(); return p; }
         root.setAttribute('shape-rendering', 'crispEdges');
@@ -1215,7 +1346,8 @@
     function colorAt(img, x, y) {
         if (!state.doc || stage.dataset.view !== 'side') return null;
         const rect = drawnRect(img);
-        const p = preparePick(state.doc, rect);
+        // The recolored picture is on the canvas (placed); the original is as it was.
+        const p = preparePick(state.doc, rect, img.closest('#result-container') ? placed(state.doc) : state.doc.norm);
         if (!p.ready) return undefined;
         const px = Math.floor(((x - rect.left) / rect.width) * p.w), py = Math.floor(((y - rect.top) / rect.height) * p.h);
         if (px < 0 || py < 0 || px >= p.w || py >= p.h) return null;
@@ -1440,6 +1572,8 @@
         q.delete('line');
         q.delete('lines');
         q.delete('keep');
+        q.delete('canvas');
+        q.delete('place');
         const params = {};
         for (const [k, v] of q) params[k] = /^(hue|saturation|lightness)$/.test(k) ? Number(v) : v;
         const getQ = new URLSearchParams(q);
@@ -1458,8 +1592,8 @@
         const code = $('snippet').textContent;
         $('api-hint').textContent = sn.prompt
             ? 'Paste this into ChatGPT, Claude, Copilot or any AI agent.'
-            : state.gap || state.line || Object.values(state.edits).some((e) => e.op === 'cut')
-                ? 'Cut out, gaps and lines only work here in the editor, so this request leaves them out. Download the result instead.'
+            : state.gap || state.line || state.canvas || state.place || Object.values(state.edits).some((e) => e.op === 'cut')
+                ? 'Cut out, gaps, lines and the canvas only work here in the editor, so this request leaves them out. Download the result instead.'
                 : code.includes('example.com%2Ficon.svg')
                     ? 'Links need a public SVG: replace example.com/icon.svg with yours, or load your SVG from a link.'
                     : 'Uses your current settings. No API key needed.';
@@ -1651,6 +1785,13 @@
     setMode(MODES[start.get('mode')] ? start.get('mode') : 'colorize', false);
     state.edits = editsFromParams(start);
     state.unit = start.get('unit') === 'pct' ? '%' : 'px';
+    {
+        const c = (start.get('canvas') || '').split('x').map(Number);
+        if (c.length === 2 && c.every((v) => v > 0)) state.canvas = c;
+        const p = (start.get('place') || '').split(',').map(Number);
+        if (p.length === 3 && p.every(Number.isFinite) && p[2] > 0) { state.place = p; keepPlacement = true; }
+        syncCanvasUI();
+    }
     $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === state.unit)));
     state.gap = Math.max(0, parseFloat(start.get('gap')) || 0);
     state.line = Math.max(0, parseFloat(start.get('line')) || 0);

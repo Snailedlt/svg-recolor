@@ -355,7 +355,7 @@ async def sitemap_xml(request: Request):
 # API
 # --------------------------------------------------------------------------
 
-OPTION_FIELDS = ("color", "mode", "hue", "saturation", "lightness", "format", "download", "replace", "hide", "remove", "cut", "gap", "line")
+OPTION_FIELDS = ("color", "mode", "hue", "saturation", "lightness", "format", "download", "replace", "hide", "remove", "cut", "gap", "line", "canvas", "place")
 
 
 async def _read_source(request: Request) -> tuple[str, str, dict]:
@@ -464,13 +464,15 @@ async def recolor_from_url(
     cut: Annotated[Optional[str], Query(include_in_schema=False)] = None,
     gap: Annotated[Optional[str], Query(include_in_schema=False)] = None,
     line: Annotated[Optional[str], Query(include_in_schema=False)] = None,
+    canvas: Annotated[Optional[str], Query(include_in_schema=False)] = None,
+    place: Annotated[Optional[str], Query(include_in_schema=False)] = None,
 ):
     """Fetches the SVG at `url` and returns it recolored. Responses are cacheable, so you can
     use the endpoint directly as an image source:
 
     `<img src="https://svg-recolor.jorgenkh.no/api/recolor?url=https://.../icon.svg&color=tomato&mode=solid">`
     """
-    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, cut, gap, line)
+    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, cut, gap, line, canvas, place)
     svg_text, name = await fetch_svg(url)
     result = await run(svg_text, opts)
     return respond(result, opts, output_name(safe_stem(name), opts), format, download, cache=True)
@@ -500,6 +502,8 @@ async def recolor_upload(
     cut: Annotated[Optional[str], Query(include_in_schema=False)] = None,
     gap: Annotated[Optional[str], Query(include_in_schema=False)] = None,
     line: Annotated[Optional[str], Query(include_in_schema=False)] = None,
+    canvas: Annotated[Optional[str], Query(include_in_schema=False)] = None,
+    place: Annotated[Optional[str], Query(include_in_schema=False)] = None,
 ):
     """Send the SVG in any of these ways:
 
@@ -511,11 +515,11 @@ async def recolor_upload(
     svg_text, name, body_opts = await _read_source(request)
     params = {"color": color, "mode": mode, "hue": hue, "saturation": saturation,
               "lightness": lightness, "format": format, "download": download,
-              "replace": replace, "hide": hide, "remove": remove, "cut": cut, "gap": gap, "line": line} | body_opts
+              "replace": replace, "hide": hide, "remove": remove, "cut": cut, "gap": gap, "line": line, "canvas": canvas, "place": place} | body_opts
     if params["format"] not in ("svg", "json"):
         raise HTTPException(400, "'format' must be 'svg' or 'json'.")
     opts = options(params["mode"], params["color"], params["hue"], params["saturation"], params["lightness"],
-                   params["replace"], params["hide"], params["remove"], params["cut"], params["gap"], params["line"])
+                   params["replace"], params["hide"], params["remove"], params["cut"], params["gap"], params["line"], params["canvas"], params["place"])
     result = await run(svg_text, opts)
     download_flag = str(params["download"]).lower() in ("1", "true", "yes")
     return respond(result, opts, output_name(safe_stem(name), opts), params["format"], download_flag)
@@ -616,11 +620,13 @@ async def recolor_batch(
     cut: Annotated[Optional[str], Query(include_in_schema=False)] = None,
     gap: Annotated[Optional[str], Query(include_in_schema=False)] = None,
     line: Annotated[Optional[str], Query(include_in_schema=False)] = None,
+    canvas: Annotated[Optional[str], Query(include_in_schema=False)] = None,
+    place: Annotated[Optional[str], Query(include_in_schema=False)] = None,
 ):
     """Applies the same settings to every file and returns a ZIP archive."""
     if len(files) > 50:
         raise HTTPException(400, "Send at most 50 files per batch.")
-    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, cut, gap, line)
+    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, cut, gap, line, canvas, place)
     buf = io.BytesIO()
     used: set[str] = set()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
