@@ -106,7 +106,12 @@ jobs:
           ruby-version: "3.3"
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Kotlin
-        run: sudo snap install kotlin --classic
+        # From JetBrains' GitHub releases, not the snap store (which goes down for long stretches).
+        run: |
+          curl -fsSL --retry 5 --retry-all-errors -o kotlin.zip \
+            https://github.com/JetBrains/kotlin/releases/download/v2.1.20/kotlin-compiler-2.1.20.zip
+          unzip -q kotlin.zip -d "$HOME"
+          echo "$HOME/kotlinc/bin" >> "$GITHUB_PATH"
       - name: Install the app and Python clients
         run: |
           pip install pipenv

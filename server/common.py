@@ -12,6 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
 import recolor as engine
+from server import shapes
 
 log = logging.getLogger("svg_recolor")
 
@@ -47,11 +48,31 @@ def bad_request(e: Exception, status: int = 400):
     raise HTTPException(status_code=status, detail=str(e))
 
 
-def options(mode, color, hue, saturation, lightness) -> engine.Options:
+def _edit_list(value) -> tuple:
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(str(v) for v in value)
+    return engine.parse_edit_list(str(value))
+
+
+EXTRA_FIELDS = ("cut", "gap", "line", "lines", "keep", "unit", "canvas", "place", "fit", "optimize", "precision")
+
+
+def options(mode, color, hue, saturation, lightness, replace=None, hide=None, remove=None, **extra) -> engine.Options:
+    """Options from request values. replace/hide/remove take strings from query strings
+    and forms ("5e97f6:ff0000,..." / "ffffff,...") or an object/list from JSON and MCP.
+    The extra fields (cut, gap, line, canvas, fit, optimize, ...) go to server.shapes."""
     try:
-        return engine.Options(
-            mode=mode, color=color, hue=hue, saturation=saturation, lightness=lightness
+        opts = engine.Options(
+            mode=mode, color=color, hue=hue, saturation=saturation, lightness=lightness,
+            replace=engine.parse_replace(replace or {}), hide=_edit_list(hide), remove=_edit_list(remove),
         ).validate()
+        ex = shapes.parse_extras(_edit_list, **{k: extra.get(k) for k in EXTRA_FIELDS})
+        if ex.active:
+            shapes.check_conflicts(opts, ex)
+            opts.extras = ex
+        return opts
     except engine.RecolorError as e:
         bad_request(e)
 
@@ -70,6 +91,8 @@ def output_name(stem: str, opts: engine.Options) -> str:
 
 async def run(svg_text: str, opts: engine.Options) -> engine.Result:
     try:
+        if opts.extras is not None:  # cut out, gaps, lines, canvas or SVGO: the editor's code
+            return await run_in_threadpool(shapes.recolor, svg_text, opts)
         return await run_in_threadpool(engine.recolor, svg_text, opts)
     except engine.RecolorError as e:
         bad_request(e)

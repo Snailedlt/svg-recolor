@@ -49,3 +49,11 @@ def test_protocol_errors(client):
 def test_batch_requests(client):
     res = client.post("/mcp", json=[{"jsonrpc": "2.0", "id": 1, "method": "ping"}, {"jsonrpc": "2.0", "method": "notifications/initialized"}])
     assert res.json() == [{"jsonrpc": "2.0", "id": 1, "result": {}}]
+
+
+def test_recolor_tool_takes_color_edits(client):
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="#fff"/><path fill="#5e97f6" d="M0"/></svg>'
+    res = rpc(client, "tools/call", {"name": "recolor_svg", "arguments": {
+        "svg": svg, "mode": "solid", "color": "black", "remove": ["#ffffff"]}})["result"]
+    assert "<rect" not in res["structuredContent"]["svg"]
+    assert {p["from"]: p["to"] for p in res["structuredContent"]["palette"]}["#ffffff"] == "removed"

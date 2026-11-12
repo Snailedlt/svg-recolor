@@ -200,10 +200,9 @@
                                 <h2 class="step-head" id="color-title"><span class="step-n">2</span>Color<span class="step-sub" id="color-note">used by Tint, Colorize, Hue and Solid</span></h2>
                                 <div id="color-body">
                                     <div class="color-row">
-                                        <label class="swatch-picker" title="Open color picker">
-                                            <span class="sr-only">Color picker</span>
-                                            <input id="color-input" type="color" value="#ff0066">
-                                        </label>
+                                        <button type="button" class="swatch-picker" id="swatch-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="color-pop" title="Presets, recent colors and the full picker">
+                                            <span class="sr-only">Choose a color</span>
+                                        </button>
                                         <label class="hex-field" id="hex-field">
                                             <span>#</span>
                                             <span class="sr-only">Hex color</span>
@@ -213,23 +212,78 @@
                                             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
                                         </button>
                                     </div>
-                                    <div class="presets" id="presets" role="group" aria-label="Preset colors"></div>
-                                    <div class="recent" id="recent" hidden><span>Recent</span></div>
+                                    <div class="color-pop" id="color-pop" role="dialog" aria-label="Choose a color" hidden>
+                                        <div class="presets" id="presets" role="group" aria-label="Preset colors"></div>
+                                        <div class="recent" id="recent" hidden><span>Recent</span></div>
+                                        <label class="btn btn-ghost btn-sm more-colors">More colors…<input id="color-input" type="color" value="#ff0066" aria-label="Full color picker"></label>
+                                    </div>
+                                    <div class="recent logo-colors" id="logo-colors" role="group" aria-label="Colors in this SVG" hidden><span>In this SVG</span></div>
                                 </div>
                                 <p class="step-skip" id="color-skip" hidden></p>
                             </section>
 
-                            <section class="step" aria-labelledby="adjust-title" id="adjust-step">
-                                <div class="step-head-row">
-                                    <h2 class="step-head" id="adjust-title"><span class="step-n">3</span>Adjust<span class="step-sub" id="adjust-sub">optional, applied last</span></h2>
-                                    <button type="button" class="link-btn" id="adj-reset" hidden>Reset</button>
-                                </div>
-                                <div class="sliders">
+                            <details class="step fold" id="adjust-step" data-fold="adjust">
+                                <summary class="fold-head"><h2 class="step-head" id="adjust-title"><span class="step-n">3</span>Adjust<span class="step-sub" id="adjust-sub">optional, applied last</span></h2></summary>
+                                <div class="fold-body sliders">
                                     <label class="slider-row" for="adj-hue"><span>Hue</span><input id="adj-hue" type="range" min="-180" max="180" step="1" value="0"><output id="adj-hue-out" for="adj-hue">0°</output></label>
                                     <label class="slider-row" for="adj-saturation"><span>Saturation</span><input id="adj-saturation" type="range" min="-100" max="100" step="1" value="0"><output id="adj-saturation-out" for="adj-saturation">0</output></label>
                                     <label class="slider-row" for="adj-lightness"><span>Lightness</span><input id="adj-lightness" type="range" min="-100" max="100" step="1" value="0"><output id="adj-lightness-out" for="adj-lightness">0</output></label>
+                                    <button type="button" class="link-btn fold-reset" id="adj-reset" hidden>Reset adjustments</button>
                                 </div>
-                            </section>
+                            </details>
+
+                            <details class="step fold" id="shape-step" data-fold="shape">
+                                <summary class="fold-head"><h2 class="step-head" id="shape-title"><span class="step-n">4</span>Shapes<span class="step-sub" id="shape-sub">gaps and line versions</span></h2></summary>
+                                <div class="fold-body sliders">
+                                    <label class="slider-row" for="adj-gap" title="Cut a gap of this width wherever two original colors meet. With Solid, the color areas stay apart. Makes one path per color."><span>Gaps</span><input id="adj-gap" type="range" min="0" max="6" step="0.5" value="0" aria-describedby="gap-hint"><output id="adj-gap-out" for="adj-gap">Off</output></label>
+                                    <p class="field-hint gap-hint" id="gap-hint">Where two colors meet. With Solid, the parts stay apart.</p>
+                                    <label class="slider-row" for="adj-line" title="Make a line version, like devicon's line icons: only a band of this width along the edges is kept. Makes one path per color."><span>Line</span><input id="adj-line" type="range" min="0" max="8" step="0.5" value="0" aria-describedby="line-hint"><output id="adj-line-out" for="adj-line">Off</output></label>
+                                    <div class="toggle-row line-inner-row" id="line-inner-row" hidden>
+                                        <label for="line-inner">Lines between colors</label>
+                                        <span class="switch"><input type="checkbox" id="line-inner" checked><span class="track"></span></span>
+                                    </div>
+                                    <p class="field-hint gap-hint" id="line-hint">Only the edges are kept. Click a color to keep it filled.</p>
+                                    <div class="toggle-row unit-row">
+                                        <span id="unit-label">Sizes in</span>
+                                        <div class="segmented" role="group" aria-labelledby="unit-label" id="unit-tabs">
+                                            <button type="button" data-unit="px" aria-pressed="true" title="Pixels in the SVG's own units (the numbers in its paths). In a 128×128 icon, like devicon's, 1 px is 1/128 of the icon.">px</button>
+                                            <button type="button" data-unit="%" aria-pressed="false" title="Percent of the icon's size (its larger side), so the same setting looks the same on any icon.">% of icon</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
+
+                            <details class="step fold" id="canvas-step" data-fold="canvas">
+                                <summary class="fold-head"><h2 class="step-head" id="canvas-title"><span class="step-n">5</span>Placement<span class="step-sub" id="canvas-sub">as it is</span></h2></summary>
+                                <div class="fold-body">
+                                    <div class="canvas-grid">
+                                        <label class="num-field" title="Size of the drawing, in percent of its original size"><span>Size</span><input id="place-s" type="number" min="1" step="1" inputmode="decimal"><i>%</i></label>
+                                        <label class="num-field" title="Where the drawing's original top-left corner is, from the canvas's left edge"><span>X</span><input id="place-x" type="number" step="0.5" inputmode="decimal"></label>
+                                        <label class="num-field" title="Where the drawing's original top-left corner is, from the canvas's top edge"><span>Y</span><input id="place-y" type="number" step="0.5" inputmode="decimal"></label>
+                                    </div>
+                                    <div class="canvas-actions">
+                                        <label class="num-field pad-field" title="Space to leave around the drawing when fitting it"><span>Padding</span><input id="fit-pad" type="number" min="0" step="0.5" value="0" inputmode="decimal"></label>
+                                        <button type="button" class="btn btn-ghost btn-sm" id="fit-btn" title="Scale and center the visible drawing to fill the canvas, minus the padding"><span class="spinner" aria-hidden="true"></span><span>Fit</span></button>
+                                        <button type="button" class="btn btn-ghost btn-sm" id="center-btn" title="Center the drawing on the canvas, keeping its size"><span class="spinner" aria-hidden="true"></span><span>Center</span></button>
+                                    </div>
+                                    <p class="field-hint" id="canvas-hint">The canvas size (the viewBox) is on the picture. Fit fills it, minus the padding, strokes included.</p>
+                                    <button type="button" class="link-btn fold-reset" id="canvas-reset" hidden>Reset canvas and placement</button>
+                                </div>
+                            </details>
+
+                            <details class="step fold" id="optimize-step" data-fold="optimize">
+                                <summary class="fold-head"><h2 class="step-head" id="optimize-title"><span class="step-n">6</span>Optimize<span class="step-sub" id="optimize-sub">off</span></h2></summary>
+                                <div class="fold-body">
+                                    <div class="toggle-row">
+                                        <label for="svgo-toggle">Optimize with SVGO</label>
+                                        <span class="switch"><input type="checkbox" id="svgo-toggle"><span class="track"></span></span>
+                                    </div>
+                                    <div class="svgo-row">
+                                        <span class="field-hint">Settings: <b id="svgo-preset">Default</b></span>
+                                        <button type="button" class="btn btn-ghost btn-sm" id="svgo-open">Settings…</button>
+                                    </div>
+                                </div>
+                            </details>
                         </div>
 
                         <div class="controls-foot">
@@ -271,6 +325,7 @@
                             <div class="ws-tools" data-for="preview">
                                 <div class="segmented" role="group" aria-label="Comparison view" id="view-tabs">
                                     <button type="button" data-view="side" aria-pressed="true" title="Side by side (V)">Side by side</button>
+                                    <button type="button" data-view="code" aria-pressed="false" title="The result next to its SVG code">With code</button>
                                     <button type="button" data-view="slider" aria-pressed="false" title="Before/after slider (V)">Slider</button>
                                 </div>
                                 <div class="segmented" role="group" aria-label="Preview background" id="bg-tabs">
@@ -296,6 +351,16 @@
                                     </div>
                                     <div class="pane">
                                         <span class="pane-label"><span class="sw"></span>Recolored</span>
+                                        <div class="canvas-size" id="canvas-size" title="The canvas (viewBox): change it to resize the canvas, then Fit or move the drawing under Placement">
+                                            <label><span class="sr-only">Canvas width</span><input id="canvas-w" type="number" min="0.01" step="any" inputmode="decimal"></label>
+                                            <span aria-hidden="true">×</span>
+                                            <label><span class="sr-only">Canvas height</span><input id="canvas-h" type="number" min="0.01" step="any" inputmode="decimal"></label>
+                                        </div>
+                                        <div class="work-overlay" id="work-overlay" role="status" aria-live="polite" hidden>
+                                            <span class="work-spinner" aria-hidden="true"></span>
+                                            <span id="work-text">Working…</span>
+                                            <span class="work-bar" aria-hidden="true"><i id="work-bar"></i></span>
+                                        </div>
                                         <div class="canvas" id="result-container">
                                             <div class="empty">
                                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
@@ -303,12 +368,17 @@
                                             </div>
                                         </div>
                                     </div>
+                                    <div class="pane code-pane">
+                                        <span class="pane-label">SVG code</span>
+                                        <pre class="side-code" id="side-code" tabindex="0" aria-label="SVG code of the result"></pre>
+                                    </div>
                                     <input class="compare-range" id="compare-range" type="range" min="0" max="100" value="50" aria-label="Before/after split position">
                                     <span class="split-line" aria-hidden="true"></span>
                                 </div>
                                 <div class="palette" id="palette" hidden>
                                     <span>Colors</span>
-                                    <ul id="palette-list" aria-label="Original color to new color" tabindex="0"></ul>
+                                    <ul id="palette-list" aria-label="Original color to new color. Click a color to edit it." tabindex="0"></ul>
+                                    <button type="button" class="link-btn palette-reset" id="edits-reset" disabled title="Every color back to following the style">Reset colors</button>
                                 </div>
                             </div>
 
@@ -374,6 +444,43 @@
                         </div>
                     </section>
                 </div>
+            </div>
+
+            <dialog class="svgo-dialog" id="svgo-dialog" aria-labelledby="svgo-dialog-title">
+                <div class="svgo-dialog-head">
+                    <h2 id="svgo-dialog-title">SVGO settings <span id="svgo-preset-dialog">Default</span></h2>
+                    <button type="button" class="icon-btn" id="svgo-close" aria-label="Close">✕</button>
+                </div>
+                <div class="svgo-top">
+                    <label class="num-field" title="Decimals kept in numbers (SVGO floatPrecision)"><span>Precision</span><input id="svgo-precision" type="number" min="0" max="8" step="1"></label>
+                    <label class="check"><input type="checkbox" id="svgo-multipass"> Multipass</label>
+                    <label class="check"><input type="checkbox" id="svgo-newline"> End with a newline</label>
+                </div>
+                <div class="svgo-plugins" id="svgo-plugins"></div>
+                <div class="svgo-dialog-foot">
+                    <span class="field-hint">SVGO 3.3.2. The default is the same as devicon's icons. Saved in this browser.</span>
+                    <button type="button" class="btn btn-ghost btn-sm" id="svgo-reset">Restore defaults</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="svgo-done">Done</button>
+                </div>
+            </dialog>
+
+            <div class="color-edit" id="color-edit" role="dialog" aria-labelledby="color-edit-title" hidden>
+                <div class="color-edit-head">
+                    <i id="color-edit-from" aria-hidden="true"></i>
+                    <b id="color-edit-title"></b>
+                    <span id="color-edit-count"></span>
+                    <button type="button" class="icon-btn" id="color-edit-close" aria-label="Close">✕</button>
+                </div>
+                <fieldset>
+                    <legend class="sr-only">What happens to this color</legend>
+                    <label><input type="radio" name="color-edit-op" value="style"><span><b>Follow style</b>Recolored like the rest</span></label>
+                    <label class="own"><input type="radio" name="color-edit-op" value="replace"><span><b>Own color</b>Just this color</span>
+                        <input type="color" id="color-edit-own" aria-label="Own color"></label>
+                    <label><input type="radio" name="color-edit-op" value="remove"><span><b>Invisible</b>Gone, as if it was never drawn</span></label>
+                    <label><input type="radio" name="color-edit-op" value="cut"><span><b>Cut out</b>A gap: cuts through what's below it</span></label>
+                </fieldset>
+                <label class="keep-row" id="color-edit-keep-row" hidden><input type="checkbox" id="color-edit-keep"><span><b>Keep filled</b>In the line version, this color stays solid</span></label>
+                <p class="color-edit-tip">One-color icon: pick <b>Solid</b>, make the background <b>Invisible</b>, and <b>Cut out</b> lines that should stay visible as gaps. Cutting out merges each color into one path.</p>
             </div>
 
             <section class="more" id="how">
@@ -477,7 +584,7 @@
                 <dt><kbd>C</kbd></dt><dd>Edit the color</dd>
                 <dt><kbd>P</kbd> <kbd>E</kbd> <kbd>A</kbd></dt><dd>Preview, Code or API tab</dd>
                 <dt><kbd>F</kbd></dt><dd>Search formats or languages</dd>
-                <dt><kbd>V</kbd> / <kbd>B</kbd></dt><dd>Side by side or slider / cycle the background</dd>
+                <dt><kbd>V</kbd> / <kbd>B</kbd></dt><dd>Side by side, slider or with code / cycle the background</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>Enter</kbd></dt><dd>Recolor now</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>S</kbd></dt><dd>Download the result</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>C</kbd></dt><dd>Copy the current code</dd>

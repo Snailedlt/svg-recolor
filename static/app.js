@@ -53,6 +53,18 @@
         tab: 'preview',
         format: 'svg', // set from storage at start
         snippet: 'curl', // set from storage at start
+        // Per-color edits on top of the style, keyed by original color (6-digit hex):
+        // { op: 'replace', to: '#rrggbb' } | { op: 'remove' } (Invisible) | { op: 'cut' } (Cut out)
+        // | { op: 'hide' } (older links; shown as Invisible)
+        edits: {},
+        gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
+        line: 0, // line version: band width along the edges (same units); 0 = off
+        unit: 'px', // gap and line sizes: 'px' (the SVG's own units) or '%' of the icon
+        svgo: false, // optimize the result with SVGO
+        canvas: null, // [w, h] of a new viewBox (null = the SVG's own)
+        place: null, // [x, y, scale]: where the original viewBox's top-left lands, and its scale (null = centered, 100 %)
+        lineInner: true, // lines also between colors, not just around the whole shape
+        keep: new Set(), // colors that stay filled in the line version
     };
     const mapCache = new Map();
     let reqId = 0;
@@ -97,6 +109,13 @@
     function setStatus(kind, text) {
         $('status').className = 'status ' + (kind || '');
         $('status-text').textContent = text;
+        if (kind === 'work') {
+            // The overlay on the picture says the same, with a bar when there's a percentage.
+            $('work-text').textContent = text;
+            const pct = /(\d+)%\s*$/.exec(text);
+            $('work-overlay').classList.toggle('indeterminate', !pct);
+            $('work-bar').style.width = pct ? pct[1] + '%' : '';
+        }
     }
     async function copyText(text, label) {
         try {
@@ -191,8 +210,16 @@
         img.src = url;
         img.alt = alt;
         img.decoding = 'async';
-        img.onload = () => { if (!img.naturalWidth) img.classList.add('fill'); };
-        container.replaceChildren(img);
+        const token = (container.renderToken || 0) + 1;
+        container.renderToken = token;
+        const show = () => {
+            if (container.renderToken !== token) return; // a newer picture is on its way
+            if (!img.naturalWidth) img.classList.add('fill');
+            container.replaceChildren(img);
+        };
+        // No blink: the old picture stays until the new one is decoded and ready to draw.
+        if (container.querySelector('img') && img.decode) img.decode().then(show, show);
+        else show();
     }
 
     // ------------------------------------------------------------------
@@ -221,6 +248,430 @@
         for (const k of ['hue', 'saturation', 'lightness']) if (state.adj[k]) q.set(k, state.adj[k]);
         return q;
     }
+    // Edits as API parameters (replace=old:new,...&hide=...&remove=...). Kept out of
+    // settingsParams, which also keys the cached /api/map-colors requests.
+    function editParams(q) {
+        q = q || new URLSearchParams();
+        const by = { replace: [], hide: [], remove: [], cut: [] };
+        for (const [c, e] of Object.entries(state.edits)) by[e.op].push(e.op === 'replace' ? c + ':' + e.to.slice(1).toLowerCase() : c);
+        for (const k of ['replace', 'hide', 'remove', 'cut']) if (by[k].length) q.set(k, by[k].join(','));
+        if (state.gap) q.set('gap', String(state.gap));
+        if ((state.gap || state.line) && state.unit === '%') q.set('unit', 'pct');
+        if (state.svgo) q.set('optimize', '1');
+        if (state.canvas) q.set('canvas', state.canvas.map(fmt).join('x'));
+        if (state.place) q.set('place', state.place.map(fmt).join(','));
+        if (state.line) {
+            q.set('line', String(state.line));
+            if (!state.lineInner) q.set('lines', 'outer');
+            if (state.keep.size) q.set('keep', [...state.keep].join(','));
+        }
+        return q;
+    }
+    function editsFromParams(q) {
+        const edits = {};
+        const hex = (v) => { const h = normalizeHex(v); return h ? h.slice(1).toLowerCase() : null; };
+        for (const pair of (q.get('replace') || '').split(',')) {
+            const [a, b] = pair.split(':'); const from = hex(a), to = normalizeHex(b || '');
+            if (from && to) edits[from] = { op: 'replace', to };
+        }
+        for (const op of ['hide', 'remove', 'cut']) for (const v of (q.get(op) || '').split(',')) { const c = hex(v); if (c) edits[c] = { op }; }
+        return edits;
+    }
+    // ------------------------------------------------------------------
+    // Canvas: a new viewBox size, and where the drawing sits on it. The drawing is wrapped
+    // in one <g transform>, so recoloring and the geometry steps work as before.
+    // ------------------------------------------------------------------
+    const fmt = (n) => String(+(+n).toFixed(3));
+    function rootTag(norm) { return (/<svg\b[^>]*>/i.exec(norm) || [''])[0]; }
+    // The SVG's own box: its viewBox, else its width and height, else 128 x 128.
+    function origBox(doc) {
+        const tag = doc ? rootTag(doc.norm) : '';
+        const vb = /\sviewBox\s*=\s*["']\s*([-\d.eE+]+)[\s,]+([-\d.eE+]+)[\s,]+([\d.eE+]+)[\s,]+([\d.eE+]+)/i.exec(tag);
+        if (vb && +vb[3] > 0 && +vb[4] > 0) return [+vb[1], +vb[2], +vb[3], +vb[4]];
+        const num = (name) => { const m = new RegExp('\\s' + name + '\\s*=\\s*["\']?\\s*([\\d.]+)(px)?["\'\\s>/]', 'i').exec(tag); return m ? +m[1] : 0; };
+        const w = num('width'), h = num('height');
+        return w > 0 && h > 0 ? [0, 0, w, h] : [0, 0, 128, 128];
+    }
+    function canvasSize(doc) { return state.canvas || origBox(doc).slice(2); }
+    function placement(doc) {
+        if (state.place) return state.place;
+        const [, , w0, h0] = origBox(doc);
+        const [W, H] = canvasSize(doc);
+        return [(W - w0) / 2, (H - h0) / 2, 1];
+    }
+    function placed(doc, norm) {
+        norm = norm || doc.norm;
+        if (!state.canvas && !state.place) return norm;
+        const tag = rootTag(norm);
+        const at = norm.indexOf(tag);
+        const end = norm.lastIndexOf('</svg');
+        if (!tag || end < at) return norm;
+        const [x0, y0, w0, h0] = origBox(doc);
+        const [W, H] = canvasSize(doc);
+        const [tx, ty, s] = placement(doc);
+        let open = tag.replace(/\sviewBox\s*=\s*("[^"]*"|'[^']*')/i, '');
+        // A width/height on the root keeps its scale: it grows with the canvas.
+        open = open.replace(/(\s(width|height)\s*=\s*["']?\s*)([\d.]+)/gi, (all, pre, name, v) => pre + fmt(+v * (/^w/i.test(name) ? W / w0 : H / h0)));
+        open = open.replace(/^<svg\b/i, '<svg viewBox="0 0 ' + fmt(W) + ' ' + fmt(H) + '"');
+        const g = '<g transform="matrix(' + [s, 0, 0, s, tx - s * x0, ty - s * y0].map(fmt).join(' ') + ')">';
+        return norm.slice(0, at) + open + g + norm.slice(at + tag.length, end) + '</g>' + norm.slice(end);
+    }
+    function syncCanvasUI() {
+        const doc = state.doc;
+        const [W, H] = canvasSize(doc);
+        const [tx, ty, s] = placement(doc);
+        const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = fmt(v); };
+        set('canvas-w', W);
+        set('canvas-h', H);
+        set('place-s', +(s * 100).toFixed(2));
+        set('place-x', tx);
+        set('place-y', ty);
+        $('canvas-reset').hidden = !state.canvas && !state.place;
+        $('canvas-size').hidden = !doc;
+        $('canvas-size').classList.toggle('changed', !!state.canvas);
+        updateFolds();
+    }
+    function canvasChanged() {
+        syncCanvasUI();
+        editsChanged();
+    }
+    function setCanvas(W, H) {
+        if (!(W > 0 && H > 0)) return;
+        const [W0, H0] = canvasSize(state.doc);
+        // Keep the drawing where it is relative to the middle of the canvas.
+        if (state.place) state.place = [state.place[0] + (W - W0) / 2, state.place[1] + (H - H0) / 2, state.place[2]];
+        const [, , w0, h0] = origBox(state.doc);
+        state.canvas = W === w0 && H === h0 && !state.place ? null : [W, H];
+        canvasChanged();
+    }
+    function setScale(s) {
+        if (!(s > 0)) return;
+        const [, , w0, h0] = origBox(state.doc);
+        const [tx, ty, s0] = placement(state.doc);
+        // Scale around the middle of the drawing.
+        const cx = tx + (s0 * w0) / 2, cy = ty + (s0 * h0) / 2;
+        state.place = [cx - (s * w0) / 2, cy - (s * h0) / 2, s];
+        if (!state.canvas) state.canvas = canvasSize(state.doc);
+        canvasChanged();
+    }
+    function setPosition(x, y) {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        state.place = [x, y, placement(state.doc)[2]];
+        if (!state.canvas) state.canvas = canvasSize(state.doc);
+        canvasChanged();
+    }
+    async function fitToCanvas(center) {
+        if (!state.doc) return showError('Add an SVG first: drop a file, paste one, or load a link.');
+        const btn = $(center ? 'center-btn' : 'fit-btn');
+        btn.classList.add('loading');
+        btn.disabled = true;
+        setBusy(true);
+        setStatus('work', 'Measuring the drawing…');
+        try {
+            await fitToCanvasNow(center);
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            setBusy(false);
+        }
+    }
+    async function fitToCanvasNow(center) {
+        const doc = state.doc;
+        const [x0, y0] = origBox(doc);
+        const [W, H] = canvasSize(doc);
+        const pad = Math.max(0, parseFloat($('fit-pad').value) || 0);
+        let box;
+        try {
+            // Measure what's visible after the color edits (invisible and cut-out colors don't count).
+            const hidden = Object.entries(state.edits).filter(([, e]) => e.op !== 'replace').map(([c]) => c);
+            const Geo = await loadGeometry();
+            box = Geo.bounds(Engine.edit(doc.norm, [], hidden));
+        } catch (err) {
+            return showError(err.message);
+        }
+        if (doc !== state.doc) return;
+        if (!box) return showError('Nothing visible to fit.');
+        const [bx, by, bw, bh] = box;
+        const s = center ? placement(doc)[2] : Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh);
+        if (!(s > 0)) return showError('The padding leaves no room on this canvas.');
+        // Map the box's corner so the box is centered: s * (bx - x0) + tx = (W - s * bw) / 2.
+        state.place = [(W - s * bw) / 2 - s * (bx - x0), (H - s * bh) / 2 - s * (by - y0), s];
+        if (!state.canvas) state.canvas = [W, H];
+        canvasChanged();
+        toast(center ? 'Centered' : 'Fitted to ' + fmt(W) + ' × ' + fmt(H) + (pad ? ' with ' + fmt(pad) + ' padding' : ''));
+    }
+    const numVal = (id) => parseFloat($(id).value);
+    $('canvas-w').addEventListener('change', () => setCanvas(numVal('canvas-w'), canvasSize(state.doc)[1]));
+    $('canvas-h').addEventListener('change', () => setCanvas(canvasSize(state.doc)[0], numVal('canvas-h')));
+    $('place-s').addEventListener('change', () => setScale(numVal('place-s') / 100));
+    $('place-x').addEventListener('change', () => setPosition(numVal('place-x'), placement(state.doc)[1]));
+    $('place-y').addEventListener('change', () => setPosition(placement(state.doc)[0], numVal('place-y')));
+    $$('#canvas-step input').forEach((el) => el.addEventListener('blur', syncCanvasUI));
+    $('fit-btn').addEventListener('click', () => fitToCanvas(false));
+    $('center-btn').addEventListener('click', () => fitToCanvas(true));
+    $('canvas-reset').addEventListener('click', () => { state.canvas = null; state.place = null; canvasChanged(); });
+
+    // Collapsible sections: closed by default (less scrolling), the header says what's set,
+    // and each remembers being opened.
+    const foldsOpen = store.get('folds', {});
+    $$('details.fold').forEach((d) => {
+        if (foldsOpen[d.dataset.fold]) d.open = true;
+        d.addEventListener('toggle', () => { foldsOpen[d.dataset.fold] = d.open; store.set('folds', foldsOpen); });
+    });
+    function updateFolds() {
+        const shape = [];
+        if (state.gap) shape.push('gaps ' + unitText(state.gap));
+        if (state.line) shape.push((state.lineInner ? 'line ' : 'outline ') + unitText(state.line));
+        $('shape-sub').textContent = shape.length ? shape.join(' · ') : 'gaps and line versions';
+        $('shape-step').classList.toggle('active', shape.length > 0);
+        const placedNow = !!(state.canvas || state.place);
+        let sub = 'as it is';
+        if (placedNow && state.doc) {
+            const [W, H] = canvasSize(state.doc);
+            sub = fmt(W) + ' × ' + fmt(H) + ' · ' + fmt(placement(state.doc)[2] * 100) + ' %';
+        }
+        $('canvas-sub').textContent = sub;
+        $('canvas-step').classList.toggle('active', placedNow);
+        $('adjust-step').classList.toggle('active', Object.values(state.adj).some((v) => v));
+    }
+
+    // ------------------------------------------------------------------
+    // Optimize: SVGO in a worker, with devicon's settings by default (its svg-icons
+    // svgo.config.js: SVGO 3.3.2, multipass, precision 3, every preset plugin but
+    // removeViewBox, a few extra ones, and a newline at the end).
+    // ------------------------------------------------------------------
+    const SVGO_PRESET = ['removeDoctype', 'removeXMLProcInst', 'removeComments', 'removeMetadata', 'removeEditorsNSData',
+        'cleanupAttrs', 'mergeStyles', 'inlineStyles', 'minifyStyles', 'cleanupIds', 'removeUselessDefs', 'cleanupNumericValues',
+        'convertColors', 'removeUnknownsAndDefaults', 'removeNonInheritableGroupAttrs', 'removeUselessStrokeAndFill', 'removeViewBox',
+        'cleanupEnableBackground', 'removeHiddenElems', 'removeEmptyText', 'convertShapeToPath', 'convertEllipseToCircle',
+        'moveElemsAttrsToGroup', 'moveGroupAttrsToElems', 'collapseGroups', 'convertPathData', 'convertTransform', 'removeEmptyAttrs',
+        'removeEmptyContainers', 'mergePaths', 'removeUnusedNS', 'sortAttrs', 'sortDefsChildren', 'removeTitle', 'removeDesc'];
+    const SVGO_EXTRA = ['removeDimensions', 'removeStyleElement', 'convertStyleToAttrs', 'removeScriptElement', 'removeOffCanvasPaths',
+        'convertOneStopGradients', 'removeSvgXY', 'removeXMLNS', 'removeRasterImages', 'removeXlink', 'reusePaths'];
+    const SVGO_LABEL = {
+        removeSvgXY: 'Remove x and y on <svg>', removeXMLProcInst: 'Remove XML instructions', removeEditorsNSData: 'Remove editor data',
+        removeViewBox: 'Remove viewBox', removeXMLNS: 'Remove xmlns', removeNonInheritableGroupAttrs: 'Remove non-inheritable group attributes',
+        cleanupAttrs: 'Clean up attributes', cleanupIds: 'Clean up IDs', removeUselessDefs: 'Remove unused defs', removeElemsAttrs: 'Remove element attributes',
+        moveElemsAttrsToGroup: 'Move attributes to group', moveGroupAttrsToElems: 'Move group attributes to elements', removeEmptyAttrs: 'Remove empty attributes',
+        sortAttrs: 'Sort attributes', removeOffCanvasPaths: 'Remove off-canvas paths', removeXlink: 'Remove xlink', convertOneStopGradients: 'Convert one-stop gradients',
+    };
+    const SVGO_OFF = new Set(['removeViewBox', 'removeXMLNS', 'removeRasterImages', 'removeXlink', 'reusePaths']);
+    const svgoDefaults = () => ({
+        precision: 3, multipass: true, newline: true,
+        plugins: Object.fromEntries([...SVGO_PRESET, ...SVGO_EXTRA].map((n) => [n, !SVGO_OFF.has(n)])),
+    });
+    let svgoSettings = Object.assign(svgoDefaults(), store.get('svgo-settings', {}));
+    svgoSettings.plugins = Object.assign(svgoDefaults().plugins, svgoSettings.plugins || {});
+    function svgoConfig(set) {
+        const on = (n) => !!set.plugins[n];
+        const overrides = {};
+        SVGO_PRESET.forEach((n) => { if (!on(n)) overrides[n] = false; });
+        // devicon's choices: colors stay #hex, <style> classes are inlined even when reused, short ids
+        if (on('inlineStyles')) overrides.inlineStyles = { onlyMatchedOnce: false };
+        if (on('convertColors')) overrides.convertColors = { shortname: false };
+        if (on('cleanupIds')) overrides.cleanupIds = { minify: true };
+        const plugins = [{ name: 'preset-default', params: { overrides } }];
+        SVGO_EXTRA.forEach((n) => {
+            if (!on(n)) return;
+            plugins.push(n === 'removeSvgXY' ? { name: 'removeAttrs', params: { attrs: 'svg:(x|y)' } } : n);
+        });
+        return { multipass: !!set.multipass, floatPrecision: Math.max(0, Math.min(8, Math.round(set.precision))), plugins };
+    }
+    const svgoDefaultExceptPrecision = () => JSON.stringify(Object.assign({}, svgoSettings, { precision: 3 })) === JSON.stringify(svgoDefaults());
+    const isDeviconSvgo = () => JSON.stringify(svgoSettings) === JSON.stringify(svgoDefaults());
+    function renderSvgoSettings() {
+        $('svgo-precision').value = String(svgoSettings.precision);
+        $('svgo-multipass').checked = !!svgoSettings.multipass;
+        $('svgo-newline').checked = !!svgoSettings.newline;
+        const box = $('svgo-plugins');
+        box.replaceChildren();
+        // removeUselessStrokeAndFill -> "Remove useless stroke and fill", with the plugin name under it
+        const human = (n) => (SVGO_LABEL[n] || n.replace(/([A-Z]+)/g, ' $1').toLowerCase().replace(/^./, (c) => c.toUpperCase()))
+            .replace(/\bxml\b/gi, 'XML').replace(/\bns\b/gi, 'NS').replace(/\bids\b/gi, 'IDs').replace(/\bsvg\b/gi, 'SVG').replace(/\bxmlns\b/gi, 'xmlns');
+        for (const [title, names] of [['Preset (preset-default)', SVGO_PRESET], ['Extra plugins', SVGO_EXTRA]]) {
+            const h = document.createElement('h3');
+            h.textContent = title;
+            box.appendChild(h);
+            names.forEach((n) => {
+                const label = document.createElement('label');
+                label.className = 'check';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = !!svgoSettings.plugins[n];
+                cb.dataset.plugin = n;
+                const text = document.createElement('span');
+                text.textContent = human(n);
+                const small = document.createElement('small');
+                small.textContent = n === 'removeSvgXY' ? 'removeAttrs svg:(x|y)' : n;
+                text.appendChild(small);
+                label.append(cb, text);
+                box.appendChild(label);
+            });
+        }
+        syncSvgoLabels();
+    }
+    function syncSvgoLabels() {
+        const name = isDeviconSvgo() ? 'Default' : 'Custom';
+        $('svgo-preset').textContent = name;
+        $('svgo-preset-dialog').textContent = name;
+        updateOptimizeFold();
+    }
+    function updateOptimizeFold() {
+        const sub = state.svgo ? 'on · ' + (isDeviconSvgo() ? 'default settings' : 'custom settings') : 'off';
+        $('optimize-sub').textContent = sub;
+        $('optimize-step').classList.toggle('active', state.svgo);
+    }
+    function svgoSettingsChanged() {
+        store.set('svgo-settings', svgoSettings);
+        syncSvgoLabels();
+        if (state.svgo && state.doc) recolor();
+    }
+    $('svgo-open').addEventListener('click', () => $('svgo-dialog').showModal());
+    $('svgo-close').addEventListener('click', () => $('svgo-dialog').close());
+    $('svgo-done').addEventListener('click', () => $('svgo-dialog').close());
+    $('svgo-precision').addEventListener('change', () => { svgoSettings.precision = parseInt($('svgo-precision').value, 10) || 0; svgoSettingsChanged(); });
+    $('svgo-multipass').addEventListener('change', (e) => { svgoSettings.multipass = e.target.checked; svgoSettingsChanged(); });
+    $('svgo-newline').addEventListener('change', (e) => { svgoSettings.newline = e.target.checked; svgoSettingsChanged(); });
+    $('svgo-plugins').addEventListener('change', (e) => {
+        if (!e.target.dataset.plugin) return;
+        svgoSettings.plugins[e.target.dataset.plugin] = e.target.checked;
+        svgoSettingsChanged();
+    });
+    $('svgo-reset').addEventListener('click', () => { svgoSettings = svgoDefaults(); renderSvgoSettings(); svgoSettingsChanged(); });
+    $('svgo-toggle').addEventListener('change', (e) => { state.svgo = e.target.checked; updateOptimizeFold(); editsChanged(); });
+    renderSvgoSettings();
+
+    let svgoWorker = null, svgoJobs = 0;
+    const svgoPending = new Map();
+    function optimizeSvg(svg) {
+        if (!svgoWorker) {
+            setStatus('work', 'Loading SVGO…');
+            svgoWorker = new Worker(CFG.optimizeUrl || '/static/optimize-worker.js', { type: 'module' });
+            svgoWorker.onmessage = (e) => {
+                const job = svgoPending.get(e.data.id);
+                if (!job) return;
+                svgoPending.delete(e.data.id);
+                if (e.data.error) job.reject(new Error('SVGO could not optimize this SVG: ' + e.data.error));
+                else job.resolve(e.data.svg);
+            };
+            svgoWorker.onerror = (e) => {
+                e.preventDefault();
+                svgoWorker = null;
+                svgoPending.forEach((job) => job.reject(new Error('SVGO could not load. Check your connection and try again.')));
+                svgoPending.clear();
+            };
+        }
+        const id = ++svgoJobs;
+        const set = svgoSettings;
+        return new Promise((resolve, reject) => {
+            svgoPending.set(id, { resolve: (out) => resolve(set.newline ? out.replace(/\s*$/, '') + '\n' : out), reject });
+            svgoWorker.postMessage({ id, svg, config: svgoConfig(set) });
+        });
+    }
+
+    // The mapping with own colors applied, and the SVG with invisible colors applied.
+    // Cut-out colors are left in `edited` for the geometry step (cutOutSvg); `svg` treats
+    // them as invisible, which is what the quick style thumbnails show.
+    function editedSvg(doc, mapping) {
+        const merged = Object.assign({}, mapping);
+        const hide = [], remove = [], cut = [];
+        for (const [c, e] of Object.entries(state.edits)) {
+            if (e.op === 'replace') merged[c] = e.to.slice(1).toLowerCase();
+            else ({ hide, remove, cut })[e.op].push(c);
+        }
+        const edited = Engine.edit(placed(doc), hide, remove);
+        const svg = cut.length ? Engine.apply(Engine.edit(edited, [], cut), merged) : Engine.apply(edited, merged);
+        return { svg, merged, edited, cut };
+    }
+    // Cut out: real geometry (paper.js), loaded the first time it's needed.
+    let geometryReady = null;
+    function loadGeometry() {
+        if (window.SvgGeometry) return Promise.resolve(window.SvgGeometry);
+        if (!geometryReady) {
+            setStatus('work', 'Loading the geometry library…');
+            geometryReady = new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = CFG.geometryUrl || '/assets/geometry.js';
+                s.onload = () => (window.SvgGeometry ? resolve(window.SvgGeometry) : reject(new Error('Cut out could not load.')));
+                s.onerror = () => { geometryReady = null; reject(new Error('Cut out could not load. Check your connection and try again.')); };
+                document.head.appendChild(s);
+            });
+        }
+        return geometryReady;
+    }
+    async function cutOutSvg(edited, cut, merged, onProgress) {
+        const Geo = await loadGeometry();
+        return Geo.cutOut(edited, {
+            cut, map: merged, gap: state.gap, unit: state.unit, onProgress,
+            line: state.line, lineInner: state.lineInner, keep: [...state.keep],
+        });
+    }
+    const gapInput = $('adj-gap');
+    // Gap and line sizes: px (the SVG's own units) or % of the icon. In px the slider
+    // ranges follow the SVG's size, so a 24 px icon and a 1024 px logo both get useful steps.
+    const unitText = (v) => (v ? +v.toFixed(2) + (state.unit === '%' ? ' %' : ' px') : 'Off');
+    function docSize(doc) {
+        if (state.canvas) return Math.max(...state.canvas);
+        const tag = doc && (/<svg\b[^>]*>/i.exec(doc.norm) || [''])[0];
+        const vb = tag && /\sviewBox\s*=\s*["']\s*[-\d.eE+]+[\s,]+[-\d.eE+]+[\s,]+([\d.eE+]+)[\s,]+([\d.eE+]+)/i.exec(tag);
+        if (vb) return Math.max(+vb[1], +vb[2]) || 128;
+        const w = tag && /\swidth\s*=\s*["']?\s*([\d.]+)(px)?["'\s]/i.exec(tag), h = tag && /\sheight\s*=\s*["']?\s*([\d.]+)(px)?["'\s]/i.exec(tag);
+        return Math.max(w ? +w[1] : 0, h ? +h[1] : 0) || 128;
+    }
+    function niceStep(x) {
+        const steps = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100];
+        return [...steps].reverse().find((s) => s <= x) || steps[0];
+    }
+    function syncRanges() {
+        const size = state.unit === '%' ? 100 : docSize(state.doc);
+        // Up to 6/128 (gaps) and 8/128 (lines) of the icon: 6 and 8 px in a devicon icon.
+        for (const [input, max, now] of [[gapInput, 6, state.gap], [lineInput, 8, state.line]]) {
+            const step = state.unit === '%' ? 0.1 : niceStep(size / 256);
+            input.step = String(step);
+            // Never below the current value (say, from a shared link).
+            input.max = String(Math.max(step, +(Math.round((max * size) / 128 / step) * step).toFixed(2), now || 0));
+        }
+    }
+    // read: take the value from the slider (a person moved it). Otherwise the state is what
+    // counts: a slider rounds to its step, and before the SVG loads its steps don't fit it yet.
+    function syncGap(read = true) {
+        if (read) state.gap = Math.max(0, Math.min(parseFloat(gapInput.max), parseFloat(gapInput.value) || 0));
+        $('adj-gap-out').textContent = unitText(state.gap);
+        updateFolds();
+    }
+    function setUnit(unit, user) {
+        if (unit === state.unit) return;
+        // Keep the same look: convert the current values to the new unit.
+        const size = docSize(state.doc);
+        const conv = (v) => (unit === '%' ? (v * 100) / size : (v * size) / 100);
+        const [gap, line] = [state.gap, state.line].map((v) => (v ? +conv(v).toFixed(2) : 0));
+        state.unit = unit;
+        state.gap = gap;
+        state.line = line;
+        $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === unit)));
+        syncRanges();
+        gapInput.value = String(gap);
+        lineInput.value = String(line);
+        syncGap(false);
+        syncLine(false);
+        if (user && (gap || line)) editsChanged(); else if (user) syncPageUrl();
+    }
+    $$('#unit-tabs button').forEach((b) => b.addEventListener('click', () => setUnit(b.dataset.unit, true)));
+    // Gaps are heavy on big drawings: show the value at once, recut when the slider rests.
+    let gapTimer = 0;
+    gapInput.addEventListener('input', () => { syncGap(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
+    // Line version: a band of this width along the edges (devicon "line" icons).
+    const lineInput = $('adj-line');
+    function syncLine(read = true) {
+        if (read) state.line = Math.max(0, Math.min(parseFloat(lineInput.max), parseFloat(lineInput.value) || 0));
+        state.lineInner = $('line-inner').checked;
+        $('adj-line-out').textContent = unitText(state.line);
+        $('line-inner-row').hidden = !state.line;
+        updateFolds();
+        if (!editPanel.hidden) $('color-edit-keep-row').hidden = !state.line;
+    }
+    lineInput.addEventListener('input', () => { syncLine(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
+    $('line-inner').addEventListener('change', () => { syncLine(false); editsChanged(); });
     function settingsChanged() {
         scheduleThumbs();
         updateSnippet();
@@ -270,10 +721,23 @@
         if (document.activeElement !== hexInput) hexInput.value = hex.slice(1);
         $('hex-field').classList.remove('invalid');
         root.style.setProperty('--pick', hex);
-        $$('.preset').forEach((p) => p.setAttribute('aria-pressed', String(p.dataset.hex === hex)));
+        $$('.preset, .logo-colors button').forEach((p) => p.setAttribute('aria-pressed', String(p.dataset.hex === hex)));
         if (user) settingsChanged();
     }
     $('color-input').addEventListener('input', (e) => setColor(e.target.value.toUpperCase(), true));
+    // The big swatch opens a popover: presets, recent colors and the full picker.
+    const colorPop = $('color-pop');
+    function setColorPop(open) {
+        colorPop.hidden = !open;
+        $('swatch-btn').setAttribute('aria-expanded', String(open));
+        if (open) { const first = colorPop.querySelector('[aria-pressed="true"]') || colorPop.querySelector('button'); if (first) first.focus(); }
+    }
+    $('swatch-btn').addEventListener('click', () => setColorPop(colorPop.hidden));
+    colorPop.addEventListener('click', (e) => { if (e.target.closest('.preset, .recent button')) { setColorPop(false); $('swatch-btn').focus(); } });
+    colorPop.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); setColorPop(false); $('swatch-btn').focus(); } });
+    document.addEventListener('pointerdown', (e) => {
+        if (!colorPop.hidden && !colorPop.contains(e.target) && !e.target.closest('#swatch-btn')) setColorPop(false);
+    });
     hexInput.addEventListener('input', () => {
         const hex = normalizeHex(hexInput.value);
         if (hex) setColor(hex, true);
@@ -285,6 +749,75 @@
         const list = [hex].concat(store.get('recent', []).filter((c) => c !== hex)).slice(0, 8);
         store.set('recent', list);
         renderRecent();
+    }
+    // "In this SVG": its colors, most used first. Each gradient adds its two ends and the
+    // color halfway along it (sRGB, as the browser draws it).
+    function gradientStops(norm) {
+        const out = [];
+        const grads = norm.match(/<(linear|radial)Gradient\b[\s\S]*?<\/\1Gradient>/gi) || [];
+        for (const g of grads) {
+            const stops = [];
+            for (const [tag] of g.matchAll(/<stop\b[^>]*>/gi)) {
+                const color = /stop-color\s*[:=]\s*["']?\s*#([0-9a-f]{6})/i.exec(tag);
+                if (!color) continue;
+                const off = /offset\s*[:=]\s*["']?\s*([\d.]+)(%?)/i.exec(tag);
+                let at = off ? parseFloat(off[1]) / (off[2] ? 100 : 1) : NaN;
+                if (!Number.isFinite(at)) at = stops.length ? stops[stops.length - 1].at : 0;
+                // Offsets never go back: a smaller one counts as the previous one.
+                at = Math.max(Math.min(at, 1), stops.length ? stops[stops.length - 1].at : 0);
+                stops.push({ at, hex: color[1].toLowerCase() });
+            }
+            if (stops.length >= 2) out.push(stops);
+        }
+        return out;
+    }
+    function gradientColorAt(stops, t) {
+        const rgb = (h) => [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+        const i = stops.findIndex((s) => s.at >= t);
+        if (i === -1) return stops[stops.length - 1].hex;
+        if (i === 0) return stops[0].hex;
+        const a = stops[i - 1], b = stops[i];
+        const f = b.at === a.at ? 0 : (t - a.at) / (b.at - a.at);
+        const [ra, rb] = [rgb(a.hex), rgb(b.hex)];
+        return ra.map((v, k) => Math.round(v + (rb[k] - v) * f).toString(16).padStart(2, '0')).join('');
+    }
+    function logoColors(doc) {
+        const list = [];
+        const seen = new Set();
+        const add = (hex, title, mid) => {
+            if (seen.has(hex)) return;
+            seen.add(hex);
+            list.push({ hex, title, mid });
+        };
+        [...doc.palette].sort((a, b) => b[1] - a[1]).slice(0, 16)
+            .forEach(([hex, n]) => add(hex, '#' + hex.toUpperCase() + ' · used ' + n + '×'));
+        gradientStops(doc.norm).forEach((stops) => {
+            const [first, last] = [stops[0].hex, stops[stops.length - 1].hex];
+            add(first, '#' + first.toUpperCase() + ' · start of a gradient');
+            const mid = gradientColorAt(stops, 0.5);
+            add(mid, '#' + mid.toUpperCase() + ' · middle of a gradient', true);
+            add(last, '#' + last.toUpperCase() + ' · end of a gradient');
+        });
+        return list.slice(0, 24);
+    }
+    function renderLogoColors() {
+        const box = $('logo-colors');
+        box.querySelectorAll('button').forEach((b) => b.remove());
+        const list = state.doc ? logoColors(state.doc) : [];
+        list.forEach(({ hex, title, mid }) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            const up = '#' + hex.toUpperCase();
+            b.style.background = up;
+            b.title = title;
+            b.dataset.hex = up;
+            if (mid) b.className = 'mid';
+            b.setAttribute('aria-label', 'Use ' + title);
+            b.setAttribute('aria-pressed', String(state.color === up));
+            b.addEventListener('click', () => setColor(up, true));
+            box.appendChild(b);
+        });
+        box.hidden = list.length === 0;
     }
     function renderRecent() {
         const list = store.get('recent', []).filter((c) => !PRESETS.includes(c));
@@ -326,6 +859,7 @@
         if (state.adj.lightness) parts.push('lightness ' + (state.adj.lightness > 0 ? '+' : '') + state.adj.lightness);
         $('adjust-sub').textContent = parts.length ? parts.join(', ') : 'optional, applied last';
         $('adj-reset').hidden = !parts.length;
+        $('adjust-step').classList.toggle('active', parts.length > 0);
         if (user) settingsChanged();
     }
     ADJ.forEach(([k]) => $('adj-' + k).addEventListener('input', () => syncAdjust(true)));
@@ -333,6 +867,17 @@
 
     $('reset-all').addEventListener('click', () => {
         ADJ.forEach(([k]) => { $('adj-' + k).value = 0; });
+        $('adj-gap').value = 0;
+        syncGap();
+        state.canvas = null;
+        state.place = null;
+        syncCanvasUI();
+        state.svgo = false;
+        $('svgo-toggle').checked = false;
+        lineInput.value = 0;
+        $('line-inner').checked = true;
+        state.keep.clear();
+        syncLine();
         syncAdjust(false);
         setColor('#FF0066', false);
         setMode('colorize', false);
@@ -357,6 +902,7 @@
     // Three ways in: a file, a link, or SVG code. "Change" reopens them on the
     // source used last (and pre-fills the code), with a way back to the current SVG.
     const SOURCES = ['file', 'link', 'code'];
+    let keepPlacement = false; // a shared link's placement applies to the SVG it loads
     let codeName = null; // keeps the file name when editing the current SVG as code
     function showSource(kind) {
         SOURCES.forEach((k) => { $('source-' + k).hidden = k !== kind; });
@@ -492,8 +1038,22 @@
         if (!/<svg[\s>]/i.test(text)) return showError('That doesn\'t look like an SVG: no <svg> element was found.');
         const norm = Engine.normalize(text);
         source = source || (fromUrl ? 'link' : 'file');
+        if (state.doc && !keepPlacement) state.place = null; // a new SVG starts centered on the same canvas
+        keepPlacement = false;
         state.doc = { name, size, text, norm, palette: Engine.palette(norm), fromUrl: fromUrl || null, source };
+        syncCanvasUI();
+        renderLogoColors();
+        // The slider ranges follow the SVG's size; keep the chosen values.
+        syncRanges();
+        gapInput.value = String(state.gap);
+        lineInput.value = String(state.line);
+        syncGap(false);
+        syncLine(false);
         state.result = null;
+        // Edits belong to colors: keep the ones this SVG still has (live code edits, shared links).
+        const present = new Set(state.doc.palette.map((p) => p[0]));
+        for (const c of Object.keys(state.edits)) if (!present.has(c)) delete state.edits[c];
+        closeColorEdit(false);
 
         if (originalUrl) URL.revokeObjectURL(originalUrl);
         originalUrl = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
@@ -534,20 +1094,78 @@
         const file = e.dataTransfer && e.dataTransfer.files[0];
         if (file) { e.preventDefault(); loadFile(file); }
     });
+    // Paste: an .svg file copied in the file manager (Explorer, Finder, Files), SVG code,
+    // an <svg> copied from a web page, or a link.
+    const isSvgFile = (f) => /svg/i.test(f.type) || /\.svg$/i.test(f.name);
+    function svgFromHtml(html) {
+        const svg = new DOMParser().parseFromString(html, 'text/html').querySelector('svg');
+        if (!svg) return null;
+        if (!svg.getAttribute('xmlns')) svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        return new XMLSerializer().serializeToString(svg);
+    }
+    async function loadPastedFile(file, intoCode) {
+        if (!isSvgFile(file)) {
+            const kind = (file.type.split('/')[1] || '').toUpperCase();
+            return showError((kind ? 'That\'s a ' + kind + ' image. ' : 'That isn\'t an SVG. ') + 'SVG Recolor needs an .svg file or SVG code.');
+        }
+        if (file.size > MAX_BYTES) return showError('This file is ' + formatBytes(file.size) + '. The limit is 2 MB; try optimizing it with SVGO first.');
+        const text = await file.text();
+        if (intoCode) { codeName = file.name || null; setCodeInput(text); applyCode(); return; }
+        loadText(text, file.name || 'pasted.svg', file.size, null);
+    }
+    // "Copy image" in a browser puts a PNG of the picture on the clipboard, plus HTML
+    // <img src="..."> pointing at the real file: use the address to get the SVG itself.
+    function imageSource(html) {
+        if (!html || !/<img[\s>]/i.test(html)) return null;
+        const img = new DOMParser().parseFromString(html, 'text/html').querySelector('img[src]');
+        const src = img && img.getAttribute('src').trim();
+        return src && /^(https?:|data:image\/svg\+xml)/i.test(src) ? src : null;
+    }
+    function svgFromDataUrl(src) {
+        const m = /^data:image\/svg\+xml(;[^,]*)?,(.*)$/is.exec(src);
+        if (!m) return null;
+        try {
+            return /;base64/i.test(m[1] || '') ? new TextDecoder().decode(Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0))) : decodeURIComponent(m[2]);
+        } catch (err) { return null; }
+    }
+    function loadPastedLink(url) {
+        showSourcePicker('link');
+        $('url-input').value = url;
+        loadFromLink();
+    }
     document.addEventListener('paste', (e) => {
         const t = e.target;
-        if (t === hexInput || t === $('url-input') || t === $('code-input')) return;
         const data = e.clipboardData;
         if (!data) return;
-        const file = Array.from(data.files || []).find((f) => /svg/i.test(f.type) || /\.svg$/i.test(f.name));
-        if (file) { e.preventDefault(); loadFile(file); return; }
-        const text = data.getData('text/plain');
+        const files = Array.from(data.files || []);
+        const file = files.find(isSvgFile) || files[0];
+        // In the link and color fields a paste is just text for the field.
+        const src = t === hexInput || t === $('url-input') ? null : imageSource(data.getData('text/html'));
+        if (src && !(file && isSvgFile(file))) {
+            e.preventDefault();
+            const inline = src.startsWith('data:') ? svgFromDataUrl(src) : null;
+            if (inline) { setCodeInput(inline); codeName = null; loadText(inline, 'pasted.svg', new Blob([inline]).size, null, 'code'); return; }
+            if (!inline && src.startsWith('data:')) return showError('This image could not be read. Copy the image address instead.');
+            loadPastedLink(src);
+            return;
+        }
+        if (file) { e.preventDefault(); loadPastedFile(file, t === $('code-input')); return; }
+        if (t === hexInput || t === $('url-input') || t === $('code-input')) return;
+        let text = data.getData('text/plain');
+        if (!(text && /<svg[\s>]/i.test(text))) {
+            const html = data.getData('text/html');
+            const fromHtml = html && /<svg[\s>]/i.test(html) ? svgFromHtml(html) : null;
+            if (fromHtml) text = fromHtml;
+        }
         if (text && /<svg[\s>]/i.test(text)) { e.preventDefault(); setCodeInput(text); codeName = null; loadText(text, 'pasted.svg', new Blob([text]).size, null, 'code'); return; }
+        const uris = data.getData('text/uri-list') || text || '';
+        if (/^file:\/\//im.test(uris.trim()) && !(t && /^(INPUT|TEXTAREA)$/.test(t.tagName))) {
+            e.preventDefault();
+            return showError('The browser only got the file\'s path, not the file. Drag the file onto the page or use Choose file instead.');
+        }
         if (text && /^https?:\/\/\S+$/i.test(text.trim()) && !(t && /^(INPUT|TEXTAREA)$/.test(t.tagName))) {
             e.preventDefault();
-            showSourcePicker('link');
-            $('url-input').value = text.trim();
-            loadFromLink();
+            loadPastedLink(text.trim());
         }
     });
 
@@ -691,7 +1309,8 @@
             {
                 const mapping = mapCache.get(settingsParams(mode).toString()) || {};
                 if (thumbUrls[mode]) URL.revokeObjectURL(thumbUrls[mode]);
-                thumbUrls[mode] = URL.createObjectURL(new Blob([Engine.apply(doc.norm, mapping)], { type: 'image/svg+xml' }));
+                const svg = doc === state.doc ? editedSvg(doc, mapping).svg : Engine.apply(doc.norm, mapping);
+                thumbUrls[mode] = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
                 const box = document.querySelector('[data-thumb="' + mode + '"]');
                 const img = document.createElement('img');
                 img.alt = '';
@@ -705,10 +1324,18 @@
         const stem = (state.doc.name || 'image.svg').replace(/\.svg$/i, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'image';
         return stem + '_recolored_' + state.mode + (MODES[state.mode].color ? '_' + state.color.slice(1).toLowerCase() : '') + '.svg';
     }
+    // Dim the picture only when the work takes a while; quick updates just swap.
+    let busyTimer = 0;
     function setBusy(on) {
         $('submit-btn').classList.toggle('loading', on);
-        const img = $('result-container').querySelector('img');
-        if (img) img.classList.toggle('busy', on);
+        clearTimeout(busyTimer);
+        const dim = (v) => {
+            const img = $('result-container').querySelector('img');
+            if (img) img.classList.toggle('busy', v);
+            $('work-overlay').hidden = !v; // spinner, message and progress on the picture
+        };
+        if (on) busyTimer = setTimeout(() => dim(true), 300);
+        else dim(false);
     }
     async function recolor() {
         clearTimeout(debounceTimer);
@@ -725,15 +1352,48 @@
             const colors = doc.palette.map((p) => p[0]);
             const mapping = colors.length ? await mappingFor(state.mode, colors) : {};
             if (id !== reqId || doc !== state.doc) return;
+            const parts = editedSvg(doc, mapping);
+            const { merged } = parts;
+            let svg = parts.svg;
+            let geometryFailed = false;
+            if (parts.cut.length || state.gap || state.line) {
+                const label = state.line ? 'Drawing lines… ' : state.gap ? 'Cutting gaps… ' : 'Cutting out… ';
+                setStatus('work', label.trim());
+                try {
+                    svg = await cutOutSvg(parts.edited, parts.cut, merged, (f) => { if (id === reqId) setStatus('work', label + Math.round(f * 100) + '%'); });
+                } catch (err) {
+                    if (id !== reqId || doc !== state.doc) return;
+                    // Show the rest of the edits, with the cut colors left invisible, and say why;
+                    // the status says it too, so this isn't mistaken for the finished result.
+                    showError(err.message);
+                    geometryFailed = true;
+                }
+                if (id !== reqId || doc !== state.doc) return;
+            }
+            if (state.svgo) {
+                setStatus('work', 'Optimizing…');
+                try {
+                    svg = await optimizeSvg(svg);
+                } catch (err) {
+                    if (id !== reqId || doc !== state.doc) return;
+                    showError(err.message);
+                }
+                if (id !== reqId || doc !== state.doc) return;
+            }
+            const to = (c) => {
+                const e = state.edits[c];
+                return e && e.op === 'cut' ? 'cut' : e && (e.op === 'remove' || e.op === 'hide') ? 'removed' : '#' + (merged[c] || c);
+            };
             state.result = {
-                svg: Engine.apply(doc.norm, mapping),
+                svg,
                 filename: outputName(),
-                palette: doc.palette.map(([c, n]) => ({ from: '#' + c, to: '#' + (mapping[c] || c), count: n })),
+                palette: doc.palette.map(([c, n]) => ({ from: '#' + c, to: to(c), count: n, edit: state.edits[c] || null })),
             };
             renderResult();
             if (MODES[state.mode].color) rememberColor(state.color);
             const size = formatBytes(new Blob([state.result.svg]).size);
-            setStatus('ok', MODES[state.mode].label + (MODES[state.mode].color ? ' ' + state.color : '') + ' · ' + colors.length + ' colors · ' + size);
+            if (geometryFailed) setStatus('err', 'Without cut out, gaps and lines (see the message) · ' + size);
+            else setStatus('ok', MODES[state.mode].label + (MODES[state.mode].color ? ' ' + state.color : '') + ' · ' + colors.length + ' colors · ' + size);
         } catch (err) {
             if (id !== reqId || err.name === 'AbortError') return;
             showError(err.message === 'Failed to fetch' ? 'Could not reach the server. Check your connection and try again.' : err.message);
@@ -751,25 +1411,237 @@
         renderImage($('result-container'), resultUrl, 'Recolored ' + state.doc.name);
         $('code-preview-img').src = resultUrl;
         renderPalette(r.palette);
+        showCode($('side-code'), r.svg.length > CODE_VIEW_LIMIT ? r.svg.slice(0, CODE_VIEW_LIMIT) + '\n…' : r.svg, 'markup');
+        if (!editPanel.hidden && editColor && !(editAnchor && editAnchor.point)) { editAnchor = document.querySelector('.chip[data-color="' + editColor + '"]'); placeEditPanel(); }
         if (state.tab === 'code') renderCode();
         syncCopyButton();
         syncDownload();
     }
+    // Colors strip: each original color and what it became. Click a color to give it its
+    // own color, hide it, or remove its shapes (see the color-edit panel below).
+    const EDIT_LABEL = { replace: 'own color', hide: 'invisible', remove: 'invisible', cut: 'cut out' };
+    const BADGE = { // [icon paths, meaning]
+        replace: ['<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>', 'Own color'],
+        remove: ['<path d="M9.9 4.2A10 10 0 0 1 12 4c7 0 10 8 10 8a13 13 0 0 1-1.7 2.7"/><path d="M6.6 6.6A13 13 0 0 0 2 12s3 8 10 8a9.7 9.7 0 0 0 5.4-1.6"/><path d="m2 2 20 20"/>', 'Invisible'],
+        cut: ['<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>', 'Cut out'],
+        keep: ['<rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor"/>', 'Kept filled in the line version'],
+    };
     function renderPalette(entries) {
         const list = $('palette-list');
         list.replaceChildren();
         entries.forEach((e) => {
             const li = document.createElement('li');
-            li.title = e.from + ' → ' + e.to + ' (used ' + e.count + '×)';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            const kept = state.line && state.keep.has(e.from.slice(1));
+            btn.className = 'chip' + (e.edit ? ' edited ' + e.edit.op : '') + (kept ? ' edited kept' : '');
+            btn.dataset.color = e.from.slice(1);
+            const shown = e.to === 'cut' ? 'Cut out' : e.to === 'removed' ? 'Invisible' : e.to.toUpperCase();
+            btn.title = e.from.toUpperCase() + ' → ' + shown + ' (used ' + e.count + '×). Click to edit this color.';
+            btn.setAttribute('aria-label', 'Edit ' + e.from.toUpperCase() + ', now ' + shown + (e.edit ? ' (' + EDIT_LABEL[e.edit.op] + ')' : ''));
             const a = document.createElement('i'); a.style.background = e.from;
             const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.textContent = '→';
-            const b = document.createElement('i'); b.style.background = e.to;
-            const t = document.createElement('span'); t.textContent = e.to.toUpperCase();
-            li.append(a, arrow, b, t);
+            const b = document.createElement('i');
+            if (e.to.startsWith('#')) b.style.background = e.to; else b.className = 'gone';
+            const t = document.createElement('span'); t.textContent = shown;
+            btn.append(a, arrow, b, t);
+            // A tiny badge says what this color does, at a glance.
+            const op = e.edit ? (e.edit.op === 'hide' ? 'remove' : e.edit.op) : kept ? 'keep' : null;
+            if (op) {
+                const badge = document.createElement('span');
+                badge.className = 'badge';
+                badge.dataset.op = op;
+                badge.title = BADGE[op][1];
+                badge.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + BADGE[op][0] + '</svg>';
+                btn.appendChild(badge);
+            }
+            btn.addEventListener('click', () => openColorEdit(e.from.slice(1), btn));
+            li.appendChild(btn);
             list.appendChild(li);
         });
         $('palette').hidden = entries.length === 0;
+        $('edits-reset').disabled = !Object.keys(state.edits).length && !state.keep.size;
     }
+
+    // Color-edit panel: Follow style / Own color / Hide / Remove shapes, for one color.
+    const editPanel = $('color-edit');
+    let editColor = null;
+    let editAnchor = null;
+    function placeEditPanel() {
+        if (!editAnchor) return;
+        const r = editAnchor.getBoundingClientRect();
+        const w = editPanel.offsetWidth, h = editPanel.offsetHeight;
+        const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left));
+        const top = r.top - h - 8 >= 8 ? r.top - h - 8 : Math.min(window.innerHeight - h - 8, r.bottom + 8);
+        editPanel.style.left = left + 'px';
+        editPanel.style.top = top + 'px';
+    }
+    function openColorEdit(color, anchor) {
+        editColor = color;
+        editAnchor = anchor;
+        const e = state.edits[color];
+        const entry = state.result && state.result.palette.find((p) => p.from === '#' + color);
+        $('color-edit-from').style.background = '#' + color;
+        $('color-edit-title').textContent = '#' + color.toUpperCase();
+        $('color-edit-count').textContent = entry ? 'used ' + entry.count + '×' : '';
+        const op = e ? (e.op === 'hide' ? 'remove' : e.op) : 'style';
+        $$('#color-edit [name="color-edit-op"]').forEach((r) => { r.checked = r.value === op; });
+        const styleTo = entry && entry.edit ? null : entry && entry.to;
+        $('color-edit-own').value = e && e.op === 'replace' ? e.to : (styleTo && styleTo.startsWith('#') ? styleTo : '#' + color);
+        $('color-edit-keep').checked = state.keep.has(color);
+        $('color-edit-keep-row').hidden = !state.line;
+        editPanel.hidden = false;
+        placeEditPanel();
+        const checked = editPanel.querySelector('[name="color-edit-op"]:checked');
+        if (checked) checked.focus();
+    }
+    function closeColorEdit(focusBack) {
+        if (editPanel.hidden) return;
+        editPanel.hidden = true;
+        if (focusBack && editAnchor && editAnchor.isConnected) editAnchor.focus();
+        else if (focusBack && editColor) { const b = document.querySelector('.chip[data-color="' + editColor + '"]'); if (b) b.focus(); }
+        editAnchor = null;
+    }
+    function setColorEdit(op) {
+        if (!editColor) return;
+        if (op === 'style') delete state.edits[editColor];
+        else if (op === 'replace') state.edits[editColor] = { op, to: $('color-edit-own').value.toUpperCase() };
+        else state.edits[editColor] = { op };
+        editsChanged();
+    }
+    function editsChanged() {
+        updateSnippet();
+        syncPageUrl();
+        scheduleThumbs(150);
+        // With "Update the preview as you change settings" off, wait for the Recolor button.
+        if (state.doc && liveToggle.checked) recolor();
+    }
+    $$('#color-edit [name="color-edit-op"]').forEach((r) => r.addEventListener('change', () => setColorEdit(r.value)));
+    $('color-edit-own').addEventListener('input', () => {
+        $$('#color-edit [name="color-edit-op"]').forEach((r) => { r.checked = r.value === 'replace'; });
+        setColorEdit('replace');
+    });
+    $('color-edit-keep').addEventListener('change', (e) => {
+        if (!editColor) return;
+        if (e.target.checked) state.keep.add(editColor); else state.keep.delete(editColor);
+        editsChanged();
+    });
+    $('color-edit-close').addEventListener('click', () => closeColorEdit(true));
+    editPanel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeColorEdit(true); } });
+    document.addEventListener('pointerdown', (e) => {
+        if (!editPanel.hidden && !editPanel.contains(e.target) && !e.target.closest('.chip') && !isPreviewImg(e.target)) closeColorEdit(false);
+    });
+    window.addEventListener('resize', placeEditPanel);
+    $('palette-list').addEventListener('scroll', placeEditPanel, { passive: true });
+    $('edits-reset').addEventListener('click', () => {
+        if ($('edits-reset').disabled) return;
+        state.edits = {};
+        state.keep.clear();
+        closeColorEdit(false);
+        editsChanged();
+        toast('Color edits reset');
+    });
+
+    // Click the picture to pick a color: a hidden copy of the original, with every color
+    // swapped for an id color and no anti-aliasing, is drawn to a canvas; the pixel under
+    // the pointer says which color is on top there. The preview itself stays an <img>.
+    let pick = null; // { doc, w, h, ctx, ids, colors, ready }
+    function pickIds(n) {
+        const steps = Math.max(2, Math.ceil(Math.cbrt(n + 1)));
+        const v = (k) => Math.round((k * 255) / (steps - 1));
+        const ids = [];
+        for (let i = 0; i < n; i++) ids.push([v(i % steps), v(Math.floor(i / steps) % steps), v(Math.floor(i / steps / steps) % steps)]);
+        return ids;
+    }
+    const hex2 = (x) => x.toString(16).padStart(2, '0');
+    // Where the picture is drawn inside the <img> box (object-fit: contain).
+    function drawnRect(img) {
+        const r = img.getBoundingClientRect();
+        const onCanvas = state.canvas && img.closest('#result-container');
+        const aspect = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight
+            : onCanvas ? state.canvas[0] / state.canvas[1] : viewBoxAspect(state.doc) || r.width / r.height;
+        const w = Math.min(r.width, r.height * aspect), h = w / aspect;
+        return { left: r.left + (r.width - w) / 2, top: r.top + (r.height - h) / 2, width: w, height: h };
+    }
+    function viewBoxAspect(doc) {
+        const m = /<svg\b[^>]*?\sviewBox\s*=\s*["']\s*[-\d.eE+]+[\s,]+[-\d.eE+]+[\s,]+([\d.eE+]+)[\s,]+([\d.eE+]+)/i.exec(doc.norm);
+        return m && Number(m[1]) > 0 && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : null;
+    }
+    function preparePick(doc, rect, text) {
+        const w = Math.max(1, Math.round(rect.width * 2)), h = Math.max(1, Math.round(rect.height * 2));
+        if (pick && pick.doc === doc && pick.text === text && pick.w === w && pick.h === h) return pick;
+        const colors = doc.palette.map((p) => p[0]);
+        const ids = pickIds(colors.length);
+        const mapping = {};
+        colors.forEach((c, i) => { mapping[c] = ids[i].map(hex2).join(''); });
+        const xml = new DOMParser().parseFromString(Engine.apply(text, mapping), 'image/svg+xml');
+        const root = xml.documentElement;
+        let loaded;
+        const p = { doc, text, w, h, ids, colors, ready: false, ctx: null, loaded: new Promise((r) => { loaded = r; }) };
+        pick = p;
+        if (root.localName !== 'svg' || xml.querySelector('parsererror')) { loaded(); return p; }
+        root.setAttribute('shape-rendering', 'crispEdges');
+        xml.querySelectorAll('[shape-rendering]').forEach((el) => el.setAttribute('shape-rendering', 'crispEdges'));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        p.ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const img = new Image();
+        img.onload = () => {
+            if (pick !== p) return;
+            p.ctx.drawImage(img, 0, 0, w, h);
+            p.ready = true;
+            loaded();
+        };
+        img.onerror = () => loaded();
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(root));
+        return p;
+    }
+    // The original color under a point of a preview image; null for none, undefined while loading.
+    function colorAt(img, x, y) {
+        if (!state.doc || stage.dataset.view === 'slider') return null;
+        const rect = drawnRect(img);
+        // The recolored picture is on the canvas (placed); the original is as it was.
+        const p = preparePick(state.doc, rect, img.closest('#result-container') ? placed(state.doc) : state.doc.norm);
+        if (!p.ready) return undefined;
+        const px = Math.floor(((x - rect.left) / rect.width) * p.w), py = Math.floor(((y - rect.top) / rect.height) * p.h);
+        if (px < 0 || py < 0 || px >= p.w || py >= p.h) return null;
+        const [r, g, b, a] = p.ctx.getImageData(px, py, 1, 1).data;
+        if (a < 128) return null;
+        let best = null, bestD = Infinity;
+        p.ids.forEach(([ir, ig, ib], i) => {
+            const d = (ir - r) ** 2 + (ig - g) ** 2 + (ib - b) ** 2;
+            if (d < bestD) { bestD = d; best = p.colors[i]; }
+        });
+        return best;
+    }
+    const isPreviewImg = (t) => t instanceof HTMLImageElement && !!t.closest('#preview-container, #result-container');
+    let hoverColor = null;
+    function setHover(color, img) {
+        if (color === hoverColor) return;
+        hoverColor = color;
+        $$('#palette-list .chip.hover').forEach((c) => c.classList.toggle('hover', false));
+        if (color) { const chip = document.querySelector('.chip[data-color="' + color + '"]'); if (chip) chip.classList.add('hover'); }
+        if (img) {
+            img.classList.toggle('pickable', !!color);
+            img.title = color ? '#' + color.toUpperCase() + ': click to edit this color' : '';
+        }
+    }
+    stage.addEventListener('pointermove', (e) => {
+        if (!isPreviewImg(e.target) || e.pointerType === 'touch') return;
+        const c = colorAt(e.target, e.clientX, e.clientY);
+        if (c !== undefined) setHover(c, e.target);
+    });
+    stage.addEventListener('pointerout', (e) => { if (isPreviewImg(e.target)) setHover(null, e.target); });
+    stage.addEventListener('click', async (e) => {
+        if (!isPreviewImg(e.target)) return;
+        let c = colorAt(e.target, e.clientX, e.clientY);
+        if (c === undefined) { await pick.loaded; c = colorAt(e.target, e.clientX, e.clientY); }
+        if (!c) { closeColorEdit(false); return; }
+        // Open the panel at the click: a small box where the pointer is.
+        const x = e.clientX, y = e.clientY;
+        openColorEdit(c, { point: true, getBoundingClientRect: () => ({ left: x - 12, right: x + 12, top: y - 12, bottom: y + 12, width: 24, height: 24 }) });
+    });
 
     // ------------------------------------------------------------------
     // Code tab: output formats
@@ -949,9 +1821,15 @@
     // API tab: snippets for the current settings
     // ------------------------------------------------------------------
     function snippetContext() {
-        const q = settingsParams();
+        // The API takes the same names as the page address (it runs the same geometry and SVGO).
+        const q = editParams(settingsParams());
+        if (q.get('optimize')) {
+            q.set('optimize', 'true');
+            if (svgoSettings.precision !== 3) q.set('precision', String(svgoSettings.precision));
+        }
         const params = {};
-        for (const [k, v] of q) params[k] = /^(hue|saturation|lightness)$/.test(k) ? Number(v) : v;
+        // Numbers as numbers; lists stay comma-separated strings, which every snippet and the API take.
+        for (const [k, v] of q) params[k] = /^(hue|saturation|lightness|gap|line|precision)$/.test(k) ? Number(v) : v;
         const getQ = new URLSearchParams(q);
         getQ.set('url', (state.doc && state.doc.fromUrl) || 'https://example.com/icon.svg');
         const input = state.doc && !state.doc.fromUrl ? state.doc.name : 'icon.svg';
@@ -968,9 +1846,11 @@
         const code = $('snippet').textContent;
         $('api-hint').textContent = sn.prompt
             ? 'Paste this into ChatGPT, Claude, Copilot or any AI agent.'
-            : code.includes('example.com%2Ficon.svg')
-                ? 'Links need a public SVG: replace example.com/icon.svg with yours, or load your SVG from a link.'
-                : 'Uses your current settings. No API key needed.';
+            : state.svgo && !svgoDefaultExceptPrecision()
+                ? 'The API optimizes with the default SVGO settings (and your precision); your other SVGO changes only apply here.'
+                : code.includes('example.com%2Ficon.svg')
+                    ? 'Links need a public SVG: replace example.com/icon.svg with yours, or load your SVG from a link.'
+                    : 'Uses your current settings. No API key needed.';
         showCode($('mcp-cmd'), 'claude mcp add --transport http svg-recolor ' + SITE + '/mcp', 'sh');
         $('llms-url').textContent = SITE + '/llms.txt';
     }
@@ -1061,7 +1941,7 @@
     $('compare-range').addEventListener('input', (e) => stage.style.setProperty('--split', e.target.value + '%'));
 
     function shareParams() {
-        const q = settingsParams();
+        const q = editParams(settingsParams());
         if (state.doc && state.doc.fromUrl) q.set('url', state.doc.fromUrl);
         return q;
     }
@@ -1071,9 +1951,60 @@
             try { history.replaceState(null, '', location.pathname + '?' + shareParams().toString() + location.hash); } catch (e) { /* ignore */ }
         }, 300);
     }
-    $('share-btn').addEventListener('click', () => {
+    // A pasted or uploaded SVG travels in the link itself: compressed, after the #, which
+    // browsers never send to the server. SVGs from a link are shared by their address.
+    const SHARE_MAX = 24000; // characters; longer links get cut off in chats and mail
+    async function packSvg(text) {
+        if (!window.CompressionStream) return null;
+        const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+        const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+        let bin = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    async function unpackSvg(data) {
+        const bin = atob(data.replace(/-/g, '+').replace(/_/g, '/'));
+        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        // Read with a limit: a tiny link can't expand into gigabytes and freeze the page.
+        const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+        const chunks = [];
+        let total = 0;
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.length;
+            if (total > MAX_BYTES) {
+                reader.cancel().catch(() => {});
+                throw new Error('The SVG in this link is over 2 MB.');
+            }
+            chunks.push(value);
+        }
+        return new TextDecoder().decode(await new Blob(chunks).arrayBuffer());
+    }
+    async function shareLink() {
         const link = SITE + '/?' + shareParams().toString();
-        copyText(link, state.doc && state.doc.fromUrl ? 'Link with this SVG and settings' : 'Link with these settings (uploads are not included)');
+        const doc = state.doc;
+        if (!doc || doc.fromUrl) return { link, label: doc ? 'Link with this SVG and settings' : 'Link with these settings' };
+        const packed = await packSvg(doc.text).catch(() => null);
+        if (packed && packed.length <= SHARE_MAX) {
+            return { link: link + '#' + new URLSearchParams({ svg: packed, name: doc.name }).toString(), label: 'Link with this SVG and settings' };
+        }
+        return { link, label: packed ? 'This SVG is too big for a link, so only the settings were copied. Load it from a public URL to share it' : 'Link with these settings (this browser can\'t pack the SVG into it)' };
+    }
+    $('share-btn').addEventListener('click', async () => {
+        const pending = shareLink();
+        try {
+            // Hand the clipboard a promise right away: Safari only allows clipboard
+            // writes during the click, and packing the SVG takes a moment.
+            if (window.ClipboardItem) {
+                await navigator.clipboard.write([new ClipboardItem({ 'text/plain': pending.then((r) => new Blob([r.link], { type: 'text/plain' })) })]);
+                const { label } = await pending;
+                toast(label + (/copied|too big/.test(label) ? '' : ' copied to clipboard'));
+                return;
+            }
+        } catch (e) { /* fall back to writeText below */ }
+        const { link, label } = await pending;
+        if (/too big/.test(label)) { await copyText(link, 'Settings link'); toast(label); } else copyText(link, label);
     });
 
     // ------------------------------------------------------------------
@@ -1102,7 +2033,7 @@
             if (state.tab === 'preview') setTab('code');
             (state.tab === 'api' ? snippetList : formatList).focusSearch();
         }
-        else if (key === 'v') setView(stage.dataset.view === 'slider' ? 'side' : 'slider');
+        else if (key === 'v') { const order = ['side', 'slider', 'code']; setView(order[(order.indexOf(stage.dataset.view) + 1) % order.length]); }
         else if (key === 'b') { const order = ['checker', 'light', 'dark']; setBg(order[(order.indexOf(stage.dataset.bg) + 1) % 3]); }
         else if (e.key === '?') openShortcuts();
         else return;
@@ -1120,9 +2051,33 @@
     });
     syncAdjust(false);
     setMode(MODES[start.get('mode')] ? start.get('mode') : 'colorize', false);
+    state.edits = editsFromParams(start);
+    state.unit = start.get('unit') === 'pct' ? '%' : 'px';
+    state.svgo = start.get('optimize') === '1';
+    $('svgo-toggle').checked = state.svgo;
+    updateOptimizeFold();
+    {
+        const c = (start.get('canvas') || '').split('x').map(Number);
+        if (c.length === 2 && c.every((v) => v > 0)) state.canvas = c;
+        const p = (start.get('place') || '').split(',').map(Number);
+        if (p.length === 3 && p.every(Number.isFinite) && p[2] > 0) { state.place = p; keepPlacement = true; }
+        syncCanvasUI();
+    }
+    $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === state.unit)));
+    state.gap = Math.max(0, parseFloat(start.get('gap')) || 0);
+    state.line = Math.max(0, parseFloat(start.get('line')) || 0);
+    syncRanges();
+    gapInput.value = String(state.gap);
+    syncGap(false);
+    lineInput.value = String(state.line);
+    $('line-inner').checked = start.get('lines') !== 'outer';
+    for (const v of (start.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }
+    syncLine(false);
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));
     renderRecent();
+    // Open the sections that are in use (say, from a shared link); the rest stay closed.
+    $$('details.fold').forEach((d) => { if (d.classList.contains('active')) d.open = true; });
     state.format = formatList.get();
     state.snippet = snippetList.get();
     updateSnippet();
@@ -1132,5 +2087,19 @@
         showSourcePicker('link');
         $('url-input').value = start.get('url');
         loadFromLink();
+    }
+    const shared = new URLSearchParams(location.hash.slice(1));
+    if (shared.get('svg')) {
+        // A shared SVG (see shareLink): load it, then drop it from the address bar so
+        // the page URL doesn't keep pointing at it after the SVG changes.
+        try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+        unpackSvg(shared.get('svg'))
+            .then((text) => {
+                const name = (shared.get('name') || 'shared.svg').replace(/[^\w.-]+/g, '_').slice(0, 80) || 'shared.svg';
+                codeName = name;
+                setCodeInput(text);
+                loadText(text, name, new Blob([text]).size, null, 'code');
+            })
+            .catch((err) => showError(/2 MB/.test(err.message) ? err.message : 'The SVG in this link could not be read. The link may have been cut off when it was shared.'));
     }
 })();

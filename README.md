@@ -40,6 +40,48 @@ The website is hosted at [svg-recolor.jorgenkh.no](https://svg-recolor.jorgenkh.
 
 Every mode can be fine-tuned with `hue` (rotate, -360..360 degrees), `saturation` and `lightness` (-100..100).
 
+### Per-color edits
+
+On top of any mode, single colors (the original ones, as listed by `/api/palette`) can be edited:
+
+| Edit | API | What it does |
+| --- | --- | --- |
+| Own color | `replace=5e97f6:ff0000,...` | That color gets its own new color instead of the mode's. |
+| Hide | `hide=ffffff,...` | The color becomes `none` (fill/stroke) or `transparent` (gradient stops); the shapes stay in the file. |
+| Remove | `remove=ffffff,...` | Shapes painted with the color are deleted, including ones that inherit it from a group or a CSS class. A shape keeps its fill or stroke when only the other is removed. Shapes inside `<defs>`, `<clipPath>`, `<mask>` and similar are only hidden, never deleted. |
+
+A one-color icon, like a devicon `plain` version, is `mode=solid&color=000000&remove=ffffff` (Solid, then remove the
+background).
+
+Three more edits need path geometry. The editor runs them in the browser, and the API and MCP server run the very
+same code (paper.js and SVGO in QuickJS, with picosvg reading the shapes), so the results match:
+
+- **Cut out** (a color's option in the color panel; API `cut=dce0df`): the color becomes a real gap. Only the part you can see in the
+  original is cut, and the result is flattened to one path per color. For logos with outlines between their parts
+  (like JAX), Solid + Cut out on the outline gives a one-path plain version with gaps exactly where the outlines were.
+- **Gaps** (API `gap=2`; slider under Adjust, in px of the SVG's own units, or % of the icon): every boundary between two original colors gets a
+  gap of that width; the outer edge stays put. For logos whose parts just touch (like rqlite), Solid + Gaps keeps the
+  parts apart in one color.
+
+- **Line** (API `line=3`, `lines=outer`, `keep=ffffff`; slider under Adjust, same units): a line version, like devicon's `line` icons. Only a band of that width
+  along the edges is kept: inside the outer edge, and centered on the boundaries between colors (switch off **Lines
+  between colors** for just the outline). In the color panel, **Keep filled** keeps a color solid, for small details.
+
+**Canvas** (the viewBox size is on the picture; the rest is under **Placement**; API: `canvas=128x128`, `place=x,y,scale`, `fit=1`): set the canvas size, the drawing's size and position, or
+**Fit to canvas** with a padding: the visible drawing (strokes included, invisible colors not) is scaled and centered
+so it ends exactly that far from every edge. For devicon: canvas 128 × 128, padding 1, Fit. The drawing is wrapped in
+one `<g transform>`, so every other feature works on top.
+
+On the API these get 20 seconds per request: most icons take well under a second, but very complex drawings
+(thousands of curves) may need the editor, which runs them in your browser without a limit.
+
+All three handle flat colors and plain shapes; text, embedded images, gradients, transparency and `<use>` get a clear
+message instead of a guess.
+
+In the editor, click a color in the **Colors** strip under the preview, or click the shape itself in the picture, to edit it.
+Each chip shows a small badge for what its color does (own color, invisible, cut out, kept filled), and **Reset colors**
+puts every color back to following the style.
+
 Before recoloring, colors are normalized so the tools can handle them: CSS color names, `rgb()`/`hsl()`
 (with alpha), and 3/4-digit hex are converted to hex, and icons that rely on the default black fill
 (or `currentColor`) get an explicit black so they recolor too. `url(#id)` and `href="#id"` references are left alone.
@@ -139,7 +181,14 @@ How:
 
 ### Website tips
 
-- The page URL keeps your settings (`?mode=colorize&color=ff0066&url=...`), so you can bookmark or share a setup. Opening a link with `url=` loads that SVG.
+- The page URL keeps your settings and color edits (`?mode=colorize&color=ff0066&remove=ffffff&url=...`), so you can bookmark a setup. Opening a link with `url=` loads that SVG.
+- **Paste** (Ctrl+V) takes an `.svg` file copied in the file manager, SVG code, an SVG copied from a web page, a link, or
+  the result of a browser's **Copy image** on an SVG (the browser copies a PNG, plus the image's address, which is used to get the SVG itself).
+- **Optimize** (API `optimize=true`, `precision=3`) runs SVGO 3.3.2, with devicon's settings by default (precision 3, multipass,
+  every preset plugin but removeViewBox, devicon's extra plugins, a newline at the end): the same bytes as devicon's
+  svg-icons `optimize.js`. Every plugin can be switched; the settings are saved in your browser.
+- **With code** (next to Side by side and Slider) shows the result's SVG code beside the picture.
+- **Share** copies a link with your SVG and settings. A linked SVG is shared by its address; a pasted or uploaded one travels in the link itself, compressed, after the `#` (never sent to the server). Very large SVGs don't fit in a link: share them from a public URL instead.
 - Everything fits on one screen: settings on the left, and Preview, Code and API tabs on the right, with Share, Copy and Download always visible.
 - Settings follow the order the engine applies them: **1 Style** (each tile shows your SVG in that style), **2 Color** (only for
   styles that use one) and **3 Adjust** (hue, saturation and lightness, applied last to any style). The "Original" style keeps
