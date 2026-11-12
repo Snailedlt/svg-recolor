@@ -1,6 +1,7 @@
 # Vendored libraries
 
-Used only by "Cut out" (`static/geometry.js`), loaded on demand as `/assets/geometry.js`.
+Loaded only when needed: the geometry libraries for Cut out, gaps, lines and Fit (`static/geometry.js`, as
+`/assets/geometry.js`), and SVGO for Optimize.
 Copied by `scripts/vendor-geometry.sh` from the versions pinned in `tests/js/package.json`.
 
 ## paper-core.min.js — Paper.js 0.12.18
@@ -11,7 +12,11 @@ Copyright (c) 2011 - 2020, Jürg Lehni & Jonathan Puckey. MIT License: http://pa
 
 Copyright (c) 2016-2019 luz-alphacode. MIT License: https://github.com/luz-alphacode/paperjs-offset/blob/master/LICENSE
 
-Both under the MIT License:
+## svgo.browser.js — SVGO 3.3.2
+
+Copyright (c) Kir Belevich. MIT License: https://github.com/svg/svgo/blob/main/LICENSE
+
+All three under the MIT License:
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 > documentation files (the "Software"), to deal in the Software without restriction, including without limitation the

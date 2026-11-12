@@ -11,3 +11,4 @@ const same = (vendored, pkg) => assert.ok(
 
 test('vendored paper.js matches the pinned version', () => same('paper-core.min.js', 'paper/dist/paper-core.min.js'));
 test('vendored paperjs-offset matches the pinned version', () => same('paperjs-offset.min.js', 'paperjs-offset/dist/paperjs-offset.min.js'));
+test('vendored SVGO matches the pinned version', () => same('svgo.browser.js', 'svgo/dist/svgo.browser.js'));

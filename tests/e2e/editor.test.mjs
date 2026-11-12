@@ -333,7 +333,7 @@ test('cut out: a color becomes a real gap, and the result is one path per color'
         + '<rect x="100" y="50" width="20" height="20" fill="#5e97f6"/><rect x="118" y="50" width="4" height="20" fill="#dce0df"/></svg>', { cut: ['dce0df'] }));
     assert.match(shifted, /viewBox="100 50 40 20"/);
     assert.match(shifted, /d="M100,70v-20h18[lv]/, "the cut leaves 100..118 at its own coordinates");
-    assert.match(await page.textContent('#api-hint'), /Cut out, gaps, lines and the canvas only work here in the editor/);
+    assert.match(await page.textContent('#api-hint'), /Cut out, gaps, lines, the canvas and Optimize only work here in the editor/);
     assert.deepEqual(problems, []);
 });
 
@@ -437,7 +437,7 @@ test('line version: only the edges stay, colors can stay filled', async () => {
     await page.click('#line-inner-row .switch');
     await page.waitForURL(/lines=outer/);
     assert.deepEqual(await hitsAt(points), [true, false, false, false, false]);
-    assert.match(await (async () => { await page.click('#tab-btn-api'); return page.textContent('#api-hint'); })(), /the canvas only work here in the editor/);
+    assert.match(await (async () => { await page.click('#tab-btn-api'); return page.textContent('#api-hint'); })(), /the canvas and Optimize only work here in the editor/);
     assert.ok(!(await page.textContent('#snippet')).includes('line='), 'API snippets leave lines out');
     assert.deepEqual(problems, []);
 });
@@ -480,11 +480,37 @@ test('canvas: a new viewBox, and Fit with padding (strokes count)', async () => 
     assert.match(code, /<g transform="matrix\(5\.727 0 0 5\.727 -50\.545 -50\.545\)">/);
     // The API can't do this: the snippet leaves it out and says so.
     await page.click('#tab-btn-api');
-    assert.match(await page.textContent('#api-hint'), /the canvas only work here in the editor/);
+    assert.match(await page.textContent('#api-hint'), /the canvas and Optimize only work here in the editor/);
     assert.ok(!(await page.textContent('#snippet')).includes('canvas='));
     await page.click('#tab-btn-preview');
     await page.click('#canvas-reset');
     assert.equal(await page.inputValue('#canvas-w'), '100');
+    assert.deepEqual(problems, []);
+});
+
+test('optimize with SVGO (devicon\'s settings), and the code next to the picture', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, '<?xml version="1.0"?>\n<!-- made by hand -->\n<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">'
+        + '<title>t</title><g><rect x="0" y="0" width="64.123456" height="64" fill="#5e97f6"/></g></svg>');
+    await page.click('#view-tabs [data-view="code"]');
+    assert.equal(await page.isVisible('#preview-container'), false, 'the code takes the original\'s place');
+    await page.locator('#side-code', { hasText: '<title>' }).waitFor();
+    await page.check('#svgo-toggle');
+    await page.waitForURL(/optimize=1/);
+    await page.locator('#side-code', { hasText: 'path' }).waitFor();
+    const code = await page.textContent('#side-code');
+    assert.ok(!/<title>|<!--|<\?xml|width="128"/.test(code), 'comments, title, prolog and size are gone');
+    assert.match(code, /viewBox="0 0 128 128"/, 'the viewBox stays (devicon)');
+    assert.match(code, /64\.123/, 'precision 3');
+    assert.ok(code.endsWith('</svg>\n') || code.endsWith('</svg>'), 'one line, newline at the end');
+    // Settings: turn off removeTitle and the title comes back.
+    await page.click('#svgo-settings summary');
+    await page.uncheck('#svgo-plugins [data-plugin="removeTitle"]');
+    assert.equal(await page.textContent('#svgo-preset'), 'custom');
+    await page.locator('#side-code', { hasText: '<title>' }).waitFor();
+    await page.click('#svgo-reset');
+    assert.equal(await page.textContent('#svgo-preset'), "devicon's");
+    await page.click('#view-tabs [data-view="side"]');
     assert.deepEqual(problems, []);
 });
 

@@ -1,4 +1,5 @@
 import base64
+import functools
 import hashlib
 import io
 import json
@@ -218,6 +219,15 @@ GEOMETRY = ("vendor/paper-core.min.js", "vendor/paperjs-offset.min.js", "geometr
 _geometry_cache: Optional[tuple[str, str]] = None
 
 
+@functools.lru_cache(maxsize=1)
+def _optimize_version() -> str:
+    """One hash for the SVGO worker and the SVGO build it imports (both under /static)."""
+    h = hashlib.sha256()
+    for name in ("optimize-worker.js", "vendor/svgo.browser.js"):
+        h.update((BASE_DIR / "static" / name).read_bytes())
+    return h.hexdigest()[:12]
+
+
 def _geometry() -> tuple[str, str]:
     global _geometry_cache
     if _geometry_cache is None or os.environ.get("SVG_RECOLOR_DEV"):
@@ -249,7 +259,8 @@ def _page_config() -> str:
         seed = {}
     sample_url = f"{SAMPLE_PATH}?v={hashlib.sha256(data).hexdigest()[:12]}"
     config = {"engineVersion": engine.ENGINE_VERSION, "sampleUrl": sample_url, "seed": seed,
-              "geometryUrl": f"/assets/geometry.js?v={_geometry()[1]}"}
+              "geometryUrl": f"/assets/geometry.js?v={_geometry()[1]}",
+              "optimizeUrl": f"/static/optimize-worker.js?v={_optimize_version()}"}
     return json.dumps(config, separators=(",", ":")).replace("</", "<\\/")
 
 

@@ -178,6 +178,10 @@ How:
 - The page URL keeps your settings and color edits (`?mode=colorize&color=ff0066&remove=ffffff&url=...`), so you can bookmark a setup. Opening a link with `url=` loads that SVG.
 - **Paste** (Ctrl+V) takes an `.svg` file copied in the file manager, SVG code, an SVG copied from a web page, a link, or
   the result of a browser's **Copy image** on an SVG (the browser copies a PNG, plus the image's address, which is used to get the SVG itself).
+- **Optimize** (step 5) runs SVGO 3.3.2 in the browser, with devicon's settings by default (precision 3, multipass,
+  every preset plugin but removeViewBox, devicon's extra plugins, a newline at the end): the same bytes as devicon's
+  svg-icons `optimize.js`. Every plugin can be switched; the settings are saved in your browser.
+- **With code** (next to Side by side and Slider) shows the result's SVG code beside the picture.
 - **Share** copies a link with your SVG and settings. A linked SVG is shared by its address; a pasted or uploaded one travels in the link itself, compressed, after the `#` (never sent to the server). Very large SVGs don't fit in a link: share them from a public URL instead.
 - Everything fits on one screen: settings on the left, and Preview, Code and API tabs on the right, with Share, Copy and Download always visible.
 - Settings follow the order the engine applies them: **1 Style** (each tile shows your SVG in that style), **2 Color** (only for

@@ -60,6 +60,7 @@
         gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
         line: 0, // line version: band width along the edges (same units); 0 = off
         unit: 'px', // gap and line sizes: 'px' (the SVG's own units) or '%' of the icon
+        svgo: false, // optimize the result with SVGO
         canvas: null, // [w, h] of a new viewBox (null = the SVG's own)
         place: null, // [x, y, scale]: where the original viewBox's top-left lands, and its scale (null = centered, 100 %)
         lineInner: true, // lines also between colors, not just around the whole shape
@@ -202,8 +203,16 @@
         img.src = url;
         img.alt = alt;
         img.decoding = 'async';
-        img.onload = () => { if (!img.naturalWidth) img.classList.add('fill'); };
-        container.replaceChildren(img);
+        const token = (container.renderToken || 0) + 1;
+        container.renderToken = token;
+        const show = () => {
+            if (container.renderToken !== token) return; // a newer picture is on its way
+            if (!img.naturalWidth) img.classList.add('fill');
+            container.replaceChildren(img);
+        };
+        // No blink: the old picture stays until the new one is decoded and ready to draw.
+        if (container.querySelector('img') && img.decode) img.decode().then(show, show);
+        else show();
     }
 
     // ------------------------------------------------------------------
@@ -241,6 +250,7 @@
         for (const k of ['replace', 'hide', 'remove', 'cut']) if (by[k].length) q.set(k, by[k].join(','));
         if (state.gap) q.set('gap', String(state.gap));
         if ((state.gap || state.line) && state.unit === '%') q.set('unit', 'pct');
+        if (state.svgo) q.set('optimize', '1');
         if (state.canvas) q.set('canvas', state.canvas.map(fmt).join('x'));
         if (state.place) q.set('place', state.place.map(fmt).join(','));
         if (state.line) {
@@ -376,6 +386,106 @@
     $('fit-btn').addEventListener('click', () => fitToCanvas(false));
     $('center-btn').addEventListener('click', () => fitToCanvas(true));
     $('canvas-reset').addEventListener('click', () => { state.canvas = null; state.place = null; canvasChanged(); });
+
+    // ------------------------------------------------------------------
+    // Optimize: SVGO in a worker, with devicon's settings by default (its svg-icons
+    // svgo.config.js: SVGO 3.3.2, multipass, precision 3, every preset plugin but
+    // removeViewBox, a few extra ones, and a newline at the end).
+    // ------------------------------------------------------------------
+    const SVGO_PRESET = ['removeDoctype', 'removeXMLProcInst', 'removeComments', 'removeMetadata', 'removeEditorsNSData',
+        'cleanupAttrs', 'mergeStyles', 'inlineStyles', 'minifyStyles', 'cleanupIds', 'removeUselessDefs', 'cleanupNumericValues',
+        'convertColors', 'removeUnknownsAndDefaults', 'removeNonInheritableGroupAttrs', 'removeUselessStrokeAndFill', 'removeViewBox',
+        'cleanupEnableBackground', 'removeHiddenElems', 'removeEmptyText', 'convertShapeToPath', 'convertEllipseToCircle',
+        'moveElemsAttrsToGroup', 'moveGroupAttrsToElems', 'collapseGroups', 'convertPathData', 'convertTransform', 'removeEmptyAttrs',
+        'removeEmptyContainers', 'mergePaths', 'removeUnusedNS', 'sortAttrs', 'sortDefsChildren', 'removeTitle', 'removeDesc'];
+    const SVGO_EXTRA = ['removeDimensions', 'removeStyleElement', 'convertStyleToAttrs', 'removeScriptElement', 'removeOffCanvasPaths',
+        'convertOneStopGradients', 'removeSvgXY', 'removeXMLNS', 'removeRasterImages', 'removeXlink', 'reusePaths'];
+    const SVGO_LABEL = { removeSvgXY: 'removeAttrs (x and y on <svg>)' };
+    const SVGO_OFF = new Set(['removeViewBox', 'removeXMLNS', 'removeRasterImages', 'removeXlink', 'reusePaths']);
+    const svgoDefaults = () => ({
+        precision: 3, multipass: true, newline: true,
+        plugins: Object.fromEntries([...SVGO_PRESET, ...SVGO_EXTRA].map((n) => [n, !SVGO_OFF.has(n)])),
+    });
+    let svgoSettings = Object.assign(svgoDefaults(), store.get('svgo-settings', {}));
+    svgoSettings.plugins = Object.assign(svgoDefaults().plugins, svgoSettings.plugins || {});
+    function svgoConfig(set) {
+        const on = (n) => !!set.plugins[n];
+        const overrides = {};
+        SVGO_PRESET.forEach((n) => { if (!on(n)) overrides[n] = false; });
+        // devicon's choices: colors stay #hex, <style> classes are inlined even when reused, short ids
+        if (on('inlineStyles')) overrides.inlineStyles = { onlyMatchedOnce: false };
+        if (on('convertColors')) overrides.convertColors = { shortname: false };
+        if (on('cleanupIds')) overrides.cleanupIds = { minify: true };
+        const plugins = [{ name: 'preset-default', params: { overrides } }];
+        SVGO_EXTRA.forEach((n) => {
+            if (!on(n)) return;
+            plugins.push(n === 'removeSvgXY' ? { name: 'removeAttrs', params: { attrs: 'svg:(x|y)' } } : n);
+        });
+        return { multipass: !!set.multipass, floatPrecision: Math.max(0, Math.min(8, Math.round(set.precision))), plugins };
+    }
+    const isDeviconSvgo = () => JSON.stringify(svgoSettings) === JSON.stringify(svgoDefaults());
+    function renderSvgoSettings() {
+        $('svgo-precision').value = String(svgoSettings.precision);
+        $('svgo-multipass').checked = !!svgoSettings.multipass;
+        $('svgo-newline').checked = !!svgoSettings.newline;
+        const box = $('svgo-plugins');
+        box.replaceChildren();
+        [...SVGO_PRESET, ...SVGO_EXTRA].forEach((n) => {
+            const label = document.createElement('label');
+            label.className = 'check';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = !!svgoSettings.plugins[n];
+            cb.dataset.plugin = n;
+            label.append(cb, ' ' + (SVGO_LABEL[n] || n));
+            label.title = SVGO_PRESET.includes(n) ? 'In SVGO\'s preset-default' : 'An extra SVGO plugin';
+            box.appendChild(label);
+        });
+        $('svgo-preset').textContent = isDeviconSvgo() ? 'devicon\'s' : 'custom';
+    }
+    function svgoSettingsChanged() {
+        store.set('svgo-settings', svgoSettings);
+        $('svgo-preset').textContent = isDeviconSvgo() ? 'devicon\'s' : 'custom';
+        if (state.svgo && state.doc) recolor();
+    }
+    $('svgo-precision').addEventListener('change', () => { svgoSettings.precision = parseInt($('svgo-precision').value, 10) || 0; svgoSettingsChanged(); });
+    $('svgo-multipass').addEventListener('change', (e) => { svgoSettings.multipass = e.target.checked; svgoSettingsChanged(); });
+    $('svgo-newline').addEventListener('change', (e) => { svgoSettings.newline = e.target.checked; svgoSettingsChanged(); });
+    $('svgo-plugins').addEventListener('change', (e) => {
+        if (!e.target.dataset.plugin) return;
+        svgoSettings.plugins[e.target.dataset.plugin] = e.target.checked;
+        svgoSettingsChanged();
+    });
+    $('svgo-reset').addEventListener('click', () => { svgoSettings = svgoDefaults(); renderSvgoSettings(); svgoSettingsChanged(); });
+    $('svgo-toggle').addEventListener('change', (e) => { state.svgo = e.target.checked; editsChanged(); });
+    renderSvgoSettings();
+
+    let svgoWorker = null, svgoJobs = 0;
+    const svgoPending = new Map();
+    function optimizeSvg(svg) {
+        if (!svgoWorker) {
+            svgoWorker = new Worker(CFG.optimizeUrl || '/static/optimize-worker.js', { type: 'module' });
+            svgoWorker.onmessage = (e) => {
+                const job = svgoPending.get(e.data.id);
+                if (!job) return;
+                svgoPending.delete(e.data.id);
+                if (e.data.error) job.reject(new Error('SVGO could not optimize this SVG: ' + e.data.error));
+                else job.resolve(e.data.svg);
+            };
+            svgoWorker.onerror = (e) => {
+                e.preventDefault();
+                svgoWorker = null;
+                svgoPending.forEach((job) => job.reject(new Error('SVGO could not load. Check your connection and try again.')));
+                svgoPending.clear();
+            };
+        }
+        const id = ++svgoJobs;
+        const set = svgoSettings;
+        return new Promise((resolve, reject) => {
+            svgoPending.set(id, { resolve: (out) => resolve(set.newline ? out.replace(/\s*$/, '') + '\n' : out), reject });
+            svgoWorker.postMessage({ id, svg, config: svgoConfig(set) });
+        });
+    }
 
     // The mapping with own colors applied, and the SVG with invisible colors applied.
     // Cut-out colors are left in `edited` for the geometry step (cutOutSvg); `svg` treats
@@ -661,6 +771,8 @@
         state.canvas = null;
         state.place = null;
         syncCanvasUI();
+        state.svgo = false;
+        $('svgo-toggle').checked = false;
         lineInput.value = 0;
         $('line-inner').checked = true;
         state.keep.clear();
@@ -1110,10 +1222,14 @@
         const stem = (state.doc.name || 'image.svg').replace(/\.svg$/i, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'image';
         return stem + '_recolored_' + state.mode + (MODES[state.mode].color ? '_' + state.color.slice(1).toLowerCase() : '') + '.svg';
     }
+    // Dim the picture only when the work takes a while; quick updates just swap.
+    let busyTimer = 0;
     function setBusy(on) {
         $('submit-btn').classList.toggle('loading', on);
-        const img = $('result-container').querySelector('img');
-        if (img) img.classList.toggle('busy', on);
+        clearTimeout(busyTimer);
+        const dim = (v) => { const img = $('result-container').querySelector('img'); if (img) img.classList.toggle('busy', v); };
+        if (on) busyTimer = setTimeout(() => dim(true), 300);
+        else dim(false);
     }
     async function recolor() {
         clearTimeout(debounceTimer);
@@ -1141,6 +1257,16 @@
                 } catch (err) {
                     if (id !== reqId || doc !== state.doc) return;
                     // Show the rest of the edits, with the cut colors left invisible, and say why.
+                    showError(err.message);
+                }
+                if (id !== reqId || doc !== state.doc) return;
+            }
+            if (state.svgo) {
+                setStatus('work', 'Optimizing…');
+                try {
+                    svg = await optimizeSvg(svg);
+                } catch (err) {
+                    if (id !== reqId || doc !== state.doc) return;
                     showError(err.message);
                 }
                 if (id !== reqId || doc !== state.doc) return;
@@ -1175,6 +1301,7 @@
         renderImage($('result-container'), resultUrl, 'Recolored ' + state.doc.name);
         $('code-preview-img').src = resultUrl;
         renderPalette(r.palette);
+        showCode($('side-code'), r.svg.length > CODE_VIEW_LIMIT ? r.svg.slice(0, CODE_VIEW_LIMIT) + '\n…' : r.svg, 'markup');
         if (!editPanel.hidden && editColor && !(editAnchor && editAnchor.point)) { editAnchor = document.querySelector('.chip[data-color="' + editColor + '"]'); placeEditPanel(); }
         if (state.tab === 'code') renderCode();
         syncCopyButton();
@@ -1344,7 +1471,7 @@
     }
     // The original color under a point of a preview image; null for none, undefined while loading.
     function colorAt(img, x, y) {
-        if (!state.doc || stage.dataset.view !== 'side') return null;
+        if (!state.doc || stage.dataset.view === 'slider') return null;
         const rect = drawnRect(img);
         // The recolored picture is on the canvas (placed); the original is as it was.
         const p = preparePick(state.doc, rect, img.closest('#result-container') ? placed(state.doc) : state.doc.norm);
@@ -1573,6 +1700,7 @@
         q.delete('lines');
         q.delete('keep');
         q.delete('canvas');
+        q.delete('optimize');
         q.delete('place');
         const params = {};
         for (const [k, v] of q) params[k] = /^(hue|saturation|lightness)$/.test(k) ? Number(v) : v;
@@ -1592,8 +1720,8 @@
         const code = $('snippet').textContent;
         $('api-hint').textContent = sn.prompt
             ? 'Paste this into ChatGPT, Claude, Copilot or any AI agent.'
-            : state.gap || state.line || state.canvas || state.place || Object.values(state.edits).some((e) => e.op === 'cut')
-                ? 'Cut out, gaps, lines and the canvas only work here in the editor, so this request leaves them out. Download the result instead.'
+            : state.gap || state.line || state.canvas || state.place || state.svgo || Object.values(state.edits).some((e) => e.op === 'cut')
+                ? 'Cut out, gaps, lines, the canvas and Optimize only work here in the editor, so this request leaves them out. Download the result instead.'
                 : code.includes('example.com%2Ficon.svg')
                     ? 'Links need a public SVG: replace example.com/icon.svg with yours, or load your SVG from a link.'
                     : 'Uses your current settings. No API key needed.';
@@ -1765,7 +1893,7 @@
             if (state.tab === 'preview') setTab('code');
             (state.tab === 'api' ? snippetList : formatList).focusSearch();
         }
-        else if (key === 'v') setView(stage.dataset.view === 'slider' ? 'side' : 'slider');
+        else if (key === 'v') { const order = ['side', 'slider', 'code']; setView(order[(order.indexOf(stage.dataset.view) + 1) % order.length]); }
         else if (key === 'b') { const order = ['checker', 'light', 'dark']; setBg(order[(order.indexOf(stage.dataset.bg) + 1) % 3]); }
         else if (e.key === '?') openShortcuts();
         else return;
@@ -1785,6 +1913,8 @@
     setMode(MODES[start.get('mode')] ? start.get('mode') : 'colorize', false);
     state.edits = editsFromParams(start);
     state.unit = start.get('unit') === 'pct' ? '%' : 'px';
+    state.svgo = start.get('optimize') === '1';
+    $('svgo-toggle').checked = state.svgo;
     {
         const c = (start.get('canvas') || '').split('x').map(Number);
         if (c.length === 2 && c.every((v) => v > 0)) state.canvas = c;

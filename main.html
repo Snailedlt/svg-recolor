@@ -268,6 +268,27 @@
                                 </div>
                                 <p class="field-hint" id="canvas-hint">The canvas is the viewBox. Fit scales the visible drawing (strokes included) to fill it, leaving the padding on every side.</p>
                             </section>
+
+                            <section class="step" aria-labelledby="optimize-title" id="optimize-step">
+                                <div class="step-head-row">
+                                    <h2 class="step-head" id="optimize-title"><span class="step-n">5</span>Optimize<span class="step-sub">smaller files with SVGO</span></h2>
+                                </div>
+                                <div class="toggle-row">
+                                    <label for="svgo-toggle">Optimize with SVGO</label>
+                                    <span class="switch"><input type="checkbox" id="svgo-toggle"><span class="track"></span></span>
+                                </div>
+                                <details class="svgo-settings" id="svgo-settings">
+                                    <summary>Settings <span id="svgo-preset">devicon's</span></summary>
+                                    <div class="svgo-top">
+                                        <label class="num-field" title="Decimals kept in numbers (SVGO floatPrecision)"><span>Precision</span><input id="svgo-precision" type="number" min="0" max="8" step="1"></label>
+                                        <label class="check"><input type="checkbox" id="svgo-multipass"> Multipass</label>
+                                        <label class="check"><input type="checkbox" id="svgo-newline"> End with a newline</label>
+                                    </div>
+                                    <div class="svgo-plugins" id="svgo-plugins"></div>
+                                    <button type="button" class="link-btn" id="svgo-reset">Reset to devicon's settings</button>
+                                </details>
+                                <p class="field-hint">By default the same settings as devicon's icons (SVGO 3.3.2, precision 3, multipass). Settings are saved in this browser.</p>
+                            </section>
                         </div>
 
                         <div class="controls-foot">
@@ -309,6 +330,7 @@
                             <div class="ws-tools" data-for="preview">
                                 <div class="segmented" role="group" aria-label="Comparison view" id="view-tabs">
                                     <button type="button" data-view="side" aria-pressed="true" title="Side by side (V)">Side by side</button>
+                                    <button type="button" data-view="code" aria-pressed="false" title="The result next to its SVG code">With code</button>
                                     <button type="button" data-view="slider" aria-pressed="false" title="Before/after slider (V)">Slider</button>
                                 </div>
                                 <div class="segmented" role="group" aria-label="Preview background" id="bg-tabs">
@@ -340,6 +362,10 @@
                                                 The result appears here and updates as you change settings.
                                             </div>
                                         </div>
+                                    </div>
+                                    <div class="pane code-pane">
+                                        <span class="pane-label">SVG code</span>
+                                        <pre class="side-code" id="side-code" tabindex="0" aria-label="SVG code of the result"></pre>
                                     </div>
                                     <input class="compare-range" id="compare-range" type="range" min="0" max="100" value="50" aria-label="Before/after split position">
                                     <span class="split-line" aria-hidden="true"></span>
@@ -535,7 +561,7 @@
                 <dt><kbd>C</kbd></dt><dd>Edit the color</dd>
                 <dt><kbd>P</kbd> <kbd>E</kbd> <kbd>A</kbd></dt><dd>Preview, Code or API tab</dd>
                 <dt><kbd>F</kbd></dt><dd>Search formats or languages</dd>
-                <dt><kbd>V</kbd> / <kbd>B</kbd></dt><dd>Side by side or slider / cycle the background</dd>
+                <dt><kbd>V</kbd> / <kbd>B</kbd></dt><dd>Side by side, slider or with code / cycle the background</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>Enter</kbd></dt><dd>Recolor now</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>S</kbd></dt><dd>Download the result</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>C</kbd></dt><dd>Copy the current code</dd>
