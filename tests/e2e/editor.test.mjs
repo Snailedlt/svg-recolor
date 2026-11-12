@@ -328,7 +328,7 @@ test('cut out: a color becomes a real gap, and the result is one path per color'
         return [[10, 10], [30, 10], [20, 10], [19.2, 5], [20.8, 15]].map(([x, y]) => ctx.isPointInPath(p, x, y, 'nonzero'));
     }, d);
     assert.deepEqual(hits, [true, true, false, false, false]);
-    assert.match(await page.textContent('#api-hint'), /Cut out and gaps only work here in the editor/);
+    assert.match(await page.textContent('#api-hint'), /Cut out, gaps and lines only work here in the editor/);
     assert.deepEqual(problems, []);
 });
 
@@ -361,6 +361,58 @@ test('gaps: color boundaries become gaps, so a one-color version keeps its parts
     await page.click('#tab-btn-preview');
     await page.click('#reset-all');
     assert.equal(await page.textContent('#adj-gap-out'), 'Off');
+    assert.deepEqual(problems, []);
+});
+
+// A blue square with a white square inside it.
+const LINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">'
+    + '<rect width="128" height="128" fill="#0169c9"/><rect x="32" y="32" width="64" height="64" fill="#ffffff"/></svg>';
+
+test('line version: only the edges stay, colors can stay filled', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, LINE_SVG);
+    await page.click('.style[data-mode="solid"]');
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    assert.equal(await page.isVisible('#line-inner-row'), false, 'the line options show once lines are on');
+    const hitsAt = async (points) => {
+        await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+        await page.click('#tab-btn-code');
+        const code = await page.textContent('#code-view');
+        await page.click('#tab-btn-preview');
+        assert.equal((code.match(/<path/g) || []).length, 1, 'one color, one path');
+        const d = /\sd="([^"]+)"/.exec(code)[1];
+        return page.evaluate(([d, points]) => {
+            const ctx = document.createElement('canvas').getContext('2d');
+            const p = new Path2D(d);
+            return points.map(([x, y]) => ctx.isPointInPath(p, x, y, 'nonzero'));
+        }, [d, points]);
+    };
+    // Outer edge (band inside it), empty middle of the blue part, both sides of the inner
+    // edge (a line centered on it), the white middle.
+    const points = [[4, 64], [20, 64], [29.5, 64], [34.5, 64], [64, 64]];
+    await page.locator('#adj-line').evaluate((el) => { el.value = '8'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+    await page.waitForURL(/line=8/);
+    assert.equal(await page.isVisible('#line-inner-row'), true);
+    assert.deepEqual(await hitsAt(points), [true, false, true, true, false]);
+
+    // Keep the white square filled.
+    const pt = await pointOf(page, '#preview-container img', [64, 64], [128, 128]);
+    await page.mouse.click(pt.x, pt.y);
+    await page.check('#color-edit-keep');
+    await page.locator('.chip.kept[data-color="ffffff"]').waitFor();
+    await page.keyboard.press('Escape');
+    await page.waitForURL(/keep=ffffff/);
+    assert.deepEqual(await hitsAt(points), [true, false, true, true, true]);
+
+    // Only the outline of the whole shape.
+    await page.mouse.click(pt.x, pt.y);
+    await page.uncheck('#color-edit-keep');
+    await page.keyboard.press('Escape');
+    await page.click('#line-inner-row .switch');
+    await page.waitForURL(/lines=outer/);
+    assert.deepEqual(await hitsAt(points), [true, false, false, false, false]);
+    assert.match(await (async () => { await page.click('#tab-btn-api'); return page.textContent('#api-hint'); })(), /lines only work here in the editor/);
+    assert.ok(!(await page.textContent('#snippet')).includes('line='), 'API snippets leave lines out');
     assert.deepEqual(problems, []);
 });
 

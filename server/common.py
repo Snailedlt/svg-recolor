@@ -55,14 +55,14 @@ def _edit_list(value) -> tuple:
     return engine.parse_edit_list(str(value))
 
 
-CUT_IN_EDITOR = ("'cut' and 'gap' (cutting gaps) need path geometry and are only available in the editor "
+CUT_IN_EDITOR = ("'cut', 'gap' and 'line' (cut out, gaps, line versions) need path geometry and are only available in the editor "
                  "on the website. The API supports replace, hide and remove.")
 
 
-def options(mode, color, hue, saturation, lightness, replace=None, hide=None, remove=None, cut=None, gap=None) -> engine.Options:
+def options(mode, color, hue, saturation, lightness, replace=None, hide=None, remove=None, cut=None, gap=None, line=None) -> engine.Options:
     """Options from request values. replace/hide/remove take strings from query strings
     and forms ("5e97f6:ff0000,..." / "ffffff,...") or an object/list from JSON and MCP."""
-    if cut or (gap not in (None, "", 0, "0")):
+    if cut or any(v not in (None, "", 0, "0") for v in (gap, line)):
         raise HTTPException(status_code=400, detail=CUT_IN_EDITOR)
     try:
         return engine.Options(

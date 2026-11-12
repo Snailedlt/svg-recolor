@@ -58,6 +58,9 @@
         // | { op: 'hide' } (older links; shown as Invisible)
         edits: {},
         gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
+        line: 0, // line version: band width along the edges (same units); 0 = off
+        lineInner: true, // lines also between colors, not just around the whole shape
+        keep: new Set(), // colors that stay filled in the line version
     };
     const mapCache = new Map();
     let reqId = 0;
@@ -234,6 +237,11 @@
         for (const [c, e] of Object.entries(state.edits)) by[e.op].push(e.op === 'replace' ? c + ':' + e.to.slice(1).toLowerCase() : c);
         for (const k of ['replace', 'hide', 'remove', 'cut']) if (by[k].length) q.set(k, by[k].join(','));
         if (state.gap) q.set('gap', String(state.gap));
+        if (state.line) {
+            q.set('line', String(state.line));
+            if (!state.lineInner) q.set('lines', 'outer');
+            if (state.keep.size) q.set('keep', [...state.keep].join(','));
+        }
         return q;
     }
     function editsFromParams(q) {
@@ -277,7 +285,10 @@
     }
     async function cutOutSvg(edited, cut, merged, onProgress) {
         const Geo = await loadGeometry();
-        return Geo.cutOut(edited, { cut, map: merged, gap: state.gap, onProgress });
+        return Geo.cutOut(edited, {
+            cut, map: merged, gap: state.gap, onProgress,
+            line: state.line, lineInner: state.lineInner, keep: [...state.keep],
+        });
     }
     const gapInput = $('adj-gap');
     function syncGap() {
@@ -287,6 +298,17 @@
     // Gaps are heavy on big drawings: show the value at once, recut when the slider rests.
     let gapTimer = 0;
     gapInput.addEventListener('input', () => { syncGap(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
+    // Line version: a band of this width along the edges (devicon "line" icons).
+    const lineInput = $('adj-line');
+    function syncLine() {
+        state.line = Math.max(0, Math.min(8, parseFloat(lineInput.value) || 0));
+        state.lineInner = $('line-inner').checked;
+        $('adj-line-out').textContent = state.line ? String(state.line) : 'Off';
+        $('line-inner-row').hidden = !state.line;
+        if (!editPanel.hidden) $('color-edit-keep-row').hidden = !state.line;
+    }
+    lineInput.addEventListener('input', () => { syncLine(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
+    $('line-inner').addEventListener('change', () => { syncLine(); editsChanged(); });
     function settingsChanged() {
         scheduleThumbs();
         updateSnippet();
@@ -401,6 +423,10 @@
         ADJ.forEach(([k]) => { $('adj-' + k).value = 0; });
         $('adj-gap').value = 0;
         syncGap();
+        lineInput.value = 0;
+        $('line-inner').checked = true;
+        state.keep.clear();
+        syncLine();
         syncAdjust(false);
         setColor('#FF0066', false);
         setMode('colorize', false);
@@ -858,10 +884,10 @@
             const parts = editedSvg(doc, mapping);
             const { merged } = parts;
             let svg = parts.svg;
-            if (parts.cut.length || state.gap) {
-                setStatus('work', state.gap ? 'Cutting gaps…' : 'Cutting out…');
+            if (parts.cut.length || state.gap || state.line) {
+                const label = state.line ? 'Drawing lines… ' : state.gap ? 'Cutting gaps… ' : 'Cutting out… ';
+                setStatus('work', label.trim());
                 try {
-                    const label = state.gap ? 'Cutting gaps… ' : 'Cutting out… ';
                     svg = await cutOutSvg(parts.edited, parts.cut, merged, (f) => { if (id === reqId) setStatus('work', label + Math.round(f * 100) + '%'); });
                 } catch (err) {
                     if (id !== reqId || doc !== state.doc) return;
@@ -915,7 +941,8 @@
             const li = document.createElement('li');
             const btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'chip' + (e.edit ? ' edited ' + e.edit.op : '');
+            const kept = state.line && state.keep.has(e.from.slice(1));
+            btn.className = 'chip' + (e.edit ? ' edited ' + e.edit.op : '') + (kept ? ' edited kept' : '');
             btn.dataset.color = e.from.slice(1);
             const shown = e.to === 'cut' ? 'Cut out' : e.to === 'removed' ? 'Invisible' : e.to.toUpperCase();
             btn.title = e.from.toUpperCase() + ' → ' + shown + ' (used ' + e.count + '×). Click to edit this color.';
@@ -924,14 +951,14 @@
             const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.textContent = '→';
             const b = document.createElement('i');
             if (e.to.startsWith('#')) b.style.background = e.to; else b.className = 'gone';
-            const t = document.createElement('span'); t.textContent = shown;
+            const t = document.createElement('span'); t.textContent = shown + (kept ? ' · filled' : '');
             btn.append(a, arrow, b, t);
             btn.addEventListener('click', () => openColorEdit(e.from.slice(1), btn));
             li.appendChild(btn);
             list.appendChild(li);
         });
         $('palette').hidden = entries.length === 0;
-        $('edits-reset').hidden = !Object.keys(state.edits).length;
+        $('edits-reset').hidden = !Object.keys(state.edits).length && !state.keep.size;
     }
 
     // Color-edit panel: Follow style / Own color / Hide / Remove shapes, for one color.
@@ -959,6 +986,8 @@
         $$('#color-edit [name="color-edit-op"]').forEach((r) => { r.checked = r.value === op; });
         const styleTo = entry && entry.edit ? null : entry && entry.to;
         $('color-edit-own').value = e && e.op === 'replace' ? e.to : (styleTo && styleTo.startsWith('#') ? styleTo : '#' + color);
+        $('color-edit-keep').checked = state.keep.has(color);
+        $('color-edit-keep-row').hidden = !state.line;
         editPanel.hidden = false;
         placeEditPanel();
         const checked = editPanel.querySelector('[name="color-edit-op"]:checked');
@@ -989,6 +1018,11 @@
         $$('#color-edit [name="color-edit-op"]').forEach((r) => { r.checked = r.value === 'replace'; });
         setColorEdit('replace');
     });
+    $('color-edit-keep').addEventListener('change', (e) => {
+        if (!editColor) return;
+        if (e.target.checked) state.keep.add(editColor); else state.keep.delete(editColor);
+        editsChanged();
+    });
     $('color-edit-close').addEventListener('click', () => closeColorEdit(true));
     editPanel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeColorEdit(true); } });
     document.addEventListener('pointerdown', (e) => {
@@ -998,6 +1032,7 @@
     $('palette-list').addEventListener('scroll', placeEditPanel, { passive: true });
     $('edits-reset').addEventListener('click', () => {
         state.edits = {};
+        state.keep.clear();
         closeColorEdit(false);
         editsChanged();
         toast('Color edits reset');
@@ -1282,6 +1317,9 @@
         const q = editParams(settingsParams());
         q.delete('cut'); // Cut out and gaps are editor-only (path geometry); the API rejects cut
         q.delete('gap');
+        q.delete('line');
+        q.delete('lines');
+        q.delete('keep');
         const params = {};
         for (const [k, v] of q) params[k] = /^(hue|saturation|lightness)$/.test(k) ? Number(v) : v;
         const getQ = new URLSearchParams(q);
@@ -1300,8 +1338,8 @@
         const code = $('snippet').textContent;
         $('api-hint').textContent = sn.prompt
             ? 'Paste this into ChatGPT, Claude, Copilot or any AI agent.'
-            : state.gap || Object.values(state.edits).some((e) => e.op === 'cut')
-                ? 'Cut out and gaps only work here in the editor, so this request leaves them out. Download the result instead.'
+            : state.gap || state.line || Object.values(state.edits).some((e) => e.op === 'cut')
+                ? 'Cut out, gaps and lines only work here in the editor, so this request leaves them out. Download the result instead.'
                 : code.includes('example.com%2Ficon.svg')
                     ? 'Links need a public SVG: replace example.com/icon.svg with yours, or load your SVG from a link.'
                     : 'Uses your current settings. No API key needed.';
@@ -1494,6 +1532,10 @@
     state.edits = editsFromParams(start);
     gapInput.value = String(parseFloat(start.get('gap')) || 0);
     syncGap();
+    lineInput.value = String(parseFloat(start.get('line')) || 0);
+    $('line-inner').checked = start.get('lines') !== 'outer';
+    for (const v of (start.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }
+    syncLine();
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));
     renderRecent();

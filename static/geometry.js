@@ -14,7 +14,12 @@
  * boundary; each side gives up half. The outer edge stays where it is, and touching
  * shapes of the same color merge. With Solid that keeps the color areas apart.
  *
- *   SvgGeometry.cutOut(svgText, { cut: ['dce0df'], map: { '5e97f6': 'ff0066' }, gap: 2 }) -> Promise<svgText>
+ * Lines: with `line` > 0 the drawing becomes a line version (like devicon's "line"
+ * icons): only a band of that width along the edges is kept, measured inward from the
+ * outer edge, and centered on the boundaries between colors (unless `lineInner` is
+ * false: then only the outline of the whole shape). Colors in `keep` stay filled.
+ *
+ *   SvgGeometry.cutOut(svgText, { cut: ['dce0df'], map: { '5e97f6': 'ff0066' }, gap: 2, line: 3, keep: ['ffffff'] }) -> Promise<svgText>
  */
 (function (global) {
     'use strict';
@@ -57,8 +62,8 @@
         for (const el of [svg, ...svg.querySelectorAll('*')]) {
             for (const a of [...el.attributes]) if (/^on/i.test(a.name)) el.removeAttribute(a.name);
         }
-        if (svg.querySelector('text')) throw new GeometryError('Cut out works on shapes, and this SVG has text. Convert the text to paths first (in Inkscape: Path → Object to Path).');
-        if (svg.querySelector('image')) throw new GeometryError('Cut out works on shapes, and this SVG has an embedded image.');
+        if (svg.querySelector('text')) throw new GeometryError('Cut out, gaps and lines work on shapes, and this SVG has text. Convert the text to paths first (in Inkscape: Path → Object to Path).');
+        if (svg.querySelector('image')) throw new GeometryError('Cut out, gaps and lines work on shapes, and this SVG has an embedded image.');
 
         // Measure computed styles in an invisible box on the page.
         const box = document.createElement('div');
@@ -76,7 +81,7 @@
                     continue;
                 }
                 if (el.matches('path, rect, circle, ellipse, line, polyline, polygon') && /url\(/.test(cs.fill + cs.stroke)) {
-                    throw new GeometryError('Cut out works with flat colors, and this SVG uses gradients or patterns.');
+                    throw new GeometryError('Cut out, gaps and lines work with flat colors, and this SVG uses gradients or patterns.');
                 }
                 for (const p of props) el.setAttribute(p, p === 'stroke-width' ? String(parseFloat(cs.strokeWidth) || 0) : cs.getPropertyValue(p));
                 el.removeAttribute('style');
@@ -105,7 +110,7 @@
         const walk = (item, clip) => {
             if (!item.visible || item.opacity === 0) return;
             if (item.className === 'Group' || item.className === 'Layer') {
-                if (item.opacity < 1) throw new GeometryError('Cut out doesn\'t support semi-transparent groups yet.');
+                if (item.opacity < 1) throw new GeometryError('Cut out, gaps and lines don\'t support semi-transparent groups yet.');
                 let mask = clip;
                 const kids = item.children.slice();
                 if (item.clipped && kids.length && isPath(kids[0])) {
@@ -117,13 +122,13 @@
                 kids.forEach((k) => walk(k, mask));
                 return;
             }
-            if (item.className === 'SymbolItem') throw new GeometryError('Cut out doesn\'t support <use> elements yet. Expand them first (in Inkscape: Edit → Clone → Unlink Clone).');
+            if (item.className === 'SymbolItem') throw new GeometryError('Cut out, gaps and lines don\'t support <use> elements yet. Expand them first (in Inkscape: Edit → Clone → Unlink Clone).');
             if (!isPath(item) || item.clipMask) return;
             const base = item.clone({ insert: false });
             base.transform(item.parent.globalMatrix);
             const add = (p, color) => {
-                if (color.gradient) throw new GeometryError('Cut out works with flat colors, and this SVG uses gradients.');
-                if (color.alpha < 1 || item.opacity < 1) throw new GeometryError('Cut out doesn\'t support semi-transparent colors yet.');
+                if (color.gradient) throw new GeometryError('Cut out, gaps and lines work with flat colors, and this SVG uses gradients.');
+                if (color.alpha < 1 || item.opacity < 1) throw new GeometryError('Cut out, gaps and lines don\'t support semi-transparent colors yet.');
                 p.fillColor = null; p.strokeColor = null;
                 if (clip) p = p.intersect(clip, { insert: false });
                 if (!p.isEmpty() && p.bounds.width > 0 && p.bounds.height > 0) out.push({ path: p, color: hex6(color) });
@@ -135,7 +140,7 @@
                 const w = item.strokeWidth * Math.sqrt(Math.abs(g.scaling.x * g.scaling.y));
                 add(PaperOffset.offsetStroke(base, w / 2, { cap: item.strokeCap || 'butt', join: item.strokeJoin || 'miter', insert: false }), item.strokeColor);
             }
-            if (out.length > MAX_SHAPES) throw new GeometryError('This SVG has too many shapes for Cut out (over ' + MAX_SHAPES + ').');
+            if (out.length > MAX_SHAPES) throw new GeometryError('This SVG has too many shapes for cut out, gaps and lines (over ' + MAX_SHAPES + ').');
         };
         walk(root, null);
         return out;
@@ -193,7 +198,7 @@
                     }
                 }
                 covered = covered ? covered.unite(path, { insert: false }) : path.clone({ insert: false });
-                if (i % 25 === 0) { report((shapes.length - i) / shapes.length * (opts.gap > 0 ? 0.2 : 1)); await tick(); } // also keeps the page responsive without a worker
+                if (i % 25 === 0) { report((shapes.length - i) / shapes.length * (opts.gap > 0 || opts.line > 0 ? 0.15 : 1)); await tick(); } // also keeps the page responsive without a worker
             }
 
             const unite = (list) => list.reduce((a, p) => (a ? a.unite(p, { insert: false }) : p), null);
@@ -201,11 +206,33 @@
             const order = [...regions.keys()].reverse();
             let byColor = order.map((c) => [c, unite(regions.get(c))]).filter(([, p]) => p && !p.isEmpty());
 
+            const vb = (viewBox || '').split(/[\s,]+/).map(Number);
+            const size = vb.length === 4 && vb.every(Number.isFinite) ? Math.max(vb[2], vb[3]) : Math.max(bounds[0], bounds[1]);
+            const stroke = (p, half) => PaperOffset.offsetStroke(p, half, { join: 'round', cap: 'butt', insert: false });
+
+            // Lines, from the regions before gaps: a band inside the outer edge, plus (with
+            // lineInner) a band centered on every boundary between two colors.
+            const line = Number(opts.line) || 0;
+            let lines = null;
+            if (line > 0 && byColor.length) {
+                if (!PaperOffset) throw new GeometryError('Lines need the offset library, which did not load.');
+                const w = (line * size) / 128;
+                const whole = unite(byColor.map(([, p]) => p.clone({ insert: false })));
+                lines = whole.intersect(stroke(whole, w), { insert: false });
+                report(opts.gap > 0 ? 0.15 : 0.3);
+                await tick();
+                if (opts.lineInner !== false && byColor.length > 1) {
+                    for (const [i, [, p]] of byColor.entries()) {
+                        lines = lines.unite(whole.intersect(stroke(p, w / 2), { insert: false }), { insert: false });
+                        report((opts.gap > 0 ? 0.15 : 0.3) + (opts.gap > 0 ? 0.25 : 0.6) * (i + 1) / byColor.length);
+                        await tick();
+                    }
+                }
+            }
+
             const gap = Number(opts.gap) || 0;
             if (gap > 0 && byColor.length > 1) {
                 if (!PaperOffset) throw new GeometryError('Gaps need the offset library, which did not load.');
-                const vb = (viewBox || '').split(/[\s,]+/).map(Number);
-                const size = vb.length === 4 && vb.every(Number.isFinite) ? Math.max(vb[2], vb[3]) : Math.max(bounds[0], bounds[1]);
                 const half = (gap * size) / 128 / 2;
                 // A band of half the gap on each side of a color's edge; other colors lose what it
                 // covers. Only colors that come within the band of each other need the work.
@@ -213,8 +240,8 @@
                 const bands = [];
                 for (const [i, [, p]] of byColor.entries()) {
                     bands.push(byColor.some(([, q], j) => j !== i && near(p, q))
-                        ? PaperOffset.offsetStroke(p, half, { join: 'round', cap: 'butt', insert: false }) : null);
-                    report(0.2 + 0.7 * (i + 1) / byColor.length);
+                        ? stroke(p, half) : null);
+                    report((lines ? 0.4 : 0.2) + (lines ? 0.5 : 0.7) * (i + 1) / byColor.length);
                     await tick();
                 }
                 byColor = byColor.map(([c, p], i) => {
@@ -222,6 +249,12 @@
                     bands.forEach((band, j) => { if (j !== i && band && band.bounds.intersects(out.bounds)) out = out.subtract(band, { insert: false }); });
                     return [c, out];
                 }).filter(([, p]) => !p.isEmpty());
+            }
+
+            // Line version: each color keeps only its part of the lines, unless it stays filled.
+            if (lines) {
+                const keep = new Set(opts.keep || []);
+                byColor = byColor.map(([c, p]) => [c, keep.has(c) ? p : p.intersect(lines, { insert: false })]).filter(([, p]) => !p.isEmpty());
             }
 
             // One path per output color: colors the style maps to the same color merge.
@@ -275,7 +308,7 @@
                 worker = null;
                 compute(input, opts, opts.onProgress).then(resolve, reject); // a worker that can't start: do it here
             };
-            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap } });
+            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep } });
         });
     }
 

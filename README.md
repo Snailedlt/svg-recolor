@@ -53,7 +53,7 @@ On top of any mode, single colors (the original ones, as listed by `/api/palette
 A one-color icon, like a devicon `plain` version, is `mode=solid&color=000000&remove=ffffff` (Solid, then remove the
 background).
 
-Two more edits need path geometry, so they run in the browser and are only in the editor (the API answers 400):
+Three more edits need path geometry, so they run in the browser and are only in the editor (the API answers 400):
 
 - **Cut out** (a color's option in the color panel): the color becomes a real gap. Only the part you can see in the
   original is cut, and the result is flattened to one path per color. For logos with outlines between their parts
@@ -62,7 +62,11 @@ Two more edits need path geometry, so they run in the browser and are only in th
   gap of that width; the outer edge stays put. For logos whose parts just touch (like rqlite), Solid + Gaps keeps the
   parts apart in one color.
 
-Both handle flat colors and plain shapes; text, embedded images, gradients, transparency and `<use>` get a clear
+- **Line** (slider under Adjust, same units): a line version, like devicon's `line` icons. Only a band of that width
+  along the edges is kept: inside the outer edge, and centered on the boundaries between colors (switch off **Lines
+  between colors** for just the outline). In the color panel, **Keep filled** keeps a color solid, for small details.
+
+All three handle flat colors and plain shapes; text, embedded images, gradients, transparency and `<use>` get a clear
 message instead of a guess.
 
 In the editor, click a color in the **Colors** strip under the preview, or click the shape itself in the picture, to edit it.

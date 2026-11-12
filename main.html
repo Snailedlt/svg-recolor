@@ -230,6 +230,12 @@
                                     <label class="slider-row" for="adj-lightness"><span>Lightness</span><input id="adj-lightness" type="range" min="-100" max="100" step="1" value="0"><output id="adj-lightness-out" for="adj-lightness">0</output></label>
                                     <label class="slider-row" for="adj-gap" title="Cut a gap wherever two original colors meet (in units of a 128-unit icon). With Solid, the color areas stay apart. Makes one path per color."><span>Gaps</span><input id="adj-gap" type="range" min="0" max="6" step="0.5" value="0" aria-describedby="gap-hint"><output id="adj-gap-out" for="adj-gap">Off</output></label>
                                     <p class="field-hint gap-hint" id="gap-hint">Gaps between colors, for one-color icons with Solid.</p>
+                                    <label class="slider-row" for="adj-line" title="Make a line version, like devicon's line icons: only a band of this width along the edges is kept (in units of a 128-unit icon). Makes one path per color."><span>Line</span><input id="adj-line" type="range" min="0" max="8" step="0.5" value="0" aria-describedby="line-hint"><output id="adj-line-out" for="adj-line">Off</output></label>
+                                    <div class="toggle-row line-inner-row" id="line-inner-row" hidden>
+                                        <label for="line-inner">Lines between colors</label>
+                                        <span class="switch"><input type="checkbox" id="line-inner" checked><span class="track"></span></span>
+                                    </div>
+                                    <p class="field-hint gap-hint" id="line-hint">A line version: only the edges are kept. Click a color to keep it filled.</p>
                                 </div>
                             </section>
                         </div>
@@ -394,6 +400,7 @@
                     <label><input type="radio" name="color-edit-op" value="remove"><span><b>Invisible</b>Gone, as if it was never drawn</span></label>
                     <label><input type="radio" name="color-edit-op" value="cut"><span><b>Cut out</b>A gap: cuts through what's below it</span></label>
                 </fieldset>
+                <label class="keep-row" id="color-edit-keep-row" hidden><input type="checkbox" id="color-edit-keep"><span><b>Keep filled</b>In the line version, this color stays solid</span></label>
                 <p class="color-edit-tip">One-color icon: pick <b>Solid</b>, make the background <b>Invisible</b>, and <b>Cut out</b> lines that should stay visible as gaps. Cutting out merges each color into one path.</p>
             </div>
 

@@ -66,7 +66,7 @@ Base URL: {base}
   (a shape keeps its stroke or fill when only the other is removed). In JSON and MCP, `replace` is an
   object and `hide`/`remove` are lists. In the JSON palette, `to` is then `"none"` or `"removed"`.
   One-color icon (like a devicon "plain" version): `mode=solid&color=000000&remove=ffffff`.
-  Cutting a color out (Cut out) and gaps between colors need path geometry and are only in the editor on the website.
+  Cutting a color out (Cut out), gaps between colors and line versions need path geometry and are only in the editor on the website.
 
 ## Modes
 
