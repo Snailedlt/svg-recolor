@@ -190,7 +190,7 @@ def _load():
     return c
 
 
-def _run_js(expr: str, args: list):
+def _run_js(expr: str, args: list, deadline: Optional[float] = None):
     """Evaluate `expr` (an async function of `args`) and return its JSON result."""
     global _ctx
     import quickjs
@@ -200,7 +200,7 @@ def _run_js(expr: str, args: list):
     c = _ctx
     # QuickJS's limit counts per call, and async work runs as many calls (jobs): keep one
     # deadline for the whole thing, and give each job only the time that's left.
-    deadline = time.monotonic() + TIME_LIMIT
+    deadline = deadline or time.monotonic() + TIME_LIMIT
     c.set_time_limit(TIME_LIMIT)
     try:
         c.set("__args", json.dumps(args))
@@ -233,9 +233,10 @@ def _run_js(expr: str, args: list):
     return json.loads(out) if out else None
 
 
-def js(expr: str, *args):
+def js(expr: str, *args, deadline: Optional[float] = None):
+    """Run `expr` in QuickJS. `deadline` (time.monotonic()) shares one time budget between calls."""
     with _lock:
-        return _executor.submit(_run_js, expr, list(args)).result()
+        return _executor.submit(_run_js, expr, list(args), deadline).result()
 
 
 # --------------------------------------------------------------------------
@@ -350,9 +351,9 @@ def placed(svg: str, canvas, place) -> str:
     return svg[: m.start()] + tag + g + svg[m.end(): end] + "</g>" + svg[end:]
 
 
-def fit_place(svg_edited: str, canvas, pad: float) -> tuple:
+def fit_place(svg_edited: str, canvas, pad: float, deadline: Optional[float] = None) -> tuple:
     """Scale and center the visible drawing to fill the canvas, minus the padding."""
-    box = js("SvgGeometry.boundsOfShapes(args[0])", read_shapes(svg_edited, lenient=True)["shapes"])
+    box = js("SvgGeometry.boundsOfShapes(args[0])", read_shapes(svg_edited, lenient=True)["shapes"], deadline=deadline)
     if not box:
         raise engine.RecolorError("Nothing visible to fit.")
     x0, y0, w0, h0 = orig_box(svg_edited)
@@ -370,6 +371,7 @@ def fit_place(svg_edited: str, canvas, pad: float) -> tuple:
 def recolor(svg: str, opts: engine.Options) -> engine.Result:
     ex: Extras = opts.extras
     check_conflicts(opts, ex)
+    deadline = time.monotonic() + TIME_LIMIT  # one budget for the whole request
     norm = engine.normalize_svg(svg)
     counts = engine.extract_palette(norm)
     mapping = {**engine.map_colors(list(counts), opts), **{c: v for c, v in opts.replace.items() if c in counts}}
@@ -377,16 +379,15 @@ def recolor(svg: str, opts: engine.Options) -> engine.Result:
     if ex.fit is not None:
         canvas = canvas or orig_box(norm)[2:]
         hidden = tuple(opts.hide) + tuple(opts.remove) + tuple(ex.cut)
-        place = fit_place(engine.apply_edits(norm, remove=hidden), canvas, ex.fit)
+        place = fit_place(engine.apply_edits(norm, remove=hidden), canvas, ex.fit, deadline)
     edited = engine.apply_edits(placed(norm, canvas, place), hide=opts.hide, remove=opts.remove)
     if ex.geometry:
-        out = js("SvgGeometry.compute(args[0], args[1])", read_shapes(edited), {
-            "cut": list(ex.cut), "map": mapping, "gap": ex.gap, "line": ex.line, "lineInner": ex.line_inner,
-            "keep": list(ex.keep), "unit": ex.unit,
-        })
+        geo = {"cut": list(ex.cut), "map": mapping, "gap": ex.gap, "line": ex.line, "lineInner": ex.line_inner,
+               "keep": list(ex.keep), "unit": ex.unit}
+        out = js("SvgGeometry.compute(args[0], args[1])", read_shapes(edited), geo, deadline=deadline)
     else:
         out = engine.apply_mapping(edited, mapping)
     if ex.optimize:
-        out = js("SVGO.optimize(args[0], args[1]).data", out, svgo_config(ex.precision)).rstrip() + "\n"
+        out = js("SVGO.optimize(args[0], args[1]).data", out, svgo_config(ex.precision), deadline=deadline).rstrip() + "\n"
     return engine.Result(svg=out, mapping=mapping, counts=counts, hidden=set(opts.hide) & set(counts),
                          removed=set(opts.remove) & set(counts), cut=set(ex.cut) & set(counts))
