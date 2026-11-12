@@ -535,6 +535,8 @@ kbd {
 .color-edit input[type="checkbox"] { accent-color: var(--pick); margin: 0; }
 .line-inner-row { margin: -2px 0 0; }
 .unit-row { margin: 2px 0 0; }
+.holes-row { margin-top: 10px; }
+.holes-row .field-hint { display: block; margin: 1px 0 0; font-size: 0.75rem; }
 .text-font-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.78rem; color: var(--text-muted); }
 .text-font-row .link-btn { white-space: nowrap; }
 .canvas-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 6px; align-items: center; }

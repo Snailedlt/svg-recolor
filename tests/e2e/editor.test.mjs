@@ -707,10 +707,10 @@ test('recipes: save settings, apply them later; Fit stays on for the next SVG', 
 
 test('a recipe link names its recipe, and says when the settings have moved on', async () => {
     const { page, problems } = await open();
-    await page.goto(BASE + '/?mode=solid&color=000000&gap=1.5&unit=pct&canvas=128x128&fit=0&optimize=1&recipe=Devicon+plain');
+    await page.goto(BASE + '/?mode=solid&color=000000&holes=light&gap=1.5&unit=pct&canvas=128x128&fit=0&optimize=1&recipe=Devicon+plain');
     await page.locator('#recipe-banner:not([hidden])').waitFor();
     assert.equal(await page.textContent('#recipe-banner-name'), 'Devicon plain');
-    assert.match(await page.textContent('#recipe-banner-desc'), /Solid #000000 · gaps 1\.5 % · 128 × 128, fit 0 · optimized/);
+    assert.match(await page.textContent('#recipe-banner-desc'), /Solid #000000 · gaps 1\.5 % · 128 × 128, fit 0 · light → holes · optimized/);
     assert.equal(await page.isVisible('#recipe-banner-edited'), false);
     // Save it to my recipes: the button goes, the recipe is in the list.
     await page.click('#recipe-banner-save');
@@ -802,6 +802,27 @@ test('one-color results: text becomes shapes, gradients and transparency are fin
     const code = await page.textContent('#code-view');
     assert.equal((code.match(/<path/g) || []).length, 1, 'one path, one color');
     assert.ok(!/url\(/.test(code));
+    assert.deepEqual(problems, []);
+});
+
+test('light colors become holes: white parts stay see-through in one color', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#e44d26"/>'
+        + '<rect x="10" y="10" width="20" height="20" fill="#ebebeb"/></svg>');
+    await page.click('.style[data-mode="solid"]');
+    await page.check('#holes-toggle');
+    await page.waitForURL(/holes=light/);
+    await page.click('#tab-btn-code');
+    await page.locator('#code-view', { hasText: '<path' }).waitFor();
+    const code = await page.textContent('#code-view');
+    assert.equal((code.match(/<path/g) || []).length, 1);
+    assert.ok(!/ebebeb/i.test(code));
+    assert.equal((/\sd="([^"]+)"/.exec(code)[1].match(/[Mm]/g) || []).length, 2, 'the light square is a hole');
+    // Its chip says so, like a color you cut out yourself.
+    await page.click('#tab-btn-preview');
+    await page.locator('.chip.edited.cut[data-color="ebebeb"]').waitFor();
+    await page.uncheck('#holes-toggle');
+    await page.waitForURL((u) => !/holes=/.test(u));
     assert.deepEqual(problems, []);
 });
 

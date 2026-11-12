@@ -62,6 +62,7 @@
         unit: 'px', // gap and line sizes: 'px' (the SVG's own units) or '%' of the icon
         svgo: false, // optimize the result with SVGO
         recipe: null, // { name, params }: the recipe in use, shown at the top
+        holes: false, // light (near-white) colors become holes, unless edited
         canvas: null, // [w, h] of a new viewBox (null = the SVG's own)
         batch: null, // [{ name, text, size, failed }]: several SVGs with the same settings
         fit: null, // auto Fit: padding (each SVG is fitted to the canvas), or null
@@ -260,6 +261,7 @@
         for (const k of ['replace', 'hide', 'remove', 'cut']) if (by[k].length) q.set(k, by[k].join(','));
         if (state.gap) q.set('gap', String(state.gap));
         if ((state.gap || state.line) && state.unit === '%') q.set('unit', 'pct');
+        if (state.holes) q.set('holes', 'light');
         if (state.svgo) q.set('optimize', '1');
         if (state.canvas) q.set('canvas', state.canvas.map(fmt).join('x'));
         if (state.fit !== null) q.set('fit', fmt(state.fit));
@@ -387,7 +389,7 @@
     async function fitPlacement(doc, pad, scale) {
         const [x0, y0] = origBox(doc);
         const [W, H] = canvasSize(doc);
-        const hidden = Object.entries(state.edits).filter(([, e]) => e.op !== 'replace').map(([c]) => c);
+        const hidden = Object.entries(editsOf(doc)).filter(([, e]) => e.op !== 'replace').map(([c]) => c);
         const Geo = await loadGeometry();
         const box = Geo.bounds(Engine.edit(doc.norm, [], hidden));
         if (!box) throw new Error('Nothing visible to fit.');
@@ -554,6 +556,7 @@
     });
     $('svgo-reset').addEventListener('click', () => { svgoSettings = svgoDefaults(); renderSvgoSettings(); svgoSettingsChanged(); });
     $('svgo-toggle').addEventListener('change', (e) => { state.svgo = e.target.checked; updateOptimizeFold(); editsChanged(); });
+    $('holes-toggle').addEventListener('change', (e) => { state.holes = e.target.checked; editsChanged(); });
     renderSvgoSettings();
 
     let svgoWorker = null, svgoJobs = 0;
@@ -587,10 +590,19 @@
     // The mapping with own colors applied, and the SVG with invisible colors applied.
     // Cut-out colors are left in `edited` for the geometry step (cutOutSvg); `svg` treats
     // them as invisible, which is what the quick style thumbnails show.
+    // The color edits in effect: yours, plus with "Light colors become holes" the near-white
+    // colors (every channel 224 or more) you haven't edited, cut out. As server/shapes.py.
+    const isLight = (c) => c.length === 6 && [0, 2, 4].every((i) => parseInt(c.slice(i, i + 2), 16) >= 0xe0);
+    function editsOf(doc) {
+        if (!state.holes || !doc) return state.edits;
+        const out = Object.assign({}, state.edits);
+        for (const [c] of doc.palette) if (!out[c] && isLight(c)) out[c] = { op: 'cut', auto: true };
+        return out;
+    }
     function editedSvg(doc, mapping, place = state.place) {
         const merged = Object.assign({}, mapping);
         const hide = [], remove = [], cut = [];
-        for (const [c, e] of Object.entries(state.edits)) {
+        for (const [c, e] of Object.entries(editsOf(doc))) {
             if (e.op === 'replace') merged[c] = e.to.slice(1).toLowerCase();
             else ({ hide, remove, cut })[e.op].push(c);
         }
@@ -732,7 +744,7 @@
 
     // Everything one color (like Solid)? Then the geometry can ignore gradients and transparency.
     function flatColor(doc, merged) {
-        const gone = new Set(Object.entries(state.edits).filter(([, e]) => e.op !== 'replace').map(([c]) => c));
+        const gone = new Set(Object.entries(editsOf(doc)).filter(([, e]) => e.op !== 'replace').map(([c]) => c));
         const outs = new Set(doc.palette.map(([c]) => c).filter((c) => !gone.has(c)).map((c) => (merged[c] || c).toLowerCase()));
         return outs.size === 1 ? [...outs][0] : null;
     }
@@ -1014,6 +1026,8 @@
         syncCanvasUI();
         state.svgo = false;
         $('svgo-toggle').checked = false;
+        state.holes = false;
+        $('holes-toggle').checked = false;
         lineInput.value = 0;
         $('line-inner').checked = true;
         state.keep.clear();
@@ -1664,14 +1678,15 @@
                 }
                 if (id !== reqId || doc !== state.doc) return;
             }
+            const effective = editsOf(doc);
             const to = (c) => {
-                const e = state.edits[c];
+                const e = effective[c];
                 return e && e.op === 'cut' ? 'cut' : e && (e.op === 'remove' || e.op === 'hide') ? 'removed' : '#' + (merged[c] || c);
             };
             state.result = {
                 svg,
                 filename: outputName(),
-                palette: doc.palette.map(([c, n]) => ({ from: '#' + c, to: to(c), count: n, edit: state.edits[c] || null })),
+                palette: doc.palette.map(([c, n]) => ({ from: '#' + c, to: to(c), count: n, edit: effective[c] || null })),
             };
             renderResult();
             if (MODES[state.mode].color) rememberColor(state.color);
@@ -1764,7 +1779,7 @@
     function openColorEdit(color, anchor) {
         editColor = color;
         editAnchor = anchor;
-        const e = state.edits[color];
+        const e = editsOf(state.doc)[color];
         const entry = state.result && state.result.palette.find((p) => p.from === '#' + color);
         $('color-edit-from').style.background = '#' + color;
         $('color-edit-title').textContent = '#' + color.toUpperCase();
@@ -2254,6 +2269,7 @@
         if (q.get('gap')) parts.push('gaps ' + q.get('gap') + unit);
         if (q.get('line')) parts.push('line ' + q.get('line') + unit);
         if (q.get('canvas')) parts.push(q.get('canvas').replace('x', ' × ') + (q.get('fit') !== null ? ', fit ' + q.get('fit') : ''));
+        if (q.get('holes') === 'light') parts.push('light → holes');
         if (q.get('optimize')) parts.push('optimized');
         return parts.join(' · ');
     }
@@ -2514,6 +2530,8 @@
         state.unit = q.get('unit') === 'pct' ? '%' : 'px';
         state.svgo = q.get('optimize') === '1';
         $('svgo-toggle').checked = state.svgo;
+        state.holes = q.get('holes') === 'light';
+        $('holes-toggle').checked = state.holes;
         updateOptimizeFold();
         {
             const c = (q.get('canvas') || '').split('x').map(Number);

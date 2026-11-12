@@ -50,8 +50,9 @@ On top of any mode, single colors (the original ones, as listed by `/api/palette
 | Hide | `hide=ffffff,...` | The color becomes `none` (fill/stroke) or `transparent` (gradient stops); the shapes stay in the file. |
 | Remove | `remove=ffffff,...` | Shapes painted with the color are deleted, including ones that inherit it from a group or a CSS class. A shape keeps its fill or stroke when only the other is removed. Shapes inside `<defs>`, `<clipPath>`, `<mask>` and similar are only hidden, never deleted. |
 
-A one-color icon, like a devicon `plain` version, is `mode=solid&color=000000&remove=ffffff` (Solid, then remove the
-background).
+A one-color icon, like a devicon `plain` version, is `mode=solid&color=000000&holes=light` (Solid, and white or
+near-white parts become holes; in the editor, **Light colors become holes** under Color). `remove=ffffff` instead
+just drops a white background.
 
 Three more edits need path geometry. The editor runs them in the browser, and the API and MCP server run the very
 same code (paper.js and SVGO in QuickJS, with picosvg reading the shapes), so the results match:
@@ -77,7 +78,8 @@ On the API these get 20 seconds per request: most icons take well under a second
 (thousands of curves) may need the editor, which runs them in your browser without a limit.
 
 All three work on flat colors and shapes. When everything ends up one color (like Solid), gradients and transparency
-don't matter: such paints take that color. In the editor, text is turned into shapes (with a font file you choose under
+don't matter: such paints take that color, while each gradient still counts as its own part for gaps and lines, and
+mostly see-through shapes (shadows, glows) are left out. In the editor, text is turned into shapes (with a font file you choose under
 **Shapes**, or Inter when none is chosen); the API asks for text as paths. Embedded images, masks, `<use>` and, with
 several colors, gradients and transparency get a clear message instead of a guess.
 

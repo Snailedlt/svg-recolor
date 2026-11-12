@@ -70,6 +70,8 @@ Base URL: {base}
 - Shapes, canvas and optimizing (the same code as the editor; in JSON and MCP, lists and numbers):
   - `cut=dce0df,...`: those colors become real gaps (cut through what's below). One path per color, so
     `mode=solid&cut=...` is one path. For logos with outlines between their parts. Palette `to`: `"cut"`.
+  - `holes=light`: near-white colors (every channel >= 224) become holes too, unless edited. With `mode=solid`
+    this makes a one-color icon whose white parts stay see-through (like devicon's plain icons).
   - `gap=2`: a gap of that width wherever two original colors meet. For logos whose parts just touch.
   - `line=3`: a line version (like devicon's line icons), only a band of that width along the edges.
     `lines=outer` draws just the outline (default `all`: also between colors); `keep=ffffff,...` stays filled.
@@ -142,6 +144,8 @@ MCP_TOOLS = [
                 "lines": {"type": "string", "enum": ["all", "outer"],
                           "description": "With line: 'all' (default) also between colors, 'outer' only the outline."},
                 "keep": {"type": "array", "items": {"type": "string"}, "description": "With line: original colors that stay filled."},
+                "holes": {"type": "string", "enum": ["light", "none"],
+                          "description": "'light': near-white colors become holes (cut out), unless edited. With mode solid: a one-color icon whose white parts stay see-through."},
                 "unit": {"type": "string", "enum": ["px", "pct"],
                          "description": "Unit of gap and line: px (default, the SVG's own units) or pct (percent of the icon)."},
                 "canvas": {"type": "string", "description": "A new canvas (viewBox) size, 'WxH', e.g. '128x128'. The drawing stays centered."},

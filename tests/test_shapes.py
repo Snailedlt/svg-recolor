@@ -174,3 +174,31 @@ def test_one_color_results_ignore_gradients_and_transparency(client):
     # Several colors in the result: a gradient still can't be one flat color.
     res = client.post("/api/recolor?mode=colorize&gap=2", content=svg, headers=SVG_CT)
     assert res.status_code == 400 and "gradients" in res.json()["detail"]
+
+
+def test_holes_light_cuts_near_white_colors(client):
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#e44d26"/>'
+           '<rect x="10" y="10" width="20" height="20" fill="#ebebeb"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&holes=light", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    ps = paths(res.text)
+    assert len(ps) == 1 and "ebebeb" not in res.text.lower()
+    assert ps[0][1].count("M") + ps[0][1].count("m") >= 2, "the light square is a hole"
+    # An edited light color is left alone.
+    res = client.post("/api/recolor?mode=solid&color=000000&holes=light&replace=ebebeb:ff0000", content=svg, headers=SVG_CT)
+    assert res.status_code == 200 and "ff0000" in res.text.lower()
+    assert client.post("/api/recolor?holes=dark", content=svg, headers=SVG_CT).status_code in (400, 422)
+
+
+def test_one_color_keeps_the_parts_of_gradients_apart(client):
+    # Two touching gradient halves: in one color, a gap still runs between them.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><defs>'
+           '<linearGradient id="a"><stop stop-color="#f00"/><stop offset="1" stop-color="#0f0"/></linearGradient>'
+           '<linearGradient id="b"><stop stop-color="#00f"/><stop offset="1" stop-color="#ff0"/></linearGradient></defs>'
+           '<rect width="20" height="20" fill="url(#a)"/><rect x="20" width="20" height="20" fill="url(#b)"/>'
+           '<ellipse cx="20" cy="19" rx="18" ry="1" fill="#000" opacity=".3"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&gap=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    ps = paths(res.text)
+    assert len(ps) == 1
+    assert ps[0][1].count("M") + ps[0][1].count("m") == 2, "two parts, the faint shadow dropped"

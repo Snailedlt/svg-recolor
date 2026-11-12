@@ -93,6 +93,28 @@
         try {
             const props = ['fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'fill-rule', 'opacity', 'fill-opacity', 'stroke-opacity'];
             const all = [live, ...live.querySelectorAll('*')];
+            // One color in the end (flat): each gradient or pattern still stands apart from its
+            // neighbors (gaps and lines follow the original's parts), so it gets a color of its own
+            // here, one the SVG doesn't use. compute() paints everything the one color at the end.
+            const stand = new Map();
+            let standIn = null;
+            if (flat) {
+                const used = new Set();
+                for (const el of all) {
+                    const cs = getComputedStyle(el);
+                    for (const v of [cs.fill, cs.stroke]) { const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(v); if (m) used.add(m.slice(1).map((n) => (+n).toString(16).padStart(2, '0')).join('')); }
+                }
+                let next = 0x0a0b0c;
+                standIn = (v) => {
+                    if (!stand.has(v)) {
+                        let c;
+                        do { c = (next = (next + 0x050301) % 0x1000000).toString(16).padStart(6, '0'); } while (used.has(c));
+                        used.add(c);
+                        stand.set(v, '#' + c);
+                    }
+                    return stand.get(v);
+                };
+            }
             for (const el of all) {
                 const cs = getComputedStyle(el);
                 if (cs.display === 'none' || (cs.visibility !== 'visible' && el.matches('path, rect, circle, ellipse, line, polyline, polygon'))) {
@@ -104,8 +126,9 @@
                 }
                 for (const p of props) {
                     let v = p === 'stroke-width' ? String(parseFloat(cs.strokeWidth) || 0) : cs.getPropertyValue(p);
-                    if (flat && (p === 'fill' || p === 'stroke') && /url\(/.test(v)) v = '#' + flat;
-                    if (flat && /opacity$/.test(p)) v = parseFloat(v) === 0 ? '0' : '1';
+                    if (flat && (p === 'fill' || p === 'stroke') && /url\(/.test(v)) v = standIn(v.replace(/\s+/g, ''));
+                    // One color: mostly see-through (shadows, glows) goes, the rest counts as solid.
+                    if (flat && /opacity$/.test(p)) v = parseFloat(v) < 0.5 ? '0' : '1';
                     el.setAttribute(p, v);
                 }
                 el.removeAttribute('style');
@@ -267,6 +290,9 @@
         const { shapes: raw, viewBox, width, height, bounds } = input;
         const cut = new Set(opts.cut || []);
         const map = opts.map || {};
+        // Everything ends up this one color (flat): the colors only tell the parts apart.
+        const flat = opts.flat ? String(opts.flat).toLowerCase() : null;
+        const outOf = (c) => flat || (map[c] || c).toLowerCase();
         const scope = new paper.PaperScope();
         scope.setup(new paper.Size(1, 1));
         try {
@@ -420,7 +446,7 @@
                 const kept = [];
                 for (const [c, p] of byColor) {
                     if (keep.has(c)) { kept.push([c, p]); continue; }
-                    const to = (map[c] || c).toLowerCase();
+                    const to = outOf(c);
                     if (!groups.has(to)) groups.set(to, [c, []]);
                     groups.get(to)[1].push(p);
                 }
@@ -443,7 +469,7 @@
             const outColors = [];
             const outRegions = new Map();
             for (const [c, p] of byColor) {
-                const to = (map[c] || c).toLowerCase();
+                const to = outOf(c);
                 if (!outRegions.has(to)) { outRegions.set(to, []); outColors.push(to); }
                 outRegions.get(to).push(p);
             }
@@ -492,7 +518,7 @@
                 worker = null;
                 compute(input, opts, opts.onProgress).then(resolve, reject); // a worker that can't start: do it here
             };
-            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit } });
+            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null } });
         });
     }
 
