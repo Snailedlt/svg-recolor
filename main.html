@@ -302,7 +302,11 @@
                                 Recolor
                             </button>
                             <div class="foot-meta">
-                                <button type="button" class="link-btn" id="reset-all">Reset settings</button>
+                                <span class="history-btns">
+                                    <button type="button" class="icon-btn" id="undo-btn" disabled title="Undo (Ctrl+Z)" aria-label="Undo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+                                    <button type="button" class="icon-btn" id="redo-btn" disabled title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+                                    <button type="button" class="link-btn" id="reset-all">Reset settings</button>
+                                </span>
                                 <span class="kbd-hint">Press <kbd>?</kbd> for shortcuts</span>
                             </div>
                         </div>
@@ -327,6 +331,9 @@
                                     <button type="button" data-view="side" aria-pressed="true" title="Side by side (V)">Side by side</button>
                                     <button type="button" data-view="code" aria-pressed="false" title="The result next to its SVG code">With code</button>
                                     <button type="button" data-view="slider" aria-pressed="false" title="Before/after slider (V)">Slider</button>
+                                </div>
+                                <div class="segmented">
+                                    <button type="button" id="sizes-btn" aria-pressed="false" title="Show the result at 16, 32 and 64 px, on light and dark">Small sizes</button>
                                 </div>
                                 <div class="segmented" role="group" aria-label="Preview background" id="bg-tabs">
                                     <button type="button" data-bg="checker" aria-pressed="true" title="Transparent (B)"><span class="sw sw-checker"></span><span class="label">Clear</span></button>
@@ -355,6 +362,11 @@
                                             <label><span class="sr-only">Canvas width</span><input id="canvas-w" type="number" min="0.01" step="any" inputmode="decimal"></label>
                                             <span aria-hidden="true">×</span>
                                             <label><span class="sr-only">Canvas height</span><input id="canvas-h" type="number" min="0.01" step="any" inputmode="decimal"></label>
+                                        </div>
+                                        <div class="sizes-panel" id="sizes-panel" hidden aria-label="The result at small sizes">
+                                            <div class="sizes-row light"><img alt="" width="16" height="16"><img alt="" width="32" height="32"><img alt="" width="64" height="64"></div>
+                                            <div class="sizes-row dark"><img alt="" width="16" height="16"><img alt="" width="32" height="32"><img alt="" width="64" height="64"></div>
+                                            <span class="sizes-label">16 · 32 · 64 px</span>
                                         </div>
                                         <div class="work-overlay" id="work-overlay" role="status" aria-live="polite" hidden>
                                             <span class="work-spinner" aria-hidden="true"></span>
@@ -582,6 +594,7 @@
                 <dt><kbd>O</kbd> / <kbd>L</kbd></dt><dd>Open a file / load from a link</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>V</kbd></dt><dd>Paste an SVG file or SVG code</dd>
                 <dt><kbd>C</kbd></dt><dd>Edit the color</dd>
+                <dt><kbd>Ctrl</kbd> <kbd>Z</kbd> / <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></dt><dd>Undo / redo a settings change</dd>
                 <dt><kbd>P</kbd> <kbd>E</kbd> <kbd>A</kbd></dt><dd>Preview, Code or API tab</dd>
                 <dt><kbd>F</kbd></dt><dd>Search formats or languages</dd>
                 <dt><kbd>V</kbd> / <kbd>B</kbd></dt><dd>Side by side, slider or with code / cycle the background</dd>

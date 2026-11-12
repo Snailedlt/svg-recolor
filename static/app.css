@@ -353,6 +353,9 @@ body.code-expanded { overflow: hidden; }
 .switch input:checked + .track { background: var(--pick); }
 .switch input:checked + .track::after { transform: translateX(16px); }
 .switch input:focus-visible + .track { outline: 2px solid var(--pick); outline-offset: 2px; }
+.history-btns { display: inline-flex; align-items: center; gap: 4px; }
+.history-btns .icon-btn:disabled { opacity: .35; cursor: default; }
+.history-btns #reset-all { margin-left: 6px; }
 .foot-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 0.78rem; color: var(--text-faint); }
 
 /* Buttons */
@@ -560,6 +563,17 @@ details.fold { display: block; border-top: 1px solid var(--border); padding-top:
 .canvas-size:focus-within { border-color: var(--pick); }
 .canvas-size.changed { border-color: color-mix(in srgb, var(--pick) 60%, var(--border)); }
 .canvas-size::before { content: "viewBox"; font-size: 0.64rem; letter-spacing: .05em; text-transform: uppercase; margin-right: 2px; }
+
+/* The result at small sizes, on the picture */
+.sizes-panel {
+    position: absolute; left: 10px; bottom: 10px; z-index: 2; display: grid; gap: 4px; padding: 6px; border-radius: 10px;
+    border: 1px solid var(--border-strong); background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 6px 20px rgba(0,0,0,.25);
+}
+.sizes-row { display: flex; align-items: flex-end; gap: 10px; padding: 6px 8px; border-radius: 6px; }
+.sizes-row.light { background: #ffffff; }
+.sizes-row.dark { background: #111318; }
+.sizes-row img { object-fit: contain; }
+.sizes-label { font-size: 0.66rem; color: var(--text-faint); text-align: center; }
 
 /* Work in progress, on the picture */
 .work-overlay {

@@ -625,6 +625,44 @@ test('small shared gap widths survive loading, and the live toggle holds edits b
     await page.check('#live-toggle');
 });
 
+test('small sizes: the result at 16, 32 and 64 px, on light and dark', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, EDIT_SVG);
+    await page.locator('#status-text', { hasText: /colors/ }).waitFor();
+    assert.equal(await page.isVisible('#sizes-panel'), false);
+    await page.click('#sizes-btn');
+    assert.equal(await page.getAttribute('#sizes-btn', 'aria-pressed'), 'true');
+    const imgs = await page.$$eval('#sizes-panel img', (els) => els.map((i) => [i.width, i.src.startsWith('blob:')]));
+    assert.deepEqual(imgs, [[16, true], [32, true], [64, true], [16, true], [32, true], [64, true]]);
+    await page.click('#sizes-btn');
+    assert.deepEqual(problems, []);
+});
+
+test('undo and redo step through settings changes (buttons and keyboard)', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, GAP_SVG);
+    await page.click('.style[data-mode="solid"]');
+    await page.waitForURL(/mode=solid/);
+    assert.equal(await page.isDisabled('#redo-btn'), true);
+    await page.fill('#hex-input', '00aa55');
+    await page.waitForURL(/color=00aa55/i);
+    await page.locator('#adj-gap').evaluate((el) => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+    await page.waitForURL(/gap=2/);
+    await page.click('#undo-btn');
+    await page.waitForURL((u) => !/gap=/.test(u.toString()));
+    assert.equal(await page.textContent('#adj-gap-out'), 'Off');
+    await page.click('body', { position: { x: 5, y: 5 } }); // focus away from inputs for the keyboard
+    await page.keyboard.press('Control+z');
+    await page.waitForURL((u) => !/color=00aa55/i.test(u.toString()));
+    assert.equal((await page.inputValue('#hex-input')).toUpperCase(), 'FF0066');
+    await page.keyboard.press('Control+Shift+z');
+    await page.waitForURL(/color=00aa55/i);
+    await page.click('#redo-btn');
+    await page.waitForURL(/gap=2/);
+    assert.equal(await page.isDisabled('#redo-btn'), true);
+    assert.deepEqual(problems, []);
+});
+
 test('cut out explains what it can\'t do instead of guessing', async () => {
     const { page } = await open();
     await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#f00"/></linearGradient></defs>'

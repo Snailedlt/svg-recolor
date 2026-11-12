@@ -1410,6 +1410,7 @@
         resultUrl = URL.createObjectURL(new Blob([r.svg], { type: 'image/svg+xml' }));
         renderImage($('result-container'), resultUrl, 'Recolored ' + state.doc.name);
         $('code-preview-img').src = resultUrl;
+        document.querySelectorAll('#sizes-panel img').forEach((img) => { img.src = resultUrl; });
         renderPalette(r.palette);
         showCode($('side-code'), r.svg.length > CODE_VIEW_LIMIT ? r.svg.slice(0, CODE_VIEW_LIMIT) + '\n…' : r.svg, 'markup');
         if (!editPanel.hidden && editColor && !(editAnchor && editAnchor.point)) { editAnchor = document.querySelector('.chip[data-color="' + editColor + '"]'); placeEditPanel(); }
@@ -1938,7 +1939,47 @@
         store.set('view', view);
     }
     $$('#view-tabs button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+    // Small sizes: the result at 16, 32 and 64 px on light and dark, where icons get judged.
+    function setSizes(on) {
+        $('sizes-panel').hidden = !on;
+        $('sizes-btn').setAttribute('aria-pressed', String(on));
+        store.set('sizes', on);
+    }
+    $('sizes-btn').addEventListener('click', () => setSizes($('sizes-panel').hidden));
+    setSizes(store.get('sizes', false));
     $('compare-range').addEventListener('input', (e) => stage.style.setProperty('--split', e.target.value + '%'));
+
+    // Undo / redo: snapshots of the settings (the same parameters as the page address).
+    const undoStack = [];
+    let undoAt = -1, restoring = false;
+    const snapshot = () => editParams(settingsParams()).toString();
+    function recordHistory() {
+        if (restoring) return;
+        const snap = snapshot();
+        if (undoStack[undoAt] === snap) return;
+        undoStack.splice(undoAt + 1);
+        undoStack.push(snap);
+        if (undoStack.length > 100) undoStack.shift();
+        undoAt = undoStack.length - 1;
+        syncHistoryButtons();
+    }
+    function syncHistoryButtons() {
+        $('undo-btn').disabled = undoAt <= 0;
+        $('redo-btn').disabled = undoAt >= undoStack.length - 1;
+    }
+    function stepHistory(by) {
+        const at = undoAt + by;
+        if (at < 0 || at >= undoStack.length) return;
+        undoAt = at;
+        restoring = true;
+        try { applySettings(new URLSearchParams(undoStack[at])); } finally { restoring = false; }
+        syncHistoryButtons();
+        closeColorEdit(false);
+        editsChanged();
+        toast(by < 0 ? 'Undone' : 'Redone');
+    }
+    $('undo-btn').addEventListener('click', () => stepHistory(-1));
+    $('redo-btn').addEventListener('click', () => stepHistory(1));
 
     function shareParams() {
         const q = editParams(settingsParams());
@@ -1949,6 +1990,7 @@
         clearTimeout(urlTimer);
         urlTimer = setTimeout(() => {
             try { history.replaceState(null, '', location.pathname + '?' + shareParams().toString() + location.hash); } catch (e) { /* ignore */ }
+            recordHistory();
         }, 300);
     }
     // A pasted or uploaded SVG travels in the link itself: compressed, after the #, which
@@ -2021,6 +2063,12 @@
         if (mod && e.shiftKey && key === 'c') { e.preventDefault(); copyCurrent(); return; }
         if (mod && e.key === 'Enter') { e.preventDefault(); recolor(); return; }
         const t = e.target;
+        const typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) && !/^(range|checkbox|radio)$/.test(t.type || '');
+        if (mod && !typing && (key === 'z' || key === 'y')) {
+            e.preventDefault();
+            stepHistory(key === 'y' || e.shiftKey ? 1 : -1);
+            return;
+        }
         if (mod || e.altKey || dialog.open || (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))) return;
         if (/^[1-6]$/.test(key)) setMode(MODE_KEYS[+key - 1], true);
         else if (key === 'o') { showSourcePicker('file'); fileInput.click(); }
@@ -2040,39 +2088,47 @@
         e.preventDefault();
     });
 
+    // Every setting from page-address parameters (start-up, undo/redo, recipes). What the
+    // parameters don't mention goes back to its default.
+    function applySettings(q) {
+        setColor(normalizeHex(q.get('color')) || '#FF0066', false);
+        ADJ.forEach(([k, lim]) => {
+            const v = parseInt(q.get(k), 10);
+            $('adj-' + k).value = Number.isNaN(v) ? 0 : Math.max(-lim, Math.min(lim, v));
+        });
+        syncAdjust(false);
+        setMode(MODES[q.get('mode')] ? q.get('mode') : 'colorize', false);
+        state.edits = editsFromParams(q);
+        state.unit = q.get('unit') === 'pct' ? '%' : 'px';
+        state.svgo = q.get('optimize') === '1';
+        $('svgo-toggle').checked = state.svgo;
+        updateOptimizeFold();
+        {
+            const c = (q.get('canvas') || '').split('x').map(Number);
+            state.canvas = c.length === 2 && c.every((v) => v > 0) ? c : null;
+            const p = (q.get('place') || '').split(',').map(Number);
+            state.place = null;
+            if (p.length === 3 && p.every(Number.isFinite) && p[2] > 0) { state.place = p; keepPlacement = !state.doc; }
+            syncCanvasUI();
+        }
+        $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === state.unit)));
+        state.gap = Math.max(0, parseFloat(q.get('gap')) || 0);
+        state.line = Math.max(0, parseFloat(q.get('line')) || 0);
+        syncRanges();
+        gapInput.value = String(state.gap);
+        syncGap(false);
+        lineInput.value = String(state.line);
+        $('line-inner').checked = q.get('lines') !== 'outer';
+        state.keep.clear();
+        for (const v of (q.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }
+        syncLine(false);
+    }
+
     // ------------------------------------------------------------------
     // Start: settings from the page URL, then remembered preferences
     // ------------------------------------------------------------------
     const start = new URLSearchParams(location.search);
-    setColor(normalizeHex(start.get('color')) || '#FF0066', false);
-    ADJ.forEach(([k, lim]) => {
-        const v = parseInt(start.get(k), 10);
-        if (!Number.isNaN(v)) $('adj-' + k).value = Math.max(-lim, Math.min(lim, v));
-    });
-    syncAdjust(false);
-    setMode(MODES[start.get('mode')] ? start.get('mode') : 'colorize', false);
-    state.edits = editsFromParams(start);
-    state.unit = start.get('unit') === 'pct' ? '%' : 'px';
-    state.svgo = start.get('optimize') === '1';
-    $('svgo-toggle').checked = state.svgo;
-    updateOptimizeFold();
-    {
-        const c = (start.get('canvas') || '').split('x').map(Number);
-        if (c.length === 2 && c.every((v) => v > 0)) state.canvas = c;
-        const p = (start.get('place') || '').split(',').map(Number);
-        if (p.length === 3 && p.every(Number.isFinite) && p[2] > 0) { state.place = p; keepPlacement = true; }
-        syncCanvasUI();
-    }
-    $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === state.unit)));
-    state.gap = Math.max(0, parseFloat(start.get('gap')) || 0);
-    state.line = Math.max(0, parseFloat(start.get('line')) || 0);
-    syncRanges();
-    gapInput.value = String(state.gap);
-    syncGap(false);
-    lineInput.value = String(state.line);
-    $('line-inner').checked = start.get('lines') !== 'outer';
-    for (const v of (start.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }
-    syncLine(false);
+    applySettings(start);
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));
     renderRecent();
@@ -2083,6 +2139,7 @@
     updateSnippet();
     scheduleThumbs(0);
     syncCopyButton();
+    recordHistory();
     if (start.get('url')) {
         showSourcePicker('link');
         $('url-input').value = start.get('url');
