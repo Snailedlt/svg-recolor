@@ -188,8 +188,11 @@
             const shapes = leaves(scope, root).map(({ path, color }) => {
                 path.transform(undo);
                 path.applyMatrix = true;
+                // Drop empty subpaths ("m0 0"): they upset the boolean steps, and the server's
+                // reader (picosvg) drops them too, so both sides start from the same shapes.
+                if (path.children) path.children.slice().forEach((k) => { if (k.segments.length < 2 || k.length < 1e-9) k.remove(); });
                 return { d: path.getPathData(null, 12), rule: path.fillRule || 'nonzero', color };
-            });
+            }).filter((sh) => sh.d);
             const b = root.bounds;
             return { shapes, viewBox, width, height, bounds: [b.width, b.height] };
         } finally {
@@ -198,6 +201,32 @@
     }
 
     const tick = () => new Promise((r) => setTimeout(r));
+
+    // A band of `half` on both sides of an outline, built from simple pieces: a rectangle along
+    // each straight segment of a flattened copy and a circle at each corner, merged in pairs.
+    // Slower than paperjs-offset but always well formed: the fallback when that one fails.
+    function sausage(path, half, scope) {
+        const flat = path.clone({ insert: false });
+        flat.flatten(Math.max(half / 2, 0.05));
+        const pts = flat.segments.map((sg) => sg.point);
+        if (flat.closed && pts.length) pts.push(pts[0]);
+        let parts = [];
+        for (let i = 0; i + 1 < pts.length; i++) {
+            const a = pts[i], b = pts[i + 1];
+            const v = b.subtract(a);
+            if (v.length < 1e-9) continue;
+            const n = v.normalize(half).rotate(90);
+            parts.push(new scope.Path({ segments: [a.add(n), b.add(n), b.subtract(n), a.subtract(n)], closed: true, insert: false }));
+            parts.push(new scope.Path.Circle({ center: a, radius: half, insert: false }));
+        }
+        if (!parts.length) return null;
+        while (parts.length > 1) {
+            const next = [];
+            for (let i = 0; i < parts.length; i += 2) next.push(i + 1 < parts.length ? parts[i].unite(parts[i + 1], { insert: false }) : parts[i]);
+            parts = next;
+        }
+        return parts[0];
+    }
 
     // Outer outlines clockwise, holes counter-clockwise, by how deep each outline is nested
     // (even: an outer edge, odd: a hole). paper.js's reorient() does the same in principle,
@@ -253,7 +282,13 @@
             const unite = (list) => list.reduce((a, p) => (a ? a.unite(p, { insert: false }) : p), null);
             // One region per original color, in the order the colors first appear (bottom first).
             const order = [...regions.keys()].reverse();
-            let byColor = order.map((c) => [c, unite(regions.get(c))]).filter(([, p]) => p && !p.isEmpty());
+            // Hairline slivers (outlines on average under 0.02 units wide) are rounding left
+            // over where colors meet. Invisible, but lines and gaps would outline them.
+            const clean = (p) => {
+                if (p && p.children) p.children.slice().forEach((k) => { if (k.length > 0 && (2 * Math.abs(k.area)) / k.length < 0.02) k.remove(); });
+                return p;
+            };
+            let byColor = order.map((c) => [c, clean(unite(regions.get(c)))]).filter(([, p]) => p && !p.isEmpty());
 
             const vb = (viewBox || '').trim().split(/[\s,]+/).map(Number);
             const size = vb.length === 4 && vb.every(Number.isFinite) ? Math.max(vb[2], vb[3]) : Math.max(bounds[0], bounds[1]);
@@ -267,11 +302,34 @@
                     const path = c.clone({ insert: false });
                     const b = path.bounds;
                     if (!(b.width > 0 || b.height > 0)) continue;
+                    // A sliver (on average under 0.02 units wide) has no inside to outline; growing it
+                    // can produce garbage.
+                    if ((2 * Math.abs(path.area)) / Math.max(path.length, 1e-9) < 0.02) continue;
                     // paperjs-offset can fail on slivers left by the boolean steps: retry on a finely
                     // flattened copy (within 0.02 units), else leave this one outline without a band.
                     // A band is about perimeter x width; much more means the offset filled the shape
                     // in instead (paperjs-offset does that now and then): treat that as a failure too.
-                    const sane = (r) => r && Math.abs(r.area) <= 1.35 * path.length * 2 * half + 4 * Math.PI * half * half;
+                    // Check a band where it matters: just beside the outline (both sides) it must cover,
+                    // well past its reach it must not. paperjs-offset sometimes returns a shape filled in
+                    // or with pieces missing; those fail here and get built the slow, reliable way.
+                    const len = path.length;
+                    const samples = [];
+                    const count = Math.max(12, Math.min(120, Math.round(len / (4 * half))));
+                    for (let i = 0; i < count && len > 0; i++) {
+                        const at = (len * (i + 0.5)) / count;
+                        const pt = path.getPointAt(at), n = path.getNormalAt(at);
+                        if (!pt || !n) continue;
+                        samples.push({ pt: pt.add(n.multiply(half * 0.5)), in: true }, { pt: pt.subtract(n.multiply(half * 0.5)), in: true });
+                        for (const far of [pt.add(n.multiply(half * 2.5)), pt.subtract(n.multiply(half * 2.5))]) {
+                            if (path.getNearestPoint(far).getDistance(far) > half * 1.5) samples.push({ pt: far, in: false });
+                        }
+                    }
+                    const sane = (r) => {
+                        if (!r || Math.abs(r.area) > 1.35 * len * 2 * half + 4 * Math.PI * half * half) return false;
+                        let misses = 0;
+                        for (const sm of samples) if (r.contains(sm.pt) !== sm.in && ++misses > 1) return false;
+                        return true;
+                    };
                     const band = () => {
                         const opts = { join: 'round', cap: 'butt', insert: false };
                         try { const r = PaperOffset.offsetStroke(path, half, opts); if (sane(r)) return r; } catch (err) { /* retry below */ }
@@ -280,8 +338,8 @@
                             flat.flatten(0.02);
                             const r = PaperOffset.offsetStroke(flat, half, opts);
                             if (sane(r)) return r;
-                        } catch (err) { /* give up on this outline */ }
-                        return null;
+                        } catch (err) { /* build it from simple pieces below */ }
+                        return sausage(path, half, scope);
                     };
                     let part;
                     if (Math.min(b.width, b.height) > 2 * half) {
@@ -309,7 +367,7 @@
             if (line > 0 && byColor.length) {
                 if (!PaperOffset) throw new GeometryError('Lines need the offset library, which did not load.');
                 const w = line * scale;
-                const whole = unite(byColor.map(([, p]) => p.clone({ insert: false })));
+                const whole = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
                 lines = whole.intersect(stroke(whole, w), { insert: false });
                 report(opts.gap > 0 ? 0.15 : 0.3);
                 await tick();
@@ -345,8 +403,19 @@
 
             // Line version: each color keeps only its part of the lines, unless it stays filled.
             if (lines) {
+                // Merge the colors that end up the same color first, then take their part of the
+                // lines once: fewer boolean steps, and the per-region ones sometimes went wrong.
                 const keep = new Set(opts.keep || []);
-                byColor = byColor.map(([c, p]) => [c, keep.has(c) ? p : p.intersect(lines, { insert: false })]).filter(([, p]) => !p.isEmpty());
+                const groups = new Map(); // output color -> [first original color, [regions]]
+                const kept = [];
+                for (const [c, p] of byColor) {
+                    if (keep.has(c)) { kept.push([c, p]); continue; }
+                    const to = (map[c] || c).toLowerCase();
+                    if (!groups.has(to)) groups.set(to, [c, []]);
+                    groups.get(to)[1].push(p);
+                }
+                byColor = [...groups.values()].map(([c, list]) => [c, unite(list).intersect(lines, { insert: false })])
+                    .concat(kept).filter(([, p]) => p && !p.isEmpty());
             }
 
             // One path per output color: colors the style maps to the same color merge.
