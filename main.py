@@ -221,7 +221,11 @@ _geometry_cache: Optional[tuple[str, str]] = None
 def _geometry() -> tuple[str, str]:
     global _geometry_cache
     if _geometry_cache is None or os.environ.get("SVG_RECOLOR_DEV"):
-        js = "\n;\n".join((BASE_DIR / "static" / name).read_text(encoding="utf-8") for name in GEOMETRY)
+        # The same file also runs as a Web Worker. paper.js handles that itself; paperjs-offset
+        # (loaded after it) only needs a `window` to put PaperOffset on.
+        parts = [(BASE_DIR / "static" / name).read_text(encoding="utf-8") for name in GEOMETRY]
+        parts.insert(1, "self.window = self.window || self;")
+        js = "\n;\n".join(parts)
         _geometry_cache = (js, hashlib.sha256(js.encode()).hexdigest()[:12])
     return _geometry_cache
 

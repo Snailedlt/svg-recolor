@@ -65,7 +65,7 @@ Two more edits need path geometry, so they run in the browser and are only in th
 Both handle flat colors and plain shapes; text, embedded images, gradients, transparency and `<use>` get a clear
 message instead of a guess.
 
-In the editor, click a color in the **Colors** strip under the preview to edit it.
+In the editor, click a color in the **Colors** strip under the preview, or click the shape itself in the picture, to edit it.
 
 Before recoloring, colors are normalized so the tools can handle them: CSS color names, `rgb()`/`hsl()`
 (with alpha), and 3/4-digit hex are converted to hex, and icons that rely on the default black fill
@@ -167,6 +167,8 @@ How:
 ### Website tips
 
 - The page URL keeps your settings and color edits (`?mode=colorize&color=ff0066&remove=ffffff&url=...`), so you can bookmark a setup. Opening a link with `url=` loads that SVG.
+- **Paste** (Ctrl+V) takes an `.svg` file copied in the file manager, SVG code, an SVG copied from a web page, a link, or
+  the result of a browser's **Copy image** on an SVG (the browser copies a PNG, plus the image's address, which is used to get the SVG itself).
 - **Share** copies a link with your SVG and settings. A linked SVG is shared by its address; a pasted or uploaded one travels in the link itself, compressed, after the `#` (never sent to the server). Very large SVGs don't fit in a link: share them from a public URL instead.
 - Everything fits on one screen: settings on the left, and Preview, Code and API tabs on the right, with Share, Copy and Download always visible.
 - Settings follow the order the engine applies them: **1 Style** (each tile shows your SVG in that style), **2 Color** (only for

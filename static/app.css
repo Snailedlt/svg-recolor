@@ -464,6 +464,8 @@ kbd {
 .palette .chip i { width: 15px; height: 15px; border-radius: 4px; border: 1px solid rgba(127,127,127,.35); display: inline-block; }
 .palette .chip i.gone { background: repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 50% / 6px 6px; }
 .palette .chip .arrow { color: var(--text-faint); }
+.palette .chip.hover { border-color: var(--pick); color: var(--text); }
+.canvas img.pickable { cursor: pointer; }
 .palette .chip.edited { border-color: var(--pick); color: var(--text); }
 .palette .chip.remove span:last-child, .palette .chip.hide span:last-child { text-decoration: line-through; }
 .palette .chip.cut i.gone { background: none; border-style: dashed; }

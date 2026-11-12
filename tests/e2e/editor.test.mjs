@@ -222,6 +222,82 @@ test('each color can get its own color or become invisible', async () => {
     assert.deepEqual(problems, []);
 });
 
+// Where a point of the picture (in viewBox units) is on screen, for an <img> with object-fit: contain.
+async function pointOf(page, selector, [x, y], [vw, vh]) {
+    const r = await page.locator(selector).boundingBox();
+    const scale = Math.min(r.width / vw, r.height / vh);
+    return { x: r.x + (r.width - vw * scale) / 2 + x * scale, y: r.y + (r.height - vh * scale) / 2 + y * scale };
+}
+
+test('clicking a shape in the picture opens that color, like its chip', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, EDIT_SVG);
+    await page.click('.style[data-mode="solid"]');
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    // The pink square, in the recolored picture; then the teal one in the original.
+    let pt = await pointOf(page, '#result-container img', [15, 5], [30, 10]);
+    await page.mouse.move(pt.x, pt.y);
+    await page.mouse.click(pt.x, pt.y);
+    await page.locator('#color-edit:not([hidden])').waitFor();
+    assert.equal(await page.textContent('#color-edit-title'), '#E879F9');
+    await page.mouse.move(pt.x + 1, pt.y);
+    await page.locator('.chip.hover[data-color="e879f9"]').waitFor(); // hovering the shape marks its chip
+    pt = await pointOf(page, '#preview-container img', [25, 5], [30, 10]);
+    await page.mouse.click(pt.x, pt.y);
+    assert.equal(await page.textContent('#color-edit-title'), '#0F766E');
+    // The white background between the squares is a color too.
+    pt = await pointOf(page, '#preview-container img', [10, 5], [30, 10]);
+    await page.mouse.click(pt.x, pt.y);
+    assert.equal(await page.textContent('#color-edit-title'), '#FFFFFF');
+    await page.check('#color-edit [value="remove"]');
+    await page.locator('.chip[data-color="ffffff"]', { hasText: 'Invisible' }).waitFor();
+    assert.equal(await page.isVisible('#color-edit'), true, 'the panel stays open at the click while editing');
+    assert.deepEqual(problems, []);
+});
+
+async function pasteClipboard(page, items) {
+    await page.evaluate((items) => {
+        const dt = new DataTransfer();
+        for (const it of items) {
+            if (it.file) dt.items.add(new File([it.file.body], it.file.name, { type: it.file.type }));
+            else dt.setData(it.type, it.data);
+        }
+        document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    }, items);
+}
+
+test('pasting an .svg file (copied in the file manager) loads it', async () => {
+    const { page, problems } = await open();
+    await pasteClipboard(page, [{ file: { body: EDIT_SVG, name: 'squares.svg', type: 'image/svg+xml' } }]);
+    await page.locator('#file-name', { hasText: 'squares.svg' }).waitFor();
+    await page.locator('.chip[data-color="e879f9"]').waitFor();
+    // A PNG is not something we can recolor: say so.
+    await pasteClipboard(page, [{ file: { body: 'x', name: 'photo.png', type: 'image/png' } }]);
+    await page.locator('#error-text', { hasText: 'PNG image' }).waitFor();
+    assert.deepEqual(problems, []);
+});
+
+test('"Copy image" from a page (a PNG plus <img src>) loads the SVG itself', async () => {
+    const { page, problems } = await open();
+    const fetched = [];
+    await page.route('**/api/fetch?*', (route) => {
+        fetched.push(new URL(route.request().url()).searchParams.get('url'));
+        route.fulfill({ status: 200, contentType: 'image/svg+xml', body: EDIT_SVG });
+    });
+    const src = 'https://github.com/devicons/devicon/raw/abc123/icons/jax/jax-original.svg';
+    await pasteClipboard(page, [
+        { type: 'text/html', data: '<meta charset="utf-8"><img src="' + src + '" alt="jax">' },
+        { file: { body: 'png bytes', name: 'image.png', type: 'image/png' } },
+    ]);
+    await page.locator('#file-name', { hasText: 'jax-original.svg' }).waitFor();
+    assert.deepEqual(fetched, [src]);
+    // An image given inline as a data: URL needs no download.
+    await pasteClipboard(page, [{ type: 'text/html', data: '<img src="data:image/svg+xml,' + encodeURIComponent(EDIT_SVG.replace('#ffffff', '#123456')) + '">' }]);
+    await page.locator('.chip[data-color="123456"]').waitFor();
+    assert.equal(fetched.length, 1);
+    assert.deepEqual(problems, []);
+});
+
 // Two facets with an outline ring drawn over their shared edge, like the JAX logo.
 const CUT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">'
     + '<rect x="0" y="0" width="20" height="20" fill="#5e97f6"/><rect x="20" y="0" width="20" height="20" fill="#9c27b0"/>'
@@ -238,7 +314,7 @@ test('cut out: a color becomes a real gap, and the result is one path per color'
     await page.click('.chip[data-color="dce0df"]');
     await page.check('#color-edit [value="cut"]');
     await page.locator('.chip[data-color="dce0df"]', { hasText: 'Cut out' }).waitFor();
-    assert.equal(geometry.length, 1);
+    assert.ok(geometry.length >= 1 && new Set(geometry).size === 1, 'one hashed bundle (the worker runs the same file)');
     await page.keyboard.press('Escape');
     await page.click('#tab-btn-code');
     const code = await page.textContent('#code-view');

@@ -275,16 +275,18 @@
         }
         return geometryReady;
     }
-    async function cutOutSvg(edited, cut, merged) {
+    async function cutOutSvg(edited, cut, merged, onProgress) {
         const Geo = await loadGeometry();
-        return Geo.cutOut(edited, { cut, map: merged, gap: state.gap });
+        return Geo.cutOut(edited, { cut, map: merged, gap: state.gap, onProgress });
     }
     const gapInput = $('adj-gap');
     function syncGap() {
         state.gap = Math.max(0, Math.min(6, parseFloat(gapInput.value) || 0));
         $('adj-gap-out').textContent = state.gap ? String(state.gap) : 'Off';
     }
-    gapInput.addEventListener('input', () => { syncGap(); editsChanged(); });
+    // Gaps are heavy on big drawings: show the value at once, recut when the slider rests.
+    let gapTimer = 0;
+    gapInput.addEventListener('input', () => { syncGap(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
     function settingsChanged() {
         scheduleThumbs();
         updateSnippet();
@@ -604,20 +606,77 @@
         const file = e.dataTransfer && e.dataTransfer.files[0];
         if (file) { e.preventDefault(); loadFile(file); }
     });
+    // Paste: an .svg file copied in the file manager (Explorer, Finder, Files), SVG code,
+    // an <svg> copied from a web page, or a link.
+    const isSvgFile = (f) => /svg/i.test(f.type) || /\.svg$/i.test(f.name);
+    function svgFromHtml(html) {
+        const svg = new DOMParser().parseFromString(html, 'text/html').querySelector('svg');
+        if (!svg) return null;
+        if (!svg.getAttribute('xmlns')) svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        return new XMLSerializer().serializeToString(svg);
+    }
+    async function loadPastedFile(file, intoCode) {
+        if (!isSvgFile(file)) {
+            const kind = (file.type.split('/')[1] || '').toUpperCase();
+            return showError((kind ? 'That\'s a ' + kind + ' image. ' : 'That isn\'t an SVG. ') + 'SVG Recolor needs an .svg file or SVG code.');
+        }
+        if (file.size > MAX_BYTES) return showError('This file is ' + formatBytes(file.size) + '. The limit is 2 MB; try optimizing it with SVGO first.');
+        const text = await file.text();
+        if (intoCode) { codeName = file.name || null; setCodeInput(text); applyCode(); return; }
+        loadText(text, file.name || 'pasted.svg', file.size, null);
+    }
+    // "Copy image" in a browser puts a PNG of the picture on the clipboard, plus HTML
+    // <img src="..."> pointing at the real file: use the address to get the SVG itself.
+    function imageSource(html) {
+        if (!html || !/<img[\s>]/i.test(html)) return null;
+        const img = new DOMParser().parseFromString(html, 'text/html').querySelector('img[src]');
+        const src = img && img.getAttribute('src').trim();
+        return src && /^(https?:|data:image\/svg\+xml)/i.test(src) ? src : null;
+    }
+    function svgFromDataUrl(src) {
+        const m = /^data:image\/svg\+xml(;[^,]*)?,(.*)$/is.exec(src);
+        if (!m) return null;
+        try {
+            return /;base64/i.test(m[1] || '') ? new TextDecoder().decode(Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0))) : decodeURIComponent(m[2]);
+        } catch (err) { return null; }
+    }
+    function loadPastedLink(url) {
+        showSourcePicker('link');
+        $('url-input').value = url;
+        loadFromLink();
+    }
     document.addEventListener('paste', (e) => {
         const t = e.target;
-        if (t === hexInput || t === $('url-input') || t === $('code-input')) return;
         const data = e.clipboardData;
         if (!data) return;
-        const file = Array.from(data.files || []).find((f) => /svg/i.test(f.type) || /\.svg$/i.test(f.name));
-        if (file) { e.preventDefault(); loadFile(file); return; }
-        const text = data.getData('text/plain');
+        const files = Array.from(data.files || []);
+        const file = files.find(isSvgFile) || files[0];
+        const src = t === hexInput ? null : imageSource(data.getData('text/html'));
+        if (src && !(file && isSvgFile(file))) {
+            e.preventDefault();
+            const inline = src.startsWith('data:') ? svgFromDataUrl(src) : null;
+            if (inline) { setCodeInput(inline); codeName = null; loadText(inline, 'pasted.svg', new Blob([inline]).size, null, 'code'); return; }
+            if (!inline && src.startsWith('data:')) return showError('This image could not be read. Copy the image address instead.');
+            loadPastedLink(src);
+            return;
+        }
+        if (file) { e.preventDefault(); loadPastedFile(file, t === $('code-input')); return; }
+        if (t === hexInput || t === $('url-input') || t === $('code-input')) return;
+        let text = data.getData('text/plain');
+        if (!(text && /<svg[\s>]/i.test(text))) {
+            const html = data.getData('text/html');
+            const fromHtml = html && /<svg[\s>]/i.test(html) ? svgFromHtml(html) : null;
+            if (fromHtml) text = fromHtml;
+        }
         if (text && /<svg[\s>]/i.test(text)) { e.preventDefault(); setCodeInput(text); codeName = null; loadText(text, 'pasted.svg', new Blob([text]).size, null, 'code'); return; }
+        const uris = data.getData('text/uri-list') || text || '';
+        if (/^file:\/\//im.test(uris.trim()) && !(t && /^(INPUT|TEXTAREA)$/.test(t.tagName))) {
+            e.preventDefault();
+            return showError('The browser only got the file\'s path, not the file. Drag the file onto the page or use Choose file instead.');
+        }
         if (text && /^https?:\/\/\S+$/i.test(text.trim()) && !(t && /^(INPUT|TEXTAREA)$/.test(t.tagName))) {
             e.preventDefault();
-            showSourcePicker('link');
-            $('url-input').value = text.trim();
-            loadFromLink();
+            loadPastedLink(text.trim());
         }
     });
 
@@ -802,7 +861,8 @@
             if (parts.cut.length || state.gap) {
                 setStatus('work', state.gap ? 'Cutting gaps…' : 'Cutting out…');
                 try {
-                    svg = await cutOutSvg(parts.edited, parts.cut, merged);
+                    const label = state.gap ? 'Cutting gaps… ' : 'Cutting out… ';
+                    svg = await cutOutSvg(parts.edited, parts.cut, merged, (f) => { if (id === reqId) setStatus('work', label + Math.round(f * 100) + '%'); });
                 } catch (err) {
                     if (id !== reqId || doc !== state.doc) return;
                     // Show the rest of the edits, with the cut colors left invisible, and say why.
@@ -840,7 +900,7 @@
         renderImage($('result-container'), resultUrl, 'Recolored ' + state.doc.name);
         $('code-preview-img').src = resultUrl;
         renderPalette(r.palette);
-        if (!editPanel.hidden && editColor) { editAnchor = document.querySelector('.chip[data-color="' + editColor + '"]'); placeEditPanel(); }
+        if (!editPanel.hidden && editColor && !(editAnchor && editAnchor.point)) { editAnchor = document.querySelector('.chip[data-color="' + editColor + '"]'); placeEditPanel(); }
         if (state.tab === 'code') renderCode();
         syncCopyButton();
         syncDownload();
@@ -932,7 +992,7 @@
     $('color-edit-close').addEventListener('click', () => closeColorEdit(true));
     editPanel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closeColorEdit(true); } });
     document.addEventListener('pointerdown', (e) => {
-        if (!editPanel.hidden && !editPanel.contains(e.target) && !e.target.closest('.chip')) closeColorEdit(false);
+        if (!editPanel.hidden && !editPanel.contains(e.target) && !e.target.closest('.chip') && !isPreviewImg(e.target)) closeColorEdit(false);
     });
     window.addEventListener('resize', placeEditPanel);
     $('palette-list').addEventListener('scroll', placeEditPanel, { passive: true });
@@ -941,6 +1001,104 @@
         closeColorEdit(false);
         editsChanged();
         toast('Color edits reset');
+    });
+
+    // Click the picture to pick a color: a hidden copy of the original, with every color
+    // swapped for an id color and no anti-aliasing, is drawn to a canvas; the pixel under
+    // the pointer says which color is on top there. The preview itself stays an <img>.
+    let pick = null; // { doc, w, h, ctx, ids, colors, ready }
+    function pickIds(n) {
+        const steps = Math.max(2, Math.ceil(Math.cbrt(n + 1)));
+        const v = (k) => Math.round((k * 255) / (steps - 1));
+        const ids = [];
+        for (let i = 0; i < n; i++) ids.push([v(i % steps), v(Math.floor(i / steps) % steps), v(Math.floor(i / steps / steps) % steps)]);
+        return ids;
+    }
+    const hex2 = (x) => x.toString(16).padStart(2, '0');
+    // Where the picture is drawn inside the <img> box (object-fit: contain).
+    function drawnRect(img) {
+        const r = img.getBoundingClientRect();
+        const aspect = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : viewBoxAspect(state.doc) || r.width / r.height;
+        const w = Math.min(r.width, r.height * aspect), h = w / aspect;
+        return { left: r.left + (r.width - w) / 2, top: r.top + (r.height - h) / 2, width: w, height: h };
+    }
+    function viewBoxAspect(doc) {
+        const m = /<svg\b[^>]*?\sviewBox\s*=\s*["']\s*[-\d.eE+]+[\s,]+[-\d.eE+]+[\s,]+([\d.eE+]+)[\s,]+([\d.eE+]+)/i.exec(doc.norm);
+        return m && Number(m[1]) > 0 && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : null;
+    }
+    function preparePick(doc, rect) {
+        const w = Math.max(1, Math.round(rect.width * 2)), h = Math.max(1, Math.round(rect.height * 2));
+        if (pick && pick.doc === doc && pick.w === w && pick.h === h) return pick;
+        const colors = doc.palette.map((p) => p[0]);
+        const ids = pickIds(colors.length);
+        const mapping = {};
+        colors.forEach((c, i) => { mapping[c] = ids[i].map(hex2).join(''); });
+        const xml = new DOMParser().parseFromString(Engine.apply(doc.norm, mapping), 'image/svg+xml');
+        const root = xml.documentElement;
+        let loaded;
+        const p = { doc, w, h, ids, colors, ready: false, ctx: null, loaded: new Promise((r) => { loaded = r; }) };
+        pick = p;
+        if (root.localName !== 'svg' || xml.querySelector('parsererror')) { loaded(); return p; }
+        root.setAttribute('shape-rendering', 'crispEdges');
+        xml.querySelectorAll('[shape-rendering]').forEach((el) => el.setAttribute('shape-rendering', 'crispEdges'));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        p.ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const img = new Image();
+        img.onload = () => {
+            if (pick !== p) return;
+            p.ctx.drawImage(img, 0, 0, w, h);
+            p.ready = true;
+            loaded();
+        };
+        img.onerror = () => loaded();
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(root));
+        return p;
+    }
+    // The original color under a point of a preview image; null for none, undefined while loading.
+    function colorAt(img, x, y) {
+        if (!state.doc || stage.dataset.view !== 'side') return null;
+        const rect = drawnRect(img);
+        const p = preparePick(state.doc, rect);
+        if (!p.ready) return undefined;
+        const px = Math.floor(((x - rect.left) / rect.width) * p.w), py = Math.floor(((y - rect.top) / rect.height) * p.h);
+        if (px < 0 || py < 0 || px >= p.w || py >= p.h) return null;
+        const [r, g, b, a] = p.ctx.getImageData(px, py, 1, 1).data;
+        if (a < 128) return null;
+        let best = null, bestD = Infinity;
+        p.ids.forEach(([ir, ig, ib], i) => {
+            const d = (ir - r) ** 2 + (ig - g) ** 2 + (ib - b) ** 2;
+            if (d < bestD) { bestD = d; best = p.colors[i]; }
+        });
+        return best;
+    }
+    const isPreviewImg = (t) => t instanceof HTMLImageElement && !!t.closest('#preview-container, #result-container');
+    let hoverColor = null;
+    function setHover(color, img) {
+        if (color === hoverColor) return;
+        hoverColor = color;
+        $$('#palette-list .chip.hover').forEach((c) => c.classList.toggle('hover', false));
+        if (color) { const chip = document.querySelector('.chip[data-color="' + color + '"]'); if (chip) chip.classList.add('hover'); }
+        if (img) {
+            img.classList.toggle('pickable', !!color);
+            img.title = color ? '#' + color.toUpperCase() + ': click to edit this color' : '';
+        }
+    }
+    stage.addEventListener('pointermove', (e) => {
+        if (!isPreviewImg(e.target) || e.pointerType === 'touch') return;
+        const c = colorAt(e.target, e.clientX, e.clientY);
+        if (c !== undefined) setHover(c, e.target);
+    });
+    stage.addEventListener('pointerout', (e) => { if (isPreviewImg(e.target)) setHover(null, e.target); });
+    stage.addEventListener('click', async (e) => {
+        if (!isPreviewImg(e.target)) return;
+        let c = colorAt(e.target, e.clientX, e.clientY);
+        if (c === undefined) { await pick.loaded; c = colorAt(e.target, e.clientX, e.clientY); }
+        if (!c) { closeColorEdit(false); return; }
+        // Open the panel at the click: a small box where the pointer is.
+        const x = e.clientX, y = e.clientY;
+        openColorEdit(c, { point: true, getBoundingClientRect: () => ({ left: x - 12, right: x + 12, top: y - 12, bottom: y + 12, width: 24, height: 24 }) });
     });
 
     // ------------------------------------------------------------------
