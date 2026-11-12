@@ -260,15 +260,15 @@ test('clicking a shape in the picture opens that color, like its chip', async ()
     assert.deepEqual(problems, []);
 });
 
-async function pasteClipboard(page, items) {
-    await page.evaluate((items) => {
+async function pasteClipboard(page, items, target) {
+    await page.evaluate(([items, target]) => {
         const dt = new DataTransfer();
         for (const it of items) {
             if (it.file) dt.items.add(new File([it.file.body], it.file.name, { type: it.file.type }));
             else dt.setData(it.type, it.data);
         }
-        document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
-    }, items);
+        (target ? document.querySelector(target) : document.body).dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    }, [items, target]);
 }
 
 test('pasting an .svg file (copied in the file manager) loads it', async () => {
@@ -300,6 +300,12 @@ test('"Copy image" from a page (a PNG plus <img src>) loads the SVG itself', asy
     await pasteClipboard(page, [{ type: 'text/html', data: '<img src="data:image/svg+xml,' + encodeURIComponent(EDIT_SVG.replace('#ffffff', '#123456')) + '">' }]);
     await page.locator('.chip[data-color="123456"]').waitFor();
     assert.equal(fetched.length, 1);
+    // Pasted into the link field, the same clipboard is just text for the field: nothing loads.
+    await page.click('#change-file');
+    await page.click('[data-source="link"]');
+    await pasteClipboard(page, [{ type: 'text/html', data: '<img src="' + src + '">' }, { type: 'text/plain', data: src }], '#url-input');
+    await page.waitForTimeout(300);
+    assert.equal(fetched.length, 1, 'no download from the link field');
     assert.deepEqual(problems, []);
 });
 
@@ -431,6 +437,7 @@ test('line version: only the edges stay, colors can stay filled', async () => {
     assert.equal(await page.isVisible('#line-inner-row'), false, 'the line options show once lines are on');
     const hitsAt = async (points) => {
         await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+        assert.equal(await page.isVisible('#error-message'), false, 'the line step ran without an error');
         await page.click('#tab-btn-code');
         const code = await page.textContent('#code-view');
         await page.click('#tab-btn-preview');
@@ -625,6 +632,7 @@ test('cut out explains what it can\'t do instead of guessing', async () => {
     await page.click('.chip[data-color="00ff00"]');
     await page.check('#color-edit [value="cut"]');
     await page.locator('#error-text', { hasText: 'gradients' }).waitFor();
+    await page.locator('#status-text', { hasText: /^Without cut out/ }).waitFor(); // not shown as the finished result
 });
 
 test('share links carry a pasted SVG and its edits', async () => {

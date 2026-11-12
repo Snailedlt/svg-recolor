@@ -1139,7 +1139,8 @@
         if (!data) return;
         const files = Array.from(data.files || []);
         const file = files.find(isSvgFile) || files[0];
-        const src = t === hexInput ? null : imageSource(data.getData('text/html'));
+        // In the link and color fields a paste is just text for the field.
+        const src = t === hexInput || t === $('url-input') ? null : imageSource(data.getData('text/html'));
         if (src && !(file && isSvgFile(file))) {
             e.preventDefault();
             const inline = src.startsWith('data:') ? svgFromDataUrl(src) : null;
@@ -1354,6 +1355,7 @@
             const parts = editedSvg(doc, mapping);
             const { merged } = parts;
             let svg = parts.svg;
+            let geometryFailed = false;
             if (parts.cut.length || state.gap || state.line) {
                 const label = state.line ? 'Drawing lines… ' : state.gap ? 'Cutting gaps… ' : 'Cutting out… ';
                 setStatus('work', label.trim());
@@ -1361,8 +1363,10 @@
                     svg = await cutOutSvg(parts.edited, parts.cut, merged, (f) => { if (id === reqId) setStatus('work', label + Math.round(f * 100) + '%'); });
                 } catch (err) {
                     if (id !== reqId || doc !== state.doc) return;
-                    // Show the rest of the edits, with the cut colors left invisible, and say why.
+                    // Show the rest of the edits, with the cut colors left invisible, and say why;
+                    // the status says it too, so this isn't mistaken for the finished result.
                     showError(err.message);
+                    geometryFailed = true;
                 }
                 if (id !== reqId || doc !== state.doc) return;
             }
@@ -1388,7 +1392,8 @@
             renderResult();
             if (MODES[state.mode].color) rememberColor(state.color);
             const size = formatBytes(new Blob([state.result.svg]).size);
-            setStatus('ok', MODES[state.mode].label + (MODES[state.mode].color ? ' ' + state.color : '') + ' · ' + colors.length + ' colors · ' + size);
+            if (geometryFailed) setStatus('err', 'Without cut out, gaps and lines (see the message) · ' + size);
+            else setStatus('ok', MODES[state.mode].label + (MODES[state.mode].color ? ' ' + state.color : '') + ' · ' + colors.length + ' colors · ' + size);
         } catch (err) {
             if (id !== reqId || err.name === 'AbortError') return;
             showError(err.message === 'Failed to fetch' ? 'Could not reach the server. Check your connection and try again.' : err.message);
