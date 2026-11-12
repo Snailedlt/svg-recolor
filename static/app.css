@@ -445,7 +445,8 @@ kbd {
 .compare-range { display: none; }
 .stage[data-view="slider"] .compare-range { display: block; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; z-index: 3; }
 /* Nothing to compare yet: keep the empty state's buttons (Try an example) tappable. */
-.stage[data-view="slider"]:not(:has(#result-container img)) .compare-range { display: none; }
+.stage[data-view="slider"]:not(:has(#result-container img)) .compare-range,
+.stage[data-view="slider"]:not(:has(#result-container img)) .pane + .pane { display: none; }
 .split-line { display: none; }
 .stage[data-view="slider"] .split-line {
     display: block; position: absolute; top: 0; bottom: 0; left: var(--split, 50%); width: 2px; margin-left: -1px;

@@ -407,11 +407,11 @@ test('gap and line sizes: px in the SVG\'s units, or % of the icon', async () =>
     assert.equal(await page.getAttribute('#adj-gap', 'max'), '6');
     await page.locator('#adj-gap').evaluate((el) => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
     assert.equal(await page.textContent('#adj-gap-out'), '2 px');
-    // Switching units keeps the look: 2 px of 128 is 1.56 %, which the 0.1 % steps round to 1.6.
+    // Switching units keeps the look: 2 px of 128 is 1.56 %.
     await openFold(page, 'shape');
     await page.click('#unit-tabs [data-unit="%"]');
-    assert.equal(await page.textContent('#adj-gap-out'), '1.6 %');
-    await page.waitForURL(/gap=1\.6&unit=pct/);
+    assert.equal(await page.textContent('#adj-gap-out'), '1.56 %');
+    await page.waitForURL(/gap=1\.56&unit=pct/);
     // A big drawing gets a bigger px range: 6/128 of 1024 is 48 px, in 2 px steps.
     await page.click('#unit-tabs [data-unit="px"]');
     await page.click('#change-file');
