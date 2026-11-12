@@ -202,3 +202,25 @@ def test_one_color_keeps_the_parts_of_gradients_apart(client):
     ps = paths(res.text)
     assert len(ps) == 1
     assert ps[0][1].count("M") + ps[0][1].count("m") == 2, "two parts, the faint shadow dropped"
+
+
+def test_a_sliver_joins_its_neighbor_instead_of_notching_it(client):
+    # B covers A all but a 0.05 strip along the top: that strip can't be a part of its own, so no
+    # gap runs under it (Node's notch). Two parts: top (B and the strip) and bottom (C).
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#ff0000"/>'
+           '<rect y="0.05" width="40" height="19.95" fill="#00ff00"/><rect y="20" width="40" height="20" fill="#0000ff"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&gap=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    assert d.count("M") + d.count("m") == 2, d
+    from picosvg.svg_types import SVGPath
+    assert SVGPath(d=d).bounding_box().y < 0.01, "the top edge stays at y=0: " + d
+
+
+def test_outlines_without_z_get_their_last_edge(client):
+    # A fill closes an outline without `z`; the line version must too (Android's arm lost its top-left).
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><path fill="#a4c439" d="M10 10H30V30H10"/></svg>'
+    res = client.post("/api/recolor?mode=solid&color=000000&line=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    assert d.count("M") + d.count("m") == 2, "a closed ring (outline and hole), not a U: " + d

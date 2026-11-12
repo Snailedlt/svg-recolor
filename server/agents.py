@@ -74,6 +74,7 @@ Base URL: {base}
     this makes a one-color icon whose white parts stay see-through (like devicon's plain icons).
   - `gap=2`: a gap of that width wherever two original colors meet. For logos whose parts just touch.
   - `line=3`: a line version (like devicon's line icons), only a band of that width along the edges.
+    Devicon's line icons mostly use about 1 unit on the 128 canvas: `line=1` with `canvas=128x128`.
     `lines=outer` draws just the outline (default `all`: also between colors); `keep=ffffff,...` stays filled.
   - `unit`: `px` (default; the SVG's own units) or `pct` (percent of the icon) for `gap` and `line`.
   - `canvas=128x128`: a new viewBox size, drawing centered. `place=x,y,scale` moves and scales it;
@@ -82,7 +83,8 @@ Base URL: {base}
   - Cut, gaps and lines need shapes (no text, images or masks) and flat colors; when everything ends up one color
     (like `mode=solid`), gradients and transparency are fine.
     The server gives them 20 s; very complex drawings may need the editor, which has no limit.
-  - Devicon plain version: `mode=solid&color=...&remove=<background>&cut=<outlines>&canvas=128x128&fit=1&optimize=true`.
+  - Devicon plain version: `mode=solid&color=...&holes=light&canvas=128x128&fit=0&optimize=true` (add `gap=1.5&unit=pct`
+    when the parts just touch, `cut=<outlines>` for dark outlines). Line version: the same with `line=1`.
 
 ## Modes
 
@@ -151,7 +153,7 @@ MCP_TOOLS = [
                 "canvas": {"type": "string", "description": "A new canvas (viewBox) size, 'WxH', e.g. '128x128'. The drawing stays centered."},
                 "place": {"type": "string", "description": "Where the drawing goes on the canvas: 'x,y,scale' (x,y = where its original top-left lands)."},
                 "fit": {"type": "number", "minimum": 0,
-                        "description": "Scale and center the visible drawing to fill the canvas with this padding. Devicon: canvas '128x128', fit 1."},
+                        "description": "Scale and center the visible drawing to fill the canvas with this padding. Devicon (no padding): canvas '128x128', fit 0."},
                 "optimize": {"type": "boolean", "description": "Optimize the result with SVGO (the editor's default settings, the same as devicon's)."},
                 "precision": {"type": "integer", "minimum": 0, "maximum": 8, "description": "With optimize: decimals kept (default 3)."},
             },

@@ -66,12 +66,13 @@ same code (paper.js and SVGO in QuickJS, with picosvg reading the shapes), so th
 
 - **Line** (API `line=3`, `lines=outer`, `keep=ffffff`; slider under Adjust, same units): a line version, like devicon's `line` icons. Only a band of that width
   along the edges is kept: inside the outer edge, and centered on the boundaries between colors (switch off **Lines
-  between colors** for just the outline). In the color panel, **Keep filled** keeps a color solid, for small details.
+  between colors** for just the outline). In the color panel, **Keep filled** keeps a color solid, for small details. Devicon's line icons mostly use
+  lines about 1 unit wide on their 128 canvas (`line=1` with `canvas=128x128`).
 
 **Canvas** (the viewBox size is on the picture; the rest is under **Placement**; API: `canvas=128x128`, `place=x,y,scale`, `fit=1`): set the canvas size, the drawing's size and position, or
 **Fit to canvas** with a padding: the visible drawing (strokes included, invisible colors not) is scaled and centered
 so it ends exactly that far from every edge. Fit stays on: the next SVG, or a new canvas size, is fitted too (moving or
-resizing by hand turns it off). For devicon: canvas 128 × 128, padding 1, Fit. The drawing is wrapped in one
+resizing by hand turns it off). For devicon: canvas 128 × 128, padding 0, Fit (the icon fills the viewBox). The drawing is wrapped in one
 `<g transform>`, so every other feature works on top.
 
 On the API these get 20 seconds per request: most icons take well under a second, but very complex drawings

@@ -185,7 +185,7 @@ def extra_query(
                     "top-left corner lands.", examples=["0,0,0.5"])] = None,
     fit: Annotated[Optional[float], Query(
         description="Scale and center the visible drawing (strokes included) to fill the canvas, leaving this "
-                    "padding on every side. Devicon: `canvas=128x128&fit=1`.", ge=0, examples=[1])] = None,
+                    "padding on every side. Devicon (no padding): `canvas=128x128&fit=0`.", ge=0, examples=[0])] = None,
     optimize: Annotated[Optional[bool], Query(
         description="Optimize the result with SVGO 3.3.2, with the editor's default settings (multipass, "
                     "every preset plugin but removeViewBox, ...; the same as devicon's).")] = None,

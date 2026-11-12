@@ -296,7 +296,13 @@
         const scope = new paper.PaperScope();
         scope.setup(new paper.Size(1, 1));
         try {
-            const shapes = raw.map(({ d, rule, color }) => ({ path: new scope.CompoundPath({ pathData: d, fillRule: rule, insert: false }), color }));
+            const shapes = raw.map(({ d, rule, color }) => {
+                const path = new scope.CompoundPath({ pathData: d, fillRule: rule, insert: false });
+                // A fill closes every outline, `z` or not; lines and gaps need them closed too, or the
+                // missing last edge gets no band (Android's arm, head and eyes).
+                path.children.forEach((k) => { k.closed = true; });
+                return { path, color };
+            });
 
             // Top to bottom: what each shape shows is what's not covered by the shapes above it.
             // A cut-out shape shows nothing but still covers (so it leaves a gap below it).
@@ -330,6 +336,43 @@
             const size = vb.length === 4 && vb.every(Number.isFinite) ? Math.max(vb[2], vb[3]) : Math.max(bounds[0], bounds[1]);
             // Sizes are in the SVG's own units (px), or with unit '%' in percent of its larger side.
             const scale = opts.unit === '%' ? size / 100 : 1;
+
+            // A part thinner than half the gap or line (on average) can't show as a part of its own:
+            // usually a sliver where two shapes of the original almost line up. Left alone, its gap or
+            // lines would bite into its neighbors (a notch in Node's outer edge). It joins the
+            // neighbor it borders most instead.
+            const thin = Math.max(Number(opts.gap) || 0, Number(opts.line) || 0) * scale / 2;
+            if (thin > 0 && byColor.length > 1) {
+                for (const entry of byColor) {
+                    const p = entry[1];
+                    for (const k of (p.children ? p.children.slice() : [p])) {
+                        const len = k.length;
+                        if (!(len > 0) || (2 * Math.abs(k.area)) / len >= thin) continue;
+                        const piece = new scope.Path({ segments: k.segments, closed: true, insert: false });
+                        if (Math.abs(piece.area) < 1e-9) continue;
+                        // Filled (not a hole): taking it away makes the region smaller by about its area.
+                        const cur = entry[1];
+                        const rest = cur.subtract(piece, { insert: false });
+                        if (Math.abs(cur.area) - Math.abs(rest.area) < 0.5 * Math.abs(piece.area)) continue;
+                        // Which neighbor: the one just outside most of its outline.
+                        const votes = new Map();
+                        const eps = Math.min(thin, 0.05 * size);
+                        for (let i = 0; i < 24; i++) {
+                            const at = (len * (i + 0.5)) / 24;
+                            const pt = piece.getPointAt(at), n = piece.getNormalAt(at);
+                            if (!pt || !n) continue;
+                            for (const q of [pt.add(n.multiply(eps)), pt.subtract(n.multiply(eps))]) {
+                                for (const other of byColor) if (other !== entry && other[1].contains(q)) votes.set(other, (votes.get(other) || 0) + 1);
+                            }
+                        }
+                        if (!votes.size) continue; // on its own: keep it
+                        const to = [...votes].sort((x, y) => y[1] - x[1])[0][0];
+                        to[1] = to[1].unite(piece, { insert: false });
+                        entry[1] = rest;
+                    }
+                }
+                byColor = byColor.filter(([, p]) => p && !p.isEmpty());
+            }
             // A band of `half` on both sides of every outline of `p`. An outline narrower than the
             // band is covered whole (its inward offset would turn inside out): filled, then grown.
             const stroke = (p, half) => {
@@ -350,7 +393,7 @@
                     // or with pieces missing; those fail here and get built the slow, reliable way.
                     const len = path.length;
                     const samples = [];
-                    const count = Math.max(12, Math.min(120, Math.round(len / (4 * half))));
+                    const count = Math.max(24, Math.min(400, Math.round(len / half)));
                     for (let i = 0; i < count && len > 0; i++) {
                         const at = (len * (i + 0.5)) / count;
                         const pt = path.getPointAt(at), n = path.getNormalAt(at);
@@ -363,7 +406,7 @@
                     const sane = (r) => {
                         if (!r || Math.abs(r.area) > 1.35 * len * 2 * half + 4 * Math.PI * half * half) return false;
                         let misses = 0;
-                        for (const sm of samples) if (r.contains(sm.pt) !== sm.in && ++misses > 1) return false;
+                        for (const sm of samples) if (r.contains(sm.pt) !== sm.in && ++misses > 0) return false;
                         return true;
                     };
                     const band = () => {
@@ -378,6 +421,13 @@
                         return sausage(path, half, scope);
                     };
                     let part;
+                    // Narrower than the band on average: already a line (a thin stripe, an antenna, a
+                    // sliver). Outlining it would leave ticks; it stays as it is instead.
+                    if ((2 * Math.abs(path.area)) / Math.max(len, 1e-9) < 2 * half) {
+                        if (path.area < 0) path.reverse();
+                        acc = acc ? acc.unite(path, { insert: false }) : path;
+                        continue;
+                    }
                     if (Math.min(b.width, b.height) > 2 * half) {
                         part = band();
                         if (!part) continue;
