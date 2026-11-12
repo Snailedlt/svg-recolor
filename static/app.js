@@ -62,6 +62,7 @@
         unit: 'px', // gap and line sizes: 'px' (the SVG's own units) or '%' of the icon
         svgo: false, // optimize the result with SVGO
         canvas: null, // [w, h] of a new viewBox (null = the SVG's own)
+        fit: null, // auto Fit: padding (each SVG is fitted to the canvas), or null
         place: null, // [x, y, scale]: where the original viewBox's top-left lands, and its scale (null = centered, 100 %)
         lineInner: true, // lines also between colors, not just around the whole shape
         keep: new Set(), // colors that stay filled in the line version
@@ -259,7 +260,8 @@
         if ((state.gap || state.line) && state.unit === '%') q.set('unit', 'pct');
         if (state.svgo) q.set('optimize', '1');
         if (state.canvas) q.set('canvas', state.canvas.map(fmt).join('x'));
-        if (state.place) q.set('place', state.place.map(fmt).join(','));
+        if (state.fit !== null) q.set('fit', fmt(state.fit));
+        else if (state.place) q.set('place', state.place.map(fmt).join(','));
         if (state.line) {
             q.set('line', String(state.line));
             if (!state.lineInner) q.set('lines', 'outer');
@@ -342,6 +344,7 @@
         if (state.place) state.place = [state.place[0] + (W - W0) / 2, state.place[1] + (H - H0) / 2, state.place[2]];
         const [, , w0, h0] = origBox(state.doc);
         state.canvas = W === w0 && H === h0 && !state.place ? null : [W, H];
+        if (state.fit !== null) { state.canvas = [W, H]; fitToCanvas(false); return; } // auto Fit: fit the new canvas
         canvasChanged();
     }
     function setScale(s) {
@@ -350,12 +353,14 @@
         const [tx, ty, s0] = placement(state.doc);
         // Scale around the middle of the drawing.
         const cx = tx + (s0 * w0) / 2, cy = ty + (s0 * h0) / 2;
+        state.fit = null; // placed by hand now
         state.place = [cx - (s * w0) / 2, cy - (s * h0) / 2, s];
         if (!state.canvas) state.canvas = canvasSize(state.doc);
         canvasChanged();
     }
     function setPosition(x, y) {
         if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        state.fit = null;
         state.place = [x, y, placement(state.doc)[2]];
         if (!state.canvas) state.canvas = canvasSize(state.doc);
         canvasChanged();
@@ -397,6 +402,7 @@
         // Map the box's corner so the box is centered: s * (bx - x0) + tx = (W - s * bw) / 2.
         state.place = [(W - s * bw) / 2 - s * (bx - x0), (H - s * bh) / 2 - s * (by - y0), s];
         if (!state.canvas) state.canvas = [W, H];
+        state.fit = center ? null : pad; // Fit stays on: the next SVG (or canvas size) is fitted too
         canvasChanged();
         toast(center ? 'Centered' : 'Fitted to ' + fmt(W) + ' × ' + fmt(H) + (pad ? ' with ' + fmt(pad) + ' padding' : ''));
     }
@@ -409,7 +415,8 @@
     $$('#canvas-step input').forEach((el) => el.addEventListener('blur', syncCanvasUI));
     $('fit-btn').addEventListener('click', () => fitToCanvas(false));
     $('center-btn').addEventListener('click', () => fitToCanvas(true));
-    $('canvas-reset').addEventListener('click', () => { state.canvas = null; state.place = null; canvasChanged(); });
+    $('canvas-reset').addEventListener('click', () => { state.canvas = null; state.place = null; state.fit = null; canvasChanged(); });
+    $('fit-pad').addEventListener('change', () => { if (state.fit !== null && state.doc) fitToCanvas(false); });
 
     // Collapsible sections: closed by default (less scrolling), the header says what's set,
     // and each remembers being opened.
@@ -428,7 +435,7 @@
         let sub = 'as it is';
         if (placedNow && state.doc) {
             const [W, H] = canvasSize(state.doc);
-            sub = fmt(W) + ' × ' + fmt(H) + ' · ' + fmt(placement(state.doc)[2] * 100) + ' %';
+            sub = fmt(W) + ' × ' + fmt(H) + ' · ' + (state.fit !== null ? 'fit, padding ' + fmt(state.fit) : fmt(placement(state.doc)[2] * 100) + ' %');
         }
         $('canvas-sub').textContent = sub;
         $('canvas-step').classList.toggle('active', placedNow);
@@ -871,6 +878,7 @@
         syncGap();
         state.canvas = null;
         state.place = null;
+        state.fit = null;
         syncCanvasUI();
         state.svgo = false;
         $('svgo-toggle').checked = false;
@@ -1068,6 +1076,7 @@
         syncPageUrl();
         recolor();
         scheduleThumbs(250);
+        if (state.fit !== null) fitToCanvas(false); // auto Fit: this SVG too
     }
     async function loadFile(file) {
         if (!file) return;
@@ -1949,6 +1958,101 @@
     setSizes(store.get('sizes', false));
     $('compare-range').addEventListener('input', (e) => stage.style.setProperty('--split', e.target.value + '%'));
 
+    // After applying a set of settings (undo/redo, a recipe): recolor, or fit first.
+    function settingsApplied() {
+        if (state.fit !== null && state.doc) fitToCanvas(false);
+        else editsChanged();
+    }
+
+    // Recipes: settings saved under a name, to use again on other SVGs. Not the edits of
+    // single colors (they belong to one SVG's colors). Saved in this browser; a recipe's
+    // link (the same parameters as the page address) works anywhere.
+    const PER_SVG = ['replace', 'hide', 'remove', 'cut', 'keep', 'place'];
+    const recipeParams = () => { const q = editParams(settingsParams()); PER_SVG.forEach((k) => q.delete(k)); return q; };
+    let recipes = store.get('recipes', []);
+    if (!Array.isArray(recipes)) recipes = [];
+    function describeRecipe(params) {
+        const q = new URLSearchParams(params);
+        const parts = [MODES[q.get('mode')] ? MODES[q.get('mode')].label : 'Colorize'];
+        if (q.get('color') && MODES[q.get('mode') || 'colorize'] && MODES[q.get('mode') || 'colorize'].color) parts[0] += ' #' + q.get('color').toUpperCase();
+        const unit = q.get('unit') === 'pct' ? ' %' : ' px';
+        if (q.get('gap')) parts.push('gaps ' + q.get('gap') + unit);
+        if (q.get('line')) parts.push('line ' + q.get('line') + unit);
+        if (q.get('canvas')) parts.push(q.get('canvas').replace('x', ' × ') + (q.get('fit') !== null ? ', fit ' + q.get('fit') : ''));
+        if (q.get('optimize')) parts.push('optimized');
+        return parts.join(' · ');
+    }
+    function renderRecipes() {
+        const list = $('recipes-list');
+        list.replaceChildren();
+        if (!recipes.length) {
+            const li = document.createElement('li');
+            li.className = 'empty';
+            li.textContent = 'No recipes yet. Set things up, name it below and save.';
+            list.appendChild(li);
+        }
+        recipes.forEach((r, i) => {
+            const li = document.createElement('li');
+            const apply = document.createElement('button');
+            apply.type = 'button';
+            apply.className = 'recipe-apply';
+            apply.title = 'Use these settings';
+            const small = document.createElement('small');
+            small.textContent = describeRecipe(r.params);
+            apply.append(r.name, small);
+            apply.addEventListener('click', () => applyRecipe(r));
+            const link = document.createElement('button');
+            link.type = 'button';
+            link.className = 'icon-btn';
+            link.title = 'Copy a link to this recipe';
+            link.setAttribute('aria-label', 'Copy a link to ' + r.name);
+            link.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+            link.addEventListener('click', () => copyText(SITE + '/?' + r.params, 'Link to ' + r.name));
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'icon-btn';
+            del.title = 'Delete this recipe';
+            del.setAttribute('aria-label', 'Delete ' + r.name);
+            del.textContent = '✕';
+            del.addEventListener('click', () => { recipes.splice(i, 1); store.set('recipes', recipes); renderRecipes(); });
+            li.append(apply, link, del);
+            list.appendChild(li);
+        });
+    }
+    function applyRecipe(r) {
+        const q = new URLSearchParams(r.params);
+        // Keep this SVG's color edits.
+        const mine = editParams(new URLSearchParams());
+        PER_SVG.filter((k) => k !== 'place').forEach((k) => { if (mine.get(k)) q.set(k, mine.get(k)); });
+        applySettings(q);
+        closeColorEdit(false);
+        setRecipes(false);
+        settingsApplied();
+        toast('Recipe: ' + r.name);
+    }
+    function setRecipes(open) {
+        $('recipes-pop').hidden = !open;
+        $('recipes-btn').setAttribute('aria-expanded', String(open));
+        if (open) { renderRecipes(); $('recipe-name').focus(); }
+    }
+    $('recipes-btn').addEventListener('click', () => setRecipes($('recipes-pop').hidden));
+    $('recipes-close').addEventListener('click', () => { setRecipes(false); $('recipes-btn').focus(); });
+    $('recipes-pop').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); setRecipes(false); $('recipes-btn').focus(); } });
+    // (A <div>, not a <form>: it sits inside the settings form, and forms can't nest.)
+    function saveRecipe() {
+        const name = $('recipe-name').value.trim();
+        if (!name) { $('recipe-name').focus(); return; }
+        const params = recipeParams().toString();
+        const at = recipes.findIndex((r) => r.name.toLowerCase() === name.toLowerCase());
+        if (at >= 0) recipes[at] = { name, params }; else recipes.push({ name, params });
+        store.set('recipes', recipes);
+        $('recipe-name').value = '';
+        renderRecipes();
+        toast('Saved recipe: ' + name);
+    }
+    $('recipe-save-btn').addEventListener('click', saveRecipe);
+    $('recipe-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveRecipe(); } });
+
     // Undo / redo: snapshots of the settings (the same parameters as the page address).
     const undoStack = [];
     let undoAt = -1, restoring = false;
@@ -1975,7 +2079,7 @@
         try { applySettings(new URLSearchParams(undoStack[at])); } finally { restoring = false; }
         syncHistoryButtons();
         closeColorEdit(false);
-        editsChanged();
+        settingsApplied();
         toast(by < 0 ? 'Undone' : 'Redone');
     }
     $('undo-btn').addEventListener('click', () => stepHistory(-1));
@@ -2109,6 +2213,9 @@
             const p = (q.get('place') || '').split(',').map(Number);
             state.place = null;
             if (p.length === 3 && p.every(Number.isFinite) && p[2] > 0) { state.place = p; keepPlacement = !state.doc; }
+            const f = parseFloat(q.get('fit'));
+            state.fit = Number.isFinite(f) && f >= 0 ? f : null;
+            if (state.fit !== null) $('fit-pad').value = fmt(state.fit);
             syncCanvasUI();
         }
         $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === state.unit)));

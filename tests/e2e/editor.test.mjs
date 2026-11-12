@@ -663,6 +663,42 @@ test('undo and redo step through settings changes (buttons and keyboard)', async
     assert.deepEqual(problems, []);
 });
 
+test('recipes: save settings, apply them later; Fit stays on for the next SVG', async () => {
+    const { page, problems } = await open();
+    const STROKED = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50">'
+        + '<rect x="10" y="10" width="20" height="20" fill="#5e97f6" stroke="#0f766e" stroke-width="2"/></svg>';
+    await pasteSvg(page, STROKED);
+    await page.click('.style[data-mode="solid"]');
+    await page.fill('#canvas-w', '128'); await page.press('#canvas-w', 'Enter');
+    await page.fill('#canvas-h', '128'); await page.press('#canvas-h', 'Enter');
+    await openFold(page, 'canvas');
+    await page.fill('#fit-pad', '1');
+    await page.click('#fit-btn');
+    await page.waitForURL(/canvas=128x128&fit=1/);
+    assert.ok(!/place=/.test(page.url()), 'with Fit on, the placement follows each SVG');
+    // Save it as a recipe.
+    await page.click('#recipes-btn');
+    await page.fill('#recipe-name', 'Icon 128');
+    await page.press('#recipe-name', 'Enter');
+    await page.locator('.recipe-apply', { hasText: 'Icon 128' }).waitFor();
+    assert.match(await page.textContent('.recipe-apply small'), /Solid.*128 × 128, fit 1/);
+    await page.click('#recipes-close');
+    // Another SVG gets fitted too: a 10 x 10 square at 50,50 fills 126 x 126 at 1,1.
+    await page.click('#change-file');
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="50" y="50" width="10" height="10" fill="#9c27b0"/></svg>');
+    await page.click('#tab-btn-code');
+    await page.locator('#code-view', { hasText: 'matrix(12.6 0 0 12.6 -629 -629)' }).waitFor();
+    await page.click('#tab-btn-preview');
+    // Change things, then apply the recipe: the settings come back.
+    await page.click('.style[data-mode="hue"]');
+    await page.waitForURL(/mode=hue/);
+    await page.click('#recipes-btn');
+    await page.click('.recipe-apply');
+    await page.waitForURL(/mode=solid/);
+    assert.match(page.url(), /fit=1/);
+    assert.deepEqual(problems, []);
+});
+
 test('cut out explains what it can\'t do instead of guessing', async () => {
     const { page } = await open();
     await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#f00"/></linearGradient></defs>'

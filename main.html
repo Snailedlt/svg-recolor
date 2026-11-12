@@ -301,12 +301,23 @@
                                 <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
                                 Recolor
                             </button>
+                            <div class="recipes-pop" id="recipes-pop" role="dialog" aria-labelledby="recipes-title" hidden>
+                                <div class="recipes-head"><b id="recipes-title">Recipes</b><button type="button" class="icon-btn" id="recipes-close" aria-label="Close">✕</button></div>
+                                <p class="field-hint">Your settings, saved under a name to use again on other SVGs: style, color, adjustments, shapes, canvas, Fit and Optimize. Not the edits of single colors. Saved in this browser; a recipe's link works anywhere.</p>
+                                <ul class="recipes-list" id="recipes-list"></ul>
+                                <div class="recipes-save" id="recipes-save">
+                                    <label class="sr-only" for="recipe-name">Recipe name</label>
+                                    <input id="recipe-name" type="text" maxlength="60" placeholder="Name, e.g. One-color icon" autocomplete="off">
+                                    <button type="button" class="btn btn-ghost btn-sm" id="recipe-save-btn">Save current</button>
+                                </div>
+                            </div>
                             <div class="foot-meta">
                                 <span class="history-btns">
                                     <button type="button" class="icon-btn" id="undo-btn" disabled title="Undo (Ctrl+Z)" aria-label="Undo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
                                     <button type="button" class="icon-btn" id="redo-btn" disabled title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
                                     <button type="button" class="link-btn" id="reset-all">Reset settings</button>
                                 </span>
+                                <button type="button" class="link-btn" id="recipes-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="recipes-pop">Recipes</button>
                                 <span class="kbd-hint">Press <kbd>?</kbd> for shortcuts</span>
                             </div>
                         </div>
