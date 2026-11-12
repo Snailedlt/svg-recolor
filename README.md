@@ -69,14 +69,17 @@ same code (paper.js and SVGO in QuickJS, with picosvg reading the shapes), so th
 
 **Canvas** (the viewBox size is on the picture; the rest is under **Placement**; API: `canvas=128x128`, `place=x,y,scale`, `fit=1`): set the canvas size, the drawing's size and position, or
 **Fit to canvas** with a padding: the visible drawing (strokes included, invisible colors not) is scaled and centered
-so it ends exactly that far from every edge. For devicon: canvas 128 × 128, padding 1, Fit. The drawing is wrapped in
-one `<g transform>`, so every other feature works on top.
+so it ends exactly that far from every edge. Fit stays on: the next SVG, or a new canvas size, is fitted too (moving or
+resizing by hand turns it off). For devicon: canvas 128 × 128, padding 1, Fit. The drawing is wrapped in one
+`<g transform>`, so every other feature works on top.
 
 On the API these get 20 seconds per request: most icons take well under a second, but very complex drawings
 (thousands of curves) may need the editor, which runs them in your browser without a limit.
 
-All three handle flat colors and plain shapes; text, embedded images, gradients, transparency and `<use>` get a clear
-message instead of a guess.
+All three work on flat colors and shapes. When everything ends up one color (like Solid), gradients and transparency
+don't matter: such paints take that color. In the editor, text is turned into shapes (with a font file you choose under
+**Shapes**, or Inter when none is chosen); the API asks for text as paths. Embedded images, masks, `<use>` and, with
+several colors, gradients and transparency get a clear message instead of a guess.
 
 In the editor, click a color in the **Colors** strip under the preview, or click the shape itself in the picture, to edit it.
 Each chip shows a small badge for what its color does (own color, invisible, cut out, kept filled), and **Reset colors**
@@ -187,7 +190,14 @@ How:
 - **Optimize** (API `optimize=true`, `precision=3`) runs SVGO 3.3.2, with devicon's settings by default (precision 3, multipass,
   every preset plugin but removeViewBox, devicon's extra plugins, a newline at the end): the same bytes as devicon's
   svg-icons `optimize.js`. Every plugin can be switched; the settings are saved in your browser.
-- **With code** (next to Side by side and Slider) shows the result's SVG code beside the picture.
+- **With code** (next to Side by side and Slider) shows the result's SVG code beside the picture; **Small sizes** shows
+  the result at 16, 32 and 64 px on light and dark.
+- **Batch**: choose, drop or paste several SVGs. The first opens to tune the settings, a bar lists them all, and
+  **Download all** recolors each one the same way (Fit per file) into a ZIP. Files that fail are named; the rest go in.
+- **Recipes** (by Reset settings): save the current settings under a name and apply them to other SVGs later, or copy
+  a recipe's link. They keep style, color, adjustments, shapes, canvas, Fit and Optimize, not the edits of single colors.
+- **Undo / redo** settings changes with the buttons by Reset settings, or <kbd>Ctrl</kbd>+<kbd>Z</kbd> /
+  <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>.
 - **Share** copies a link with your SVG and settings. A linked SVG is shared by its address; a pasted or uploaded one travels in the link itself, compressed, after the `#` (never sent to the server). Very large SVGs don't fit in a link: share them from a public URL instead.
 - Everything fits on one screen: settings on the left, and Preview, Code and API tabs on the right, with Share, Copy and Download always visible.
 - Settings follow the order the engine applies them: **1 Style** (each tile shows your SVG in that style), **2 Color** (only for
@@ -349,6 +359,7 @@ CI runs all of these on every push and pull request (`.github/workflows/ci.yml`)
 | `SVG_RECOLOR_DEV` | off | `1` re-reads `main.html` on every request (handy while editing) |
 | `RATE_LIMIT_WORK` | `60` | Requests per minute per IP for uploads, link fetches and MCP (`0` disables) |
 | `RATE_LIMIT_MAP` | `600` | Requests per minute per IP for `/api/map-colors` (`0` disables) |
+| `SVG_GEOMETRY_WORKERS` | `3` | Threads (each with its own JavaScript engine) for cut out, gaps, lines, Fit and SVGO in the API |
 
 ### Monitoring and updates
 
