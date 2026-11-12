@@ -141,7 +141,7 @@
                                 </div>
                                 <div id="source-file">
                                     <label class="dropzone" id="dropzone">
-                                        <input id="files" type="file" accept=".svg,image/svg+xml">
+                                        <input id="files" type="file" accept=".svg,image/svg+xml" multiple>
                                         <span class="dz-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>
                                         <span class="dz-text"><strong>Drop an SVG or browse</strong><span>Max 2 MB · drop anywhere on the page</span></span>
                                     </label>
@@ -355,6 +355,12 @@
                         </div>
 
                         <div class="ws-body">
+                            <div class="batch-bar" id="batch-bar" hidden>
+                                <span class="batch-count"><b id="batch-count">0</b> SVGs</span>
+                                <div class="batch-files" id="batch-files" role="group" aria-label="SVGs in this batch: click one to see it here"></div>
+                                <button type="button" class="btn btn-primary btn-sm" id="batch-zip" title="Recolor every SVG with these settings and download them as a ZIP"><span class="spinner" aria-hidden="true"></span><span>Download all (ZIP)</span></button>
+                                <button type="button" class="icon-btn" id="batch-close" aria-label="Close the batch" title="Close the batch">✕</button>
+                            </div>
                             <div class="tab-panel" role="tabpanel" id="tab-preview" aria-labelledby="tab-btn-preview">
                                 <div class="stage" id="stage" data-bg="checker" data-view="side">
                                     <div class="pane">

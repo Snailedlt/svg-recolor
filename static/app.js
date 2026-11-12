@@ -62,6 +62,7 @@
         unit: 'px', // gap and line sizes: 'px' (the SVG's own units) or '%' of the icon
         svgo: false, // optimize the result with SVGO
         canvas: null, // [w, h] of a new viewBox (null = the SVG's own)
+        batch: null, // [{ name, text, size, failed }]: several SVGs with the same settings
         fit: null, // auto Fit: padding (each SVG is fitted to the canvas), or null
         place: null, // [x, y, scale]: where the original viewBox's top-left lands, and its scale (null = centered, 100 %)
         lineInner: true, // lines also between colors, not just around the whole shape
@@ -295,22 +296,22 @@
         return w > 0 && h > 0 ? [0, 0, w, h] : [0, 0, 128, 128];
     }
     function canvasSize(doc) { return state.canvas || origBox(doc).slice(2); }
-    function placement(doc) {
-        if (state.place) return state.place;
+    function placement(doc, place = state.place) {
+        if (place) return place;
         const [, , w0, h0] = origBox(doc);
         const [W, H] = canvasSize(doc);
         return [(W - w0) / 2, (H - h0) / 2, 1];
     }
-    function placed(doc, norm) {
+    function placed(doc, norm, place = state.place) {
         norm = norm || doc.norm;
-        if (!state.canvas && !state.place) return norm;
+        if (!state.canvas && !place) return norm;
         const tag = rootTag(norm);
         const at = norm.indexOf(tag);
         const end = norm.lastIndexOf('</svg');
         if (!tag || end < at) return norm;
         const [x0, y0, w0, h0] = origBox(doc);
         const [W, H] = canvasSize(doc);
-        const [tx, ty, s] = placement(doc);
+        const [tx, ty, s] = placement(doc, place);
         let open = tag.replace(/\sviewBox\s*=\s*("[^"]*"|'[^']*')/i, '');
         // A width/height on the root keeps its scale: it grows with the canvas.
         open = open.replace(/(\s(width|height)\s*=\s*["']?\s*)([\d.]+)/gi, (all, pre, name, v) => pre + fmt(+v * (/^w/i.test(name) ? W / w0 : H / h0)));
@@ -380,27 +381,33 @@
             setBusy(false);
         }
     }
-    async function fitToCanvasNow(center) {
-        const doc = state.doc;
+    // Where `doc` goes to fill the canvas minus `pad` (or, with a scale, just centered):
+    // measured on what's visible after the color edits (invisible and cut-out colors don't count).
+    async function fitPlacement(doc, pad, scale) {
         const [x0, y0] = origBox(doc);
         const [W, H] = canvasSize(doc);
+        const hidden = Object.entries(state.edits).filter(([, e]) => e.op !== 'replace').map(([c]) => c);
+        const Geo = await loadGeometry();
+        const box = Geo.bounds(Engine.edit(doc.norm, [], hidden));
+        if (!box) throw new Error('Nothing visible to fit.');
+        const [bx, by, bw, bh] = box;
+        const s = scale || Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh);
+        if (!(s > 0)) throw new Error('The padding leaves no room on this canvas.');
+        // Map the box's corner so the box is centered: s * (bx - x0) + tx = (W - s * bw) / 2.
+        return [(W - s * bw) / 2 - s * (bx - x0), (H - s * bh) / 2 - s * (by - y0), s];
+    }
+    async function fitToCanvasNow(center) {
+        const doc = state.doc;
+        const [W, H] = canvasSize(doc);
         const pad = Math.max(0, parseFloat($('fit-pad').value) || 0);
-        let box;
+        let place;
         try {
-            // Measure what's visible after the color edits (invisible and cut-out colors don't count).
-            const hidden = Object.entries(state.edits).filter(([, e]) => e.op !== 'replace').map(([c]) => c);
-            const Geo = await loadGeometry();
-            box = Geo.bounds(Engine.edit(doc.norm, [], hidden));
+            place = await fitPlacement(doc, pad, center ? placement(doc)[2] : 0);
         } catch (err) {
             return showError(err.message);
         }
         if (doc !== state.doc) return;
-        if (!box) return showError('Nothing visible to fit.');
-        const [bx, by, bw, bh] = box;
-        const s = center ? placement(doc)[2] : Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh);
-        if (!(s > 0)) return showError('The padding leaves no room on this canvas.');
-        // Map the box's corner so the box is centered: s * (bx - x0) + tx = (W - s * bw) / 2.
-        state.place = [(W - s * bw) / 2 - s * (bx - x0), (H - s * bh) / 2 - s * (by - y0), s];
+        state.place = place;
         if (!state.canvas) state.canvas = [W, H];
         state.fit = center ? null : pad; // Fit stays on: the next SVG (or canvas size) is fitted too
         canvasChanged();
@@ -579,14 +586,14 @@
     // The mapping with own colors applied, and the SVG with invisible colors applied.
     // Cut-out colors are left in `edited` for the geometry step (cutOutSvg); `svg` treats
     // them as invisible, which is what the quick style thumbnails show.
-    function editedSvg(doc, mapping) {
+    function editedSvg(doc, mapping, place = state.place) {
         const merged = Object.assign({}, mapping);
         const hide = [], remove = [], cut = [];
         for (const [c, e] of Object.entries(state.edits)) {
             if (e.op === 'replace') merged[c] = e.to.slice(1).toLowerCase();
             else ({ hide, remove, cut })[e.op].push(c);
         }
-        const edited = Engine.edit(placed(doc), hide, remove);
+        const edited = Engine.edit(placed(doc, null, place), hide, remove);
         const svg = cut.length ? Engine.apply(Engine.edit(edited, [], cut), merged) : Engine.apply(edited, merged);
         return { svg, merged, edited, cut };
     }
@@ -1078,6 +1085,142 @@
         scheduleThumbs(250);
         if (state.fit !== null) fitToCanvas(false); // auto Fit: this SVG too
     }
+    // ------------------------------------------------------------------
+    // Batch: several SVGs with the same settings. The first opens here to tune the
+    // settings; Download all recolors each one the way the preview does, into a ZIP.
+    // ------------------------------------------------------------------
+    const MAX_BATCH = 200;
+    let batchAt = 0;
+    async function startBatch(files) {
+        const svgs = files.filter((f) => /\.svg$/i.test(f.name) || /svg/i.test(f.type));
+        const items = [];
+        for (const f of svgs.slice(0, MAX_BATCH)) if (f.size <= MAX_BYTES) items.push({ name: f.name || 'image.svg', text: await f.text(), size: f.size });
+        const left = files.length - items.length;
+        if (!items.length) return showError('None of these are SVG files (up to 2 MB each).');
+        if (items.length === 1) return loadText(items[0].text, items[0].name, items[0].size, null);
+        state.batch = items;
+        openBatchItem(0);
+        if (left) toast(left + ' file' + (left === 1 ? ' was' : 's were') + ' left out (not an SVG, over 2 MB, or past ' + MAX_BATCH + ')');
+    }
+    function openBatchItem(i) {
+        batchAt = i;
+        const it = state.batch[i];
+        loadText(it.text, it.name, it.size, null);
+        renderBatch();
+    }
+    function renderBatch() {
+        const on = !!(state.batch && state.batch.length > 1);
+        $('batch-bar').hidden = !on;
+        if (!on) return;
+        $('batch-count').textContent = String(state.batch.length);
+        const box = $('batch-files');
+        box.replaceChildren();
+        state.batch.forEach((it, i) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = it.name;
+            b.title = it.failed ? 'Not in the last ZIP: ' + it.failed : 'Show ' + it.name + ' here';
+            if (it.failed) b.classList.add('failed');
+            b.setAttribute('aria-current', String(i === batchAt));
+            b.addEventListener('click', () => openBatchItem(i));
+            box.appendChild(b);
+        });
+    }
+    function makeDoc(text, name) {
+        if (!/<svg[\s>]/i.test(text)) throw new Error('no <svg> element');
+        const norm = Engine.normalize(text);
+        return { name, text, norm, palette: Engine.palette(norm), fromUrl: null, source: 'file' };
+    }
+    // One SVG through the same steps as the preview, with the current settings.
+    async function renderDoc(doc) {
+        const colors = doc.palette.map((p) => p[0]);
+        const mapping = colors.length ? await mappingFor(state.mode, colors) : {};
+        let place = null; // a placement set by hand belongs to the SVG it was made on
+        if (state.fit !== null) place = await fitPlacement(doc, state.fit, 0);
+        else if (doc === state.doc) place = state.place;
+        const parts = editedSvg(doc, mapping, place);
+        let svg = parts.svg;
+        if (parts.cut.length || state.gap || state.line) svg = await cutOutSvg(parts.edited, parts.cut, parts.merged);
+        if (state.svgo) svg = await optimizeSvg(svg);
+        return svg;
+    }
+    // A ZIP without compression (SVGs are small; this keeps it simple and fast).
+    function makeZip(files) {
+        const crcTable = makeZip.table || (makeZip.table = Array.from({ length: 256 }, (_, n) => {
+            let c = n;
+            for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+            return c >>> 0;
+        }));
+        const crc32 = (bytes) => { let c = 0xffffffff; for (const b of bytes) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+        const enc = new TextEncoder();
+        const parts = [], central = [];
+        let offset = 0;
+        for (const [name, text] of files) {
+            const nameBytes = enc.encode(name), data = enc.encode(text), crc = crc32(data);
+            const local = new DataView(new ArrayBuffer(30));
+            local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true);
+            local.setUint32(14, crc, true); local.setUint32(18, data.length, true); local.setUint32(22, data.length, true);
+            local.setUint16(26, nameBytes.length, true);
+            parts.push(local, nameBytes, data);
+            const cd = new DataView(new ArrayBuffer(46));
+            cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true); cd.setUint16(8, 0x0800, true);
+            cd.setUint32(16, crc, true); cd.setUint32(20, data.length, true); cd.setUint32(24, data.length, true);
+            cd.setUint16(28, nameBytes.length, true); cd.setUint32(42, offset, true);
+            central.push(cd, nameBytes);
+            offset += 30 + nameBytes.length + data.length;
+        }
+        const size = central.reduce((n, p) => n + p.byteLength, 0);
+        const end = new DataView(new ArrayBuffer(22));
+        end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+        end.setUint32(12, size, true); end.setUint32(16, offset, true);
+        return new Blob([...parts, ...central, end], { type: 'application/zip' });
+    }
+    async function downloadBatch() {
+        if (!state.batch) return;
+        const btn = $('batch-zip');
+        btn.classList.add('loading');
+        btn.disabled = true;
+        setBusy(true);
+        const out = [], used = new Set(), failed = [];
+        const n = state.batch.length;
+        try {
+            for (const [i, it] of state.batch.entries()) {
+                setStatus('work', 'Batch: ' + (i + 1) + ' of ' + n + ' · ' + Math.round((100 * i) / n) + '%');
+                it.failed = null;
+                try {
+                    const svg = await renderDoc(makeDoc(it.text, it.name));
+                    let name = outputName({ name: it.name });
+                    for (let k = 2; used.has(name); k++) name = name.replace(/(_\d+)?\.svg$/, '_' + k + '.svg');
+                    used.add(name);
+                    out.push([name, svg]);
+                } catch (err) {
+                    it.failed = err.message === 'superseded' ? 'interrupted by a settings change' : err.message;
+                    failed.push(it.name + ' (' + it.failed + ')');
+                }
+            }
+            if (out.length) {
+                const url = URL.createObjectURL(makeZip(out));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'svg-recolor-' + state.mode + '-' + out.length + '.zip';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            }
+            toast(out.length + ' of ' + n + ' SVGs in the ZIP');
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            setBusy(false);
+            renderBatch();
+            if (state.doc) recolor(); // (clears messages first, so the one below comes after)
+        }
+        if (failed.length) showError('Not in the ZIP: ' + failed.join('; '));
+    }
+    $('batch-zip').addEventListener('click', downloadBatch);
+    $('batch-close').addEventListener('click', () => { state.batch = null; renderBatch(); });
+
     async function loadFile(file) {
         if (!file) return;
         if (!(file.type === 'image/svg+xml' || /\.svg$/i.test(file.name) || file.type === '' || file.type.startsWith('text/'))) {
@@ -1086,7 +1229,11 @@
         if (file.size > MAX_BYTES) return showError('This file is ' + formatBytes(file.size) + '. The limit is 2 MB; try optimizing it with SVGO first.');
         loadText(await file.text(), file.name || 'image.svg', file.size, null);
     }
-    fileInput.addEventListener('change', () => { loadFile(fileInput.files[0]); fileInput.value = ''; });
+    fileInput.addEventListener('change', () => {
+        const files = Array.from(fileInput.files || []);
+        if (files.length > 1) startBatch(files); else loadFile(files[0]);
+        fileInput.value = '';
+    });
 
     let dragDepth = 0;
     document.addEventListener('dragenter', (e) => {
@@ -1100,8 +1247,9 @@
     document.addEventListener('drop', (e) => {
         dragDepth = 0;
         document.body.classList.remove('dragging');
-        const file = e.dataTransfer && e.dataTransfer.files[0];
-        if (file) { e.preventDefault(); loadFile(file); }
+        const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+        if (files.length > 1) { e.preventDefault(); startBatch(files); return; }
+        if (files[0]) { e.preventDefault(); loadFile(files[0]); }
     });
     // Paste: an .svg file copied in the file manager (Explorer, Finder, Files), SVG code,
     // an <svg> copied from a web page, or a link.
@@ -1147,6 +1295,7 @@
         const data = e.clipboardData;
         if (!data) return;
         const files = Array.from(data.files || []);
+        if (files.filter(isSvgFile).length > 1 && t !== $('code-input')) { e.preventDefault(); startBatch(files); return; }
         const file = files.find(isSvgFile) || files[0];
         // In the link and color fields a paste is just text for the field.
         const src = t === hexInput || t === $('url-input') ? null : imageSource(data.getData('text/html'));
@@ -1329,8 +1478,8 @@
         });
     }
 
-    function outputName() {
-        const stem = (state.doc.name || 'image.svg').replace(/\.svg$/i, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'image';
+    function outputName(doc = state.doc) {
+        const stem = (doc.name || 'image.svg').replace(/\.svg$/i, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'image';
         return stem + '_recolored_' + state.mode + (MODES[state.mode].color ? '_' + state.color.slice(1).toLowerCase() : '') + '.svg';
     }
     // Dim the picture only when the work takes a while; quick updates just swap.

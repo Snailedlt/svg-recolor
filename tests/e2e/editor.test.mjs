@@ -699,6 +699,42 @@ test('recipes: save settings, apply them later; Fit stays on for the next SVG', 
     assert.deepEqual(problems, []);
 });
 
+test('batch: several SVGs, the same settings, one ZIP (failures named, not fatal)', async () => {
+    const { page } = await open();
+    const svgFile = (name, svg) => ({ name, mimeType: 'image/svg+xml', buffer: Buffer.from(svg) });
+    const GRADIENT = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#f00"/></linearGradient></defs>'
+        + '<rect width="10" height="10" fill="url(#g)"/><rect width="4" height="4" fill="#dce0df"/></svg>';
+    await page.setInputFiles('#files', [svgFile('one.svg', CUT_SVG), svgFile('two.svg', GAP_SVG), svgFile('bad.svg', GRADIENT)]);
+    await page.locator('#batch-bar:not([hidden])').waitFor();
+    assert.equal(await page.textContent('#batch-count'), '3');
+    await page.locator('#file-name', { hasText: 'one.svg' }).waitFor();
+    await page.click('#batch-files button:nth-child(2)');
+    await page.locator('#file-name', { hasText: 'two.svg' }).waitFor();
+    // Solid, and cut out the light gray (in one.svg and bad.svg).
+    await page.click('.style[data-mode="solid"]');
+    await page.click('#batch-files button:nth-child(1)');
+    await page.locator('.chip[data-color="dce0df"]').waitFor();
+    await page.click('.chip[data-color="dce0df"]');
+    await page.check('#color-edit [value="cut"]');
+    await page.keyboard.press('Escape');
+    await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    const [download] = await Promise.all([page.waitForEvent('download'), page.click('#batch-zip')]);
+    assert.match(download.suggestedFilename(), /^svg-recolor-solid-2\.zip$/);
+    const path = await download.path();
+    const { execFileSync } = await import('node:child_process');
+    const listing = JSON.parse(execFileSync(process.env.PYTHON || 'python3', ['-c', `
+import json, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+assert z.testzip() is None
+print(json.dumps({n: z.read(n).decode() for n in z.namelist()}))`, path], { encoding: 'utf8' }));
+    assert.deepEqual(Object.keys(listing).sort(), ['one_recolored_solid_ff0066.svg', 'two_recolored_solid_ff0066.svg']);
+    assert.equal((listing['one_recolored_solid_ff0066.svg'].match(/<path/g) || []).length, 1, 'cut out applied');
+    await page.locator('#error-text', { hasText: /Not in the ZIP: bad\.svg/ }).waitFor();
+    await page.locator('#batch-files button.failed', { hasText: 'bad.svg' }).waitFor();
+    await page.click('#batch-close');
+    assert.equal(await page.isVisible('#batch-bar'), false);
+});
+
 test('cut out explains what it can\'t do instead of guessing', async () => {
     const { page } = await open();
     await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#f00"/></linearGradient></defs>'

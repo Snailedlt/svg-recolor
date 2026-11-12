@@ -579,6 +579,15 @@ details.fold { display: block; border-top: 1px solid var(--border); padding-top:
 .canvas-size.changed { border-color: color-mix(in srgb, var(--pick) 60%, var(--border)); }
 .canvas-size::before { content: "viewBox"; font-size: 0.64rem; letter-spacing: .05em; text-transform: uppercase; margin-right: 2px; }
 
+/* Batch: several SVGs, the same settings */
+.batch-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--pick) 8%, var(--surface)); }
+.batch-count { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
+.batch-files { flex: 1; min-width: 0; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: thin; }
+.batch-files button { flex: none; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font-size: 0.74rem; cursor: pointer; }
+.batch-files button[aria-current="true"] { border-color: var(--pick); color: var(--text); }
+.batch-files button.failed { border-color: var(--danger); }
+#batch-zip { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+
 /* The result at small sizes, on the picture */
 .sizes-panel {
     position: absolute; left: 10px; bottom: 10px; z-index: 2; display: grid; gap: 4px; padding: 6px; border-radius: 10px;
