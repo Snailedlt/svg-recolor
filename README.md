@@ -53,20 +53,21 @@ On top of any mode, single colors (the original ones, as listed by `/api/palette
 A one-color icon, like a devicon `plain` version, is `mode=solid&color=000000&remove=ffffff` (Solid, then remove the
 background).
 
-Three more edits need path geometry, so they run in the browser and are only in the editor (the API answers 400):
+Three more edits need path geometry. The editor runs them in the browser, and the API and MCP server run the very
+same code (paper.js and SVGO in QuickJS, with picosvg reading the shapes), so the results match:
 
-- **Cut out** (a color's option in the color panel): the color becomes a real gap. Only the part you can see in the
+- **Cut out** (a color's option in the color panel; API `cut=dce0df`): the color becomes a real gap. Only the part you can see in the
   original is cut, and the result is flattened to one path per color. For logos with outlines between their parts
   (like JAX), Solid + Cut out on the outline gives a one-path plain version with gaps exactly where the outlines were.
-- **Gaps** (slider under Adjust, in px of the SVG's own units, or % of the icon): every boundary between two original colors gets a
+- **Gaps** (API `gap=2`; slider under Adjust, in px of the SVG's own units, or % of the icon): every boundary between two original colors gets a
   gap of that width; the outer edge stays put. For logos whose parts just touch (like rqlite), Solid + Gaps keeps the
   parts apart in one color.
 
-- **Line** (slider under Adjust, same units): a line version, like devicon's `line` icons. Only a band of that width
+- **Line** (API `line=3`, `lines=outer`, `keep=ffffff`; slider under Adjust, same units): a line version, like devicon's `line` icons. Only a band of that width
   along the edges is kept: inside the outer edge, and centered on the boundaries between colors (switch off **Lines
   between colors** for just the outline). In the color panel, **Keep filled** keeps a color solid, for small details.
 
-**Canvas** (step 4, editor only): set the canvas size (the viewBox), the drawing's size and position, or
+**Canvas** (step 4; API: `canvas=128x128`, `place=x,y,scale`, `fit=1`): set the canvas size (the viewBox), the drawing's size and position, or
 **Fit to canvas** with a padding: the visible drawing (strokes included, invisible colors not) is scaled and centered
 so it ends exactly that far from every edge. For devicon: canvas 128 × 128, padding 1, Fit. The drawing is wrapped in
 one `<g transform>`, so every other feature works on top.
@@ -178,7 +179,7 @@ How:
 - The page URL keeps your settings and color edits (`?mode=colorize&color=ff0066&remove=ffffff&url=...`), so you can bookmark a setup. Opening a link with `url=` loads that SVG.
 - **Paste** (Ctrl+V) takes an `.svg` file copied in the file manager, SVG code, an SVG copied from a web page, a link, or
   the result of a browser's **Copy image** on an SVG (the browser copies a PNG, plus the image's address, which is used to get the SVG itself).
-- **Optimize** (step 5) runs SVGO 3.3.2 in the browser, with devicon's settings by default (precision 3, multipass,
+- **Optimize** (step 5; API `optimize=true`, `precision=3`) runs SVGO 3.3.2, with devicon's settings by default (precision 3, multipass,
   every preset plugin but removeViewBox, devicon's extra plugins, a newline at the end): the same bytes as devicon's
   svg-icons `optimize.js`. Every plugin can be switched; the settings are saved in your browser.
 - **With code** (next to Side by side and Slider) shows the result's SVG code beside the picture.

@@ -19,6 +19,10 @@ fastapi = "*"
 python-multipart = "*"
 httpx = "*"
 uvicorn = "*"
+# Cut out, gaps, lines, Fit and SVGO in the API: picosvg reads the shapes, QuickJS runs the
+# editor's own JavaScript (static/geometry.js, paper.js, SVGO). See server/shapes.py.
+picosvg = "*"
+quickjs = "*"
 
 [dev-packages]
 # `pipenv run dev` / `start` (fastapi dev / fastapi run) and the checks.

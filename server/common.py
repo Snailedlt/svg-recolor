@@ -12,6 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
 import recolor as engine
+from server import shapes
 
 log = logging.getLogger("svg_recolor")
 
@@ -55,20 +56,23 @@ def _edit_list(value) -> tuple:
     return engine.parse_edit_list(str(value))
 
 
-CUT_IN_EDITOR = ("'cut', 'gap', 'line', 'canvas' and 'place' (cut out, gaps, line versions, canvas) are only available in the editor "
-                 "on the website. The API supports replace, hide and remove.")
+EXTRA_FIELDS = ("cut", "gap", "line", "lines", "keep", "unit", "canvas", "place", "fit", "optimize", "precision")
 
 
-def options(mode, color, hue, saturation, lightness, replace=None, hide=None, remove=None, cut=None, gap=None, line=None, canvas=None, place=None) -> engine.Options:
+def options(mode, color, hue, saturation, lightness, replace=None, hide=None, remove=None, **extra) -> engine.Options:
     """Options from request values. replace/hide/remove take strings from query strings
-    and forms ("5e97f6:ff0000,..." / "ffffff,...") or an object/list from JSON and MCP."""
-    if cut or canvas or place or any(v not in (None, "", 0, "0") for v in (gap, line)):
-        raise HTTPException(status_code=400, detail=CUT_IN_EDITOR)
+    and forms ("5e97f6:ff0000,..." / "ffffff,...") or an object/list from JSON and MCP.
+    The extra fields (cut, gap, line, canvas, fit, optimize, ...) go to server.shapes."""
     try:
-        return engine.Options(
+        opts = engine.Options(
             mode=mode, color=color, hue=hue, saturation=saturation, lightness=lightness,
             replace=engine.parse_replace(replace or {}), hide=_edit_list(hide), remove=_edit_list(remove),
         ).validate()
+        ex = shapes.parse_extras(_edit_list, **{k: extra.get(k) for k in EXTRA_FIELDS})
+        if ex.active:
+            shapes.check_conflicts(opts, ex)
+            opts.extras = ex
+        return opts
     except engine.RecolorError as e:
         bad_request(e)
 
@@ -87,6 +91,8 @@ def output_name(stem: str, opts: engine.Options) -> str:
 
 async def run(svg_text: str, opts: engine.Options) -> engine.Result:
     try:
+        if opts.extras is not None:  # cut out, gaps, lines, canvas or SVGO: the editor's code
+            return await run_in_threadpool(shapes.recolor, svg_text, opts)
         return await run_in_threadpool(engine.recolor, svg_text, opts)
     except engine.RecolorError as e:
         bad_request(e)

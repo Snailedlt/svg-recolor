@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 from typing import Annotated, Literal, Optional
 
-from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import (
     FileResponse,
@@ -32,6 +32,7 @@ from server.common import (
     CACHE_PAGE,
     CACHE_REMOTE,
     CACHE_STATIC,
+    EXTRA_FIELDS,
     SVG_HEADERS,
     bad_request,
     base_url,
@@ -151,6 +152,48 @@ RemoveParam = Annotated[Optional[str], Query(
     description="Colors whose shapes are deleted, comma-separated (handy for a one-color icon: "
                 "`mode=solid&remove=ffffff`). A shape whose fill or stroke alone is that color keeps the other.",
     examples=["ffffff"])]
+
+
+def extra_query(
+    cut: Annotated[Optional[str], Query(
+        description="Colors that become real gaps: cut through what's below them, comma-separated. The result is "
+                    "one path per color (Solid + cut = one path). For logos with outlines between their parts.",
+        examples=["dce0df"])] = None,
+    gap: Annotated[Optional[float], Query(
+        description="Cut a gap of this width wherever two original colors meet (in `unit`s). With `mode=solid` "
+                    "the color areas stay apart. For logos whose parts just touch.", ge=0, examples=[2])] = None,
+    line: Annotated[Optional[float], Query(
+        description="Make a line version (like devicon's line icons): only a band of this width along the edges "
+                    "is kept (in `unit`s).", ge=0, examples=[3])] = None,
+    lines: Annotated[Optional[str], Query(
+        description="With `line`: `all` (default) also draws lines between colors, `outer` only the outline.",
+        pattern="^(all|outer)$")] = None,
+    keep: Annotated[Optional[str], Query(
+        description="With `line`: colors that stay filled, comma-separated.", examples=["ffffff"])] = None,
+    unit: Annotated[Optional[str], Query(
+        description="Unit of `gap` and `line`: `px` (default; the SVG's own units) or `pct` (percent of the "
+                    "icon's larger side).", pattern="^(px|pct)$")] = None,
+    canvas: Annotated[Optional[str], Query(
+        description="A new canvas (viewBox) size, `WxH`. The drawing stays centered unless `place` or `fit` "
+                    "says otherwise.", examples=["128x128"])] = None,
+    place: Annotated[Optional[str], Query(
+        description="Where the drawing goes on the canvas: `x,y,scale`, where x,y is where its original "
+                    "top-left corner lands.", examples=["0,0,0.5"])] = None,
+    fit: Annotated[Optional[float], Query(
+        description="Scale and center the visible drawing (strokes included) to fill the canvas, leaving this "
+                    "padding on every side. Devicon: `canvas=128x128&fit=1`.", ge=0, examples=[1])] = None,
+    optimize: Annotated[Optional[bool], Query(
+        description="Optimize the result with SVGO 3.3.2, with the editor's default settings (multipass, "
+                    "every preset plugin but removeViewBox, ...; the same as devicon's).")] = None,
+    precision: Annotated[Optional[int], Query(
+        description="With `optimize`: decimals kept in numbers (default 3).", ge=0, le=8)] = None,
+) -> dict:
+    """Cut out, gaps, lines, canvas and SVGO: the same code as the editor (see server/shapes.py)."""
+    return {"cut": cut, "gap": gap, "line": line, "lines": lines, "keep": keep, "unit": unit, "canvas": canvas,
+            "place": place, "fit": fit, "optimize": optimize, "precision": precision}
+
+
+ExtraQuery = Annotated[dict, Depends(extra_query)]
 
 
 # --------------------------------------------------------------------------
@@ -366,7 +409,7 @@ async def sitemap_xml(request: Request):
 # API
 # --------------------------------------------------------------------------
 
-OPTION_FIELDS = ("color", "mode", "hue", "saturation", "lightness", "format", "download", "replace", "hide", "remove", "cut", "gap", "line", "canvas", "place")
+OPTION_FIELDS = ("color", "mode", "hue", "saturation", "lightness", "format", "download", "replace", "hide", "remove") + EXTRA_FIELDS
 
 
 async def _read_source(request: Request) -> tuple[str, str, dict]:
@@ -426,6 +469,21 @@ JSON_BODY_SCHEMA = {
                  "description": "Colors to make invisible."},
         "remove": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
                    "description": "Colors whose shapes are deleted."},
+        "cut": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
+                "description": "Colors that become real gaps (one path per color)."},
+        "gap": {"type": "number", "minimum": 0, "description": "Gap width where two original colors meet."},
+        "line": {"type": "number", "minimum": 0, "description": "Line version: band width along the edges."},
+        "lines": {"type": "string", "enum": ["all", "outer"]},
+        "keep": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
+                 "description": "With line: colors that stay filled."},
+        "unit": {"type": "string", "enum": ["px", "pct"]},
+        "canvas": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "number"}}],
+                   "description": "New canvas (viewBox) size: \"128x128\" or [128, 128]."},
+        "place": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "number"}}],
+                  "description": "Drawing position and scale: \"x,y,scale\" or [x, y, scale]."},
+        "fit": {"type": "number", "minimum": 0, "description": "Fit the visible drawing to the canvas with this padding."},
+        "optimize": {"type": "boolean", "description": "Optimize with SVGO (default settings)."},
+        "precision": {"type": "integer", "minimum": 0, "maximum": 8},
     },
 }
 
@@ -462,6 +520,7 @@ RECOLOR_BODY = {
 )
 async def recolor_from_url(
     url: Annotated[str, Query(description="Public http(s) link to an SVG. GitHub 'blob' links are converted to raw links.")],
+    extra: ExtraQuery,
     color: ColorParam = "ff0066",
     mode: ModeParam = "tint",
     hue: HueParam = 0,
@@ -472,18 +531,13 @@ async def recolor_from_url(
     replace: ReplaceParam = None,
     hide: HideParam = None,
     remove: RemoveParam = None,
-    cut: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    gap: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    line: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    canvas: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    place: Annotated[Optional[str], Query(include_in_schema=False)] = None,
 ):
     """Fetches the SVG at `url` and returns it recolored. Responses are cacheable, so you can
     use the endpoint directly as an image source:
 
     `<img src="https://svg-recolor.jorgenkh.no/api/recolor?url=https://.../icon.svg&color=tomato&mode=solid">`
     """
-    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, cut, gap, line, canvas, place)
+    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, **extra)
     svg_text, name = await fetch_svg(url)
     result = await run(svg_text, opts)
     return respond(result, opts, output_name(safe_stem(name), opts), format, download, cache=True)
@@ -500,6 +554,7 @@ async def recolor_from_url(
 )
 async def recolor_upload(
     request: Request,
+    extra: ExtraQuery,
     color: ColorParam = "ff0066",
     mode: ModeParam = "tint",
     hue: HueParam = 0,
@@ -510,11 +565,6 @@ async def recolor_upload(
     replace: ReplaceParam = None,
     hide: HideParam = None,
     remove: RemoveParam = None,
-    cut: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    gap: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    line: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    canvas: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    place: Annotated[Optional[str], Query(include_in_schema=False)] = None,
 ):
     """Send the SVG in any of these ways:
 
@@ -526,11 +576,11 @@ async def recolor_upload(
     svg_text, name, body_opts = await _read_source(request)
     params = {"color": color, "mode": mode, "hue": hue, "saturation": saturation,
               "lightness": lightness, "format": format, "download": download,
-              "replace": replace, "hide": hide, "remove": remove, "cut": cut, "gap": gap, "line": line, "canvas": canvas, "place": place} | body_opts
+              "replace": replace, "hide": hide, "remove": remove} | extra | body_opts
     if params["format"] not in ("svg", "json"):
         raise HTTPException(400, "'format' must be 'svg' or 'json'.")
     opts = options(params["mode"], params["color"], params["hue"], params["saturation"], params["lightness"],
-                   params["replace"], params["hide"], params["remove"], params["cut"], params["gap"], params["line"], params["canvas"], params["place"])
+                   params["replace"], params["hide"], params["remove"], **{k: params.get(k) for k in EXTRA_FIELDS})
     result = await run(svg_text, opts)
     download_flag = str(params["download"]).lower() in ("1", "true", "yes")
     return respond(result, opts, output_name(safe_stem(name), opts), params["format"], download_flag)
@@ -620,6 +670,7 @@ async def map_colors_post(request: Request):
 )
 async def recolor_batch(
     files: Annotated[list[UploadFile], File(description="Up to 50 SVG files.")],
+    extra: ExtraQuery,
     color: ColorParam = "ff0066",
     mode: ModeParam = "tint",
     hue: HueParam = 0,
@@ -628,16 +679,11 @@ async def recolor_batch(
     replace: ReplaceParam = None,
     hide: HideParam = None,
     remove: RemoveParam = None,
-    cut: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    gap: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    line: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    canvas: Annotated[Optional[str], Query(include_in_schema=False)] = None,
-    place: Annotated[Optional[str], Query(include_in_schema=False)] = None,
 ):
     """Applies the same settings to every file and returns a ZIP archive."""
     if len(files) > 50:
         raise HTTPException(400, "Send at most 50 files per batch.")
-    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, cut, gap, line, canvas, place)
+    opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, **extra)
     buf = io.BytesIO()
     used: set[str] = set()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:

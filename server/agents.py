@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 import recolor as engine
 from server.common import (
     APP_VERSION,
+    EXTRA_FIELDS,
     base_url,
     decode,
     modes_info,
@@ -66,7 +67,18 @@ Base URL: {base}
   (a shape keeps its stroke or fill when only the other is removed). In JSON and MCP, `replace` is an
   object and `hide`/`remove` are lists. In the JSON palette, `to` is then `"none"` or `"removed"`.
   One-color icon (like a devicon "plain" version): `mode=solid&color=000000&remove=ffffff`.
-  Cutting a color out (Cut out), gaps between colors and line versions need path geometry and are only in the editor on the website.
+- Shapes, canvas and optimizing (the same code as the editor; in JSON and MCP, lists and numbers):
+  - `cut=dce0df,...`: those colors become real gaps (cut through what's below). One path per color, so
+    `mode=solid&cut=...` is one path. For logos with outlines between their parts. Palette `to`: `"cut"`.
+  - `gap=2`: a gap of that width wherever two original colors meet. For logos whose parts just touch.
+  - `line=3`: a line version (like devicon's line icons), only a band of that width along the edges.
+    `lines=outer` draws just the outline (default `all`: also between colors); `keep=ffffff,...` stays filled.
+  - `unit`: `px` (default; the SVG's own units) or `pct` (percent of the icon) for `gap` and `line`.
+  - `canvas=128x128`: a new viewBox size, drawing centered. `place=x,y,scale` moves and scales it;
+    `fit=1` scales and centers the visible drawing (strokes included) with that padding.
+  - `optimize=true`: SVGO 3.3.2 with devicon's settings (precision 3, multipass); `precision=0..8`.
+  - Cut, gaps and lines need flat colors and shapes (no text, images, gradients or transparency).
+  - Devicon plain version: `mode=solid&color=...&remove=<background>&cut=<outlines>&canvas=128x128&fit=1&optimize=true`.
 
 ## Modes
 
@@ -118,6 +130,24 @@ MCP_TOOLS = [
                 "hide": {"type": "array", "items": {"type": "string"}, "description": "Original colors to make invisible (shapes stay)."},
                 "remove": {"type": "array", "items": {"type": "string"},
                            "description": "Original colors whose shapes are deleted. For a one-color icon: mode solid plus remove the background color."},
+                "cut": {"type": "array", "items": {"type": "string"},
+                        "description": "Original colors that become real gaps (cut through what's below). The result is one path per color; "
+                                       "solid + cut = one path. For logos with outlines between their parts."},
+                "gap": {"type": "number", "minimum": 0,
+                        "description": "Cut a gap of this width wherever two original colors meet (in `unit`s). With solid, the parts stay apart."},
+                "line": {"type": "number", "minimum": 0,
+                         "description": "Make a line version (like devicon's line icons): only a band of this width along the edges is kept."},
+                "lines": {"type": "string", "enum": ["all", "outer"],
+                          "description": "With line: 'all' (default) also between colors, 'outer' only the outline."},
+                "keep": {"type": "array", "items": {"type": "string"}, "description": "With line: original colors that stay filled."},
+                "unit": {"type": "string", "enum": ["px", "pct"],
+                         "description": "Unit of gap and line: px (default, the SVG's own units) or pct (percent of the icon)."},
+                "canvas": {"type": "string", "description": "A new canvas (viewBox) size, 'WxH', e.g. '128x128'. The drawing stays centered."},
+                "place": {"type": "string", "description": "Where the drawing goes on the canvas: 'x,y,scale' (x,y = where its original top-left lands)."},
+                "fit": {"type": "number", "minimum": 0,
+                        "description": "Scale and center the visible drawing to fill the canvas with this padding. Devicon: canvas '128x128', fit 1."},
+                "optimize": {"type": "boolean", "description": "Optimize the result with SVGO (the editor's default settings, the same as devicon's)."},
+                "precision": {"type": "integer", "minimum": 0, "maximum": 8, "description": "With optimize: decimals kept (default 3)."},
             },
         },
         "annotations": {"readOnlyHint": True, "openWorldHint": True},
@@ -159,7 +189,8 @@ async def _mcp_call(name: str, args: dict) -> dict:
         if name == "recolor_svg":
             opts = options(args.get("mode") or engine.DEFAULT_MODE, args.get("color") or "ff0066",
                            args.get("hue", 0), args.get("saturation", 0), args.get("lightness", 0),
-                           args.get("replace"), args.get("hide"), args.get("remove"), args.get("cut"))
+                           args.get("replace"), args.get("hide"), args.get("remove"),
+                           **{k: args.get(k) for k in EXTRA_FIELDS})
             svg_text, src_name = await _mcp_source(args)
             result = await run(svg_text, opts)
             data = {"filename": output_name(safe_stem(src_name), opts), "palette": result.palette(), "svg": result.svg}

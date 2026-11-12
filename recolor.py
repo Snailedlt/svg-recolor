@@ -597,6 +597,8 @@ class Options:
     replace: dict = field(default_factory=dict)  # {"5e97f6": "ff0000"}: give one color its own new color
     hide: tuple = ()  # colors to make invisible (none/transparent); the shapes stay
     remove: tuple = ()  # colors whose shapes are deleted
+    # Cut out, gaps, lines, canvas and SVGO: server.shapes.Extras, used by the API (not by this engine).
+    extras: object = None
 
     def validate(self) -> Options:
         self.mode = (self.mode or DEFAULT_MODE).lower()
@@ -639,10 +641,13 @@ class Result:
     counts: dict[str, int] = field(default_factory=dict)
     hidden: set = field(default_factory=set)
     removed: set = field(default_factory=set)
+    cut: set = field(default_factory=set)
 
     def palette(self) -> list[dict]:
-        """Each original color and what it became: a hex color, "none" (hidden) or "removed"."""
+        """Each original color and what it became: a hex color, "none" (hidden), "removed" or "cut"."""
         def to(c):
+            if c in self.cut:
+                return "cut"
             return "removed" if c in self.removed else "none" if c in self.hidden else "#" + self.mapping.get(c, c)
 
         return [{"from": "#" + c, "to": to(c), "count": n} for c, n in self.counts.items()]

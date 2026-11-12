@@ -379,5 +379,21 @@
         }
     }
 
-    global.SvgGeometry = { cutOut, bounds, GeometryError, expandArcFlags };
+    // The same box from shapes that are already plain filled paths (the server's input).
+    function boundsOfShapes(shapes) {
+        const scope = new paper.PaperScope();
+        scope.setup(new paper.Size(1, 1));
+        try {
+            let box = null;
+            for (const { d, rule } of shapes) {
+                const b = new scope.CompoundPath({ pathData: d, fillRule: rule, insert: false }).bounds;
+                if (b.width > 0 || b.height > 0) box = box ? box.unite(b) : b;
+            }
+            return box ? [box.x, box.y, box.width, box.height] : null;
+        } finally {
+            scope.project.remove();
+        }
+    }
+
+    global.SvgGeometry = { cutOut, bounds, compute, boundsOfShapes, GeometryError, expandArcFlags };
 })(typeof window !== 'undefined' ? window : globalThis);

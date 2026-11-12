@@ -423,6 +423,7 @@
         });
         return { multipass: !!set.multipass, floatPrecision: Math.max(0, Math.min(8, Math.round(set.precision))), plugins };
     }
+    const svgoDefaultExceptPrecision = () => JSON.stringify(Object.assign({}, svgoSettings, { precision: 3 })) === JSON.stringify(svgoDefaults());
     const isDeviconSvgo = () => JSON.stringify(svgoSettings) === JSON.stringify(svgoDefaults());
     function renderSvgoSettings() {
         $('svgo-precision').value = String(svgoSettings.precision);
@@ -1693,17 +1694,15 @@
     // API tab: snippets for the current settings
     // ------------------------------------------------------------------
     function snippetContext() {
+        // The API takes the same names as the page address (it runs the same geometry and SVGO).
         const q = editParams(settingsParams());
-        q.delete('cut'); // Cut out and gaps are editor-only (path geometry); the API rejects cut
-        q.delete('gap');
-        q.delete('line');
-        q.delete('lines');
-        q.delete('keep');
-        q.delete('canvas');
-        q.delete('optimize');
-        q.delete('place');
+        if (q.get('optimize')) {
+            q.set('optimize', 'true');
+            if (svgoSettings.precision !== 3) q.set('precision', String(svgoSettings.precision));
+        }
         const params = {};
-        for (const [k, v] of q) params[k] = /^(hue|saturation|lightness)$/.test(k) ? Number(v) : v;
+        // Numbers as numbers; lists stay comma-separated strings, which every snippet and the API take.
+        for (const [k, v] of q) params[k] = /^(hue|saturation|lightness|gap|line|precision)$/.test(k) ? Number(v) : v;
         const getQ = new URLSearchParams(q);
         getQ.set('url', (state.doc && state.doc.fromUrl) || 'https://example.com/icon.svg');
         const input = state.doc && !state.doc.fromUrl ? state.doc.name : 'icon.svg';
@@ -1720,8 +1719,8 @@
         const code = $('snippet').textContent;
         $('api-hint').textContent = sn.prompt
             ? 'Paste this into ChatGPT, Claude, Copilot or any AI agent.'
-            : state.gap || state.line || state.canvas || state.place || state.svgo || Object.values(state.edits).some((e) => e.op === 'cut')
-                ? 'Cut out, gaps, lines, the canvas and Optimize only work here in the editor, so this request leaves them out. Download the result instead.'
+            : state.svgo && !svgoDefaultExceptPrecision()
+                ? 'The API optimizes with the default SVGO settings (and your precision); your other SVGO changes only apply here.'
                 : code.includes('example.com%2Ficon.svg')
                     ? 'Links need a public SVG: replace example.com/icon.svg with yours, or load your SVG from a link.'
                     : 'Uses your current settings. No API key needed.';
