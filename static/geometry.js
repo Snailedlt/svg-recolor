@@ -414,8 +414,19 @@
                     if (!groups.has(to)) groups.set(to, [c, []]);
                     groups.get(to)[1].push(p);
                 }
-                byColor = [...groups.values()].map(([c, list]) => [c, unite(list).intersect(lines, { insert: false })])
-                    .concat(kept).filter(([, p]) => p && !p.isEmpty());
+                // Each color's part of the lines, two ways that should agree: its region's part, and
+                // the lines minus every other region. A failed boolean step only ever adds area, so
+                // keep the smaller one.
+                const regionsOf = [...groups.values()].map(([c, list]) => [c, unite(list)]);
+                const keptAll = kept.length ? unite(kept.map(([, p]) => p.clone({ insert: false }))) : null;
+                byColor = regionsOf.map(([c, region], i) => {
+                    const a = region.intersect(lines, { insert: false });
+                    if (regionsOf.length + kept.length < 2) return [c, a];
+                    let others = keptAll ? keptAll.clone({ insert: false }) : null;
+                    regionsOf.forEach(([, r], j) => { if (j !== i) others = others ? others.unite(r, { insert: false }) : r.clone({ insert: false }); });
+                    const b = others ? lines.subtract(others, { insert: false }) : a;
+                    return [c, Math.abs(b.area) < Math.abs(a.area) - 1e-6 ? b : a];
+                }).concat(kept).filter(([, p]) => p && !p.isEmpty());
             }
 
             // One path per output color: colors the style maps to the same color merge.
