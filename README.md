@@ -51,7 +51,8 @@ On top of any mode, single colors (the original ones, as listed by `/api/palette
 | Remove | `remove=ffffff,...` | Shapes painted with the color are deleted, including ones that inherit it from a group or a CSS class. A shape keeps its fill or stroke when only the other is removed. Shapes inside `<defs>`, `<clipPath>`, `<mask>` and similar are only hidden, never deleted. |
 
 A one-color icon, like a devicon `plain` version, is `mode=solid&color=000000&remove=ffffff` (Solid, then remove the
-background). This gets you one color without the background; devicon's other rules (a single path with white parts
+background). Don't remove thin outlines drawn between parts of a logo: in Solid they take the same color and fill
+the hairline seams between the parts. For the JAX logo, plain Solid matches the hand-made devicon `plain`. This gets you one color without the background; devicon's other rules (a single path with white parts
 cut out as holes) need path operations, which tools like Inkscape or the svg-icons agent skill do.
 
 In the editor, click a color in the **Colors** strip under the preview to edit it.
