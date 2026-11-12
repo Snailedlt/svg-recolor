@@ -9,7 +9,8 @@ in QuickJS, a small JavaScript engine, so both give the same result:
 - geometry.js's compute() cuts, gaps and draws lines; boundsOfShapes() measures for Fit.
 - SVGO optimizes, with the same default settings as the editor (devicon's).
 
-One QuickJS context lives on its own thread (QuickJS isn't thread-safe), with a time and
+A small pool of threads, each with its own QuickJS context (QuickJS isn't thread-safe), so
+one heavy request doesn't hold up the others. Each call has a time and
 memory limit per call.
 """
 
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import threading
 import time
@@ -168,9 +170,9 @@ def check_conflicts(opts: engine.Options, ex: Extras) -> None:
 # --------------------------------------------------------------------------
 # JavaScript (QuickJS) on one thread
 # --------------------------------------------------------------------------
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="svg-geometry")
-_ctx = None
-_lock = threading.Lock()
+POOL = int(os.environ.get("SVG_GEOMETRY_WORKERS", "3"))
+_executor = ThreadPoolExecutor(max_workers=POOL, thread_name_prefix="svg-geometry")
+_local = threading.local()  # .ctx: this thread's QuickJS context
 
 
 def _load():
@@ -192,12 +194,11 @@ def _load():
 
 def _run_js(expr: str, args: list, deadline: Optional[float] = None):
     """Evaluate `expr` (an async function of `args`) and return its JSON result."""
-    global _ctx
     import quickjs
 
-    if _ctx is None:
-        _ctx = _load()
-    c = _ctx
+    if getattr(_local, "ctx", None) is None:
+        _local.ctx = _load()
+    c = _local.ctx
     # QuickJS's limit counts per call, and async work runs as many calls (jobs): keep one
     # deadline for the whole thing, and give each job only the time that's left.
     deadline = deadline or time.monotonic() + TIME_LIMIT
@@ -210,14 +211,14 @@ def _run_js(expr: str, args: list, deadline: Optional[float] = None):
         while True:
             left = deadline - time.monotonic()
             if left <= 0:
-                _ctx = None
+                _local.ctx = None
                 raise engine.RecolorError(f"This SVG took too long (over {TIME_LIMIT} s). Try a simpler one, or the editor.")
             c.set_time_limit(max(1, int(left + 0.999)))
             if not c.execute_pending_job():
                 break
         err, out = c.eval("__err"), c.eval("__out")
     except quickjs.JSException as e:
-        _ctx = None  # start clean next time
+        _local.ctx = None  # start clean next time
         if "interrupted" in str(e).lower():
             raise engine.RecolorError(f"This SVG took too long (over {TIME_LIMIT} s). Try a simpler one, or the editor.")
         if "out of memory" in str(e).lower():
@@ -227,7 +228,7 @@ def _run_js(expr: str, args: list, deadline: Optional[float] = None):
         c.set_time_limit(-1)
     if err:
         if "interrupted" in err.lower():  # the time limit, hit inside an async step
-            _ctx = None
+            _local.ctx = None
             raise engine.RecolorError(f"This SVG took too long (over {TIME_LIMIT} s). Try a simpler one, or the editor.")
         raise engine.RecolorError(err)
     return json.loads(out) if out else None
@@ -235,8 +236,7 @@ def _run_js(expr: str, args: list, deadline: Optional[float] = None):
 
 def js(expr: str, *args, deadline: Optional[float] = None):
     """Run `expr` in QuickJS. `deadline` (time.monotonic()) shares one time budget between calls."""
-    with _lock:
-        return _executor.submit(_run_js, expr, list(args), deadline).result()
+    return _executor.submit(_run_js, expr, list(args), deadline).result()
 
 
 # --------------------------------------------------------------------------
