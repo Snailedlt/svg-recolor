@@ -9,8 +9,11 @@
  * Built on paper.js and paperjs-offset (bundled before this file in
  * /assets/geometry.js), the same tools as devicon's svg-icons agent skill.
  *
+ * Sizes (`gap`, `line`) are in the SVG's own units (px), or in percent of its larger
+ * side with `unit: '%'`.
+ *
  * Gaps: with `gap` > 0, every boundary between two different original colors gets a
- * gap of that width (in units of a 128-unit icon, devicon's scale), centered on the
+ * gap of that width, centered on the
  * boundary; each side gives up half. The outer edge stays where it is, and touching
  * shapes of the same color merge. With Solid that keeps the color areas apart.
  *
@@ -212,6 +215,8 @@
 
             const vb = (viewBox || '').split(/[\s,]+/).map(Number);
             const size = vb.length === 4 && vb.every(Number.isFinite) ? Math.max(vb[2], vb[3]) : Math.max(bounds[0], bounds[1]);
+            // Sizes are in the SVG's own units (px), or with unit '%' in percent of its larger side.
+            const scale = opts.unit === '%' ? size / 100 : 1;
             const stroke = (p, half) => PaperOffset.offsetStroke(p, half, { join: 'round', cap: 'butt', insert: false });
 
             // Lines, from the regions before gaps: a band inside the outer edge, plus (with
@@ -220,7 +225,7 @@
             let lines = null;
             if (line > 0 && byColor.length) {
                 if (!PaperOffset) throw new GeometryError('Lines need the offset library, which did not load.');
-                const w = (line * size) / 128;
+                const w = line * scale;
                 const whole = unite(byColor.map(([, p]) => p.clone({ insert: false })));
                 lines = whole.intersect(stroke(whole, w), { insert: false });
                 report(opts.gap > 0 ? 0.15 : 0.3);
@@ -237,7 +242,7 @@
             const gap = Number(opts.gap) || 0;
             if (gap > 0 && byColor.length > 1) {
                 if (!PaperOffset) throw new GeometryError('Gaps need the offset library, which did not load.');
-                const half = (gap * size) / 128 / 2;
+                const half = (gap * scale) / 2;
                 // A band of half the gap on each side of a color's edge; other colors lose what it
                 // covers. Only colors that come within the band of each other need the work.
                 const near = (a, b) => a.bounds.expand(half * 2 + 1e-6).intersects(b.bounds);
@@ -312,7 +317,7 @@
                 worker = null;
                 compute(input, opts, opts.onProgress).then(resolve, reject); // a worker that can't start: do it here
             };
-            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep } });
+            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit } });
         });
     }
 

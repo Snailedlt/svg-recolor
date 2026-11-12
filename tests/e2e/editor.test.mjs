@@ -348,7 +348,7 @@ test('gaps: color boundaries become gaps, so a one-color version keeps its parts
     await page.click('.style[data-mode="solid"]');
     await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
     await page.locator('#adj-gap').evaluate((el) => { el.value = '4'; el.dispatchEvent(new Event('input', { bubbles: true })); });
-    assert.equal(await page.textContent('#adj-gap-out'), '4');
+    assert.equal(await page.textContent('#adj-gap-out'), '4 px');
     await page.waitForURL(/gap=4/);
     await page.click('#tab-btn-code');
     await page.locator('#code-view', { hasText: '<path' }).waitFor();
@@ -372,6 +372,27 @@ test('gaps: color boundaries become gaps, so a one-color version keeps its parts
 // A blue square with a white square inside it.
 const LINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">'
     + '<rect width="128" height="128" fill="#0169c9"/><rect x="32" y="32" width="64" height="64" fill="#ffffff"/></svg>';
+
+test('gap and line sizes: px in the SVG\'s units, or % of the icon', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, GAP_SVG); // 128 x 128
+    assert.equal(await page.getAttribute('#adj-gap', 'step'), '0.5');
+    assert.equal(await page.getAttribute('#adj-gap', 'max'), '6');
+    await page.locator('#adj-gap').evaluate((el) => { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+    assert.equal(await page.textContent('#adj-gap-out'), '2 px');
+    // Switching units keeps the look: 2 px of 128 is 1.56 %, which the 0.1 % steps round to 1.6.
+    await page.click('#unit-tabs [data-unit="%"]');
+    assert.equal(await page.textContent('#adj-gap-out'), '1.6 %');
+    await page.waitForURL(/gap=1\.6&unit=pct/);
+    // A big drawing gets a bigger px range: 6/128 of 1024 is 48 px, in 2 px steps.
+    await page.click('#unit-tabs [data-unit="px"]');
+    await page.click('#change-file');
+    await pasteSvg(page, GAP_SVG.replace('viewBox="0 0 128 128"', 'viewBox="0 0 1024 1024"'));
+    assert.equal(await page.getAttribute('#adj-gap', 'max'), '48');
+    assert.equal(await page.getAttribute('#adj-gap', 'step'), '2');
+    assert.equal(await page.textContent('#adj-gap-out'), '2 px', 'the chosen size stays');
+    assert.deepEqual(problems, []);
+});
 
 test('line version: only the edges stay, colors can stay filled', async () => {
     const { page, problems } = await open();

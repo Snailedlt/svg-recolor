@@ -58,7 +58,7 @@ Three more edits need path geometry, so they run in the browser and are only in 
 - **Cut out** (a color's option in the color panel): the color becomes a real gap. Only the part you can see in the
   original is cut, and the result is flattened to one path per color. For logos with outlines between their parts
   (like JAX), Solid + Cut out on the outline gives a one-path plain version with gaps exactly where the outlines were.
-- **Gaps** (slider under Adjust, in units of a 128-unit icon): every boundary between two original colors gets a
+- **Gaps** (slider under Adjust, in px of the SVG's own units, or % of the icon): every boundary between two original colors gets a
   gap of that width; the outer edge stays put. For logos whose parts just touch (like rqlite), Solid + Gaps keeps the
   parts apart in one color.
 

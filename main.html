@@ -229,9 +229,16 @@
                                     <label class="slider-row" for="adj-hue"><span>Hue</span><input id="adj-hue" type="range" min="-180" max="180" step="1" value="0"><output id="adj-hue-out" for="adj-hue">0°</output></label>
                                     <label class="slider-row" for="adj-saturation"><span>Saturation</span><input id="adj-saturation" type="range" min="-100" max="100" step="1" value="0"><output id="adj-saturation-out" for="adj-saturation">0</output></label>
                                     <label class="slider-row" for="adj-lightness"><span>Lightness</span><input id="adj-lightness" type="range" min="-100" max="100" step="1" value="0"><output id="adj-lightness-out" for="adj-lightness">0</output></label>
-                                    <label class="slider-row" for="adj-gap" title="Cut a gap wherever two original colors meet (in units of a 128-unit icon). With Solid, the color areas stay apart. Makes one path per color."><span>Gaps</span><input id="adj-gap" type="range" min="0" max="6" step="0.5" value="0" aria-describedby="gap-hint"><output id="adj-gap-out" for="adj-gap">Off</output></label>
+                                    <div class="toggle-row unit-row">
+                                        <span id="unit-label">Gap and line sizes in</span>
+                                        <div class="segmented" role="group" aria-labelledby="unit-label" id="unit-tabs">
+                                            <button type="button" data-unit="px" aria-pressed="true" title="Pixels in the SVG's own units (the numbers in its paths). In a 128×128 icon, like devicon's, 1 px is 1/128 of the icon.">px</button>
+                                            <button type="button" data-unit="%" aria-pressed="false" title="Percent of the icon's size (its larger side), so the same setting looks the same on any icon.">% of icon</button>
+                                        </div>
+                                    </div>
+                                    <label class="slider-row" for="adj-gap" title="Cut a gap of this width wherever two original colors meet. With Solid, the color areas stay apart. Makes one path per color."><span>Gaps</span><input id="adj-gap" type="range" min="0" max="6" step="0.5" value="0" aria-describedby="gap-hint"><output id="adj-gap-out" for="adj-gap">Off</output></label>
                                     <p class="field-hint gap-hint" id="gap-hint">Gaps between colors, for one-color icons with Solid.</p>
-                                    <label class="slider-row" for="adj-line" title="Make a line version, like devicon's line icons: only a band of this width along the edges is kept (in units of a 128-unit icon). Makes one path per color."><span>Line</span><input id="adj-line" type="range" min="0" max="8" step="0.5" value="0" aria-describedby="line-hint"><output id="adj-line-out" for="adj-line">Off</output></label>
+                                    <label class="slider-row" for="adj-line" title="Make a line version, like devicon's line icons: only a band of this width along the edges is kept. Makes one path per color."><span>Line</span><input id="adj-line" type="range" min="0" max="8" step="0.5" value="0" aria-describedby="line-hint"><output id="adj-line-out" for="adj-line">Off</output></label>
                                     <div class="toggle-row line-inner-row" id="line-inner-row" hidden>
                                         <label for="line-inner">Lines between colors</label>
                                         <span class="switch"><input type="checkbox" id="line-inner" checked><span class="track"></span></span>

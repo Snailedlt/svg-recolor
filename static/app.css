@@ -495,6 +495,8 @@ kbd {
 .color-edit .keep-row { margin-top: 4px; border-top: 1px solid var(--border); border-radius: 0 0 7px 7px; padding-top: 8px; }
 .color-edit input[type="checkbox"] { accent-color: var(--pick); margin: 0; }
 .line-inner-row { margin: -2px 0 0; }
+.unit-row { margin: 4px 0 2px; }
+.unit-row .segmented button { padding: 3px 10px; font-size: 0.76rem; }
 .color-edit-tip { margin: 8px 2px 0; font-size: 0.74rem; color: var(--text-faint); }
 
 /* Code & API tabs */

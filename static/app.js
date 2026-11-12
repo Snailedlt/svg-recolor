@@ -59,6 +59,7 @@
         edits: {},
         gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
         line: 0, // line version: band width along the edges (same units); 0 = off
+        unit: 'px', // gap and line sizes: 'px' (the SVG's own units) or '%' of the icon
         lineInner: true, // lines also between colors, not just around the whole shape
         keep: new Set(), // colors that stay filled in the line version
     };
@@ -237,6 +238,7 @@
         for (const [c, e] of Object.entries(state.edits)) by[e.op].push(e.op === 'replace' ? c + ':' + e.to.slice(1).toLowerCase() : c);
         for (const k of ['replace', 'hide', 'remove', 'cut']) if (by[k].length) q.set(k, by[k].join(','));
         if (state.gap) q.set('gap', String(state.gap));
+        if ((state.gap || state.line) && state.unit === '%') q.set('unit', 'pct');
         if (state.line) {
             q.set('line', String(state.line));
             if (!state.lineInner) q.set('lines', 'outer');
@@ -286,24 +288,66 @@
     async function cutOutSvg(edited, cut, merged, onProgress) {
         const Geo = await loadGeometry();
         return Geo.cutOut(edited, {
-            cut, map: merged, gap: state.gap, onProgress,
+            cut, map: merged, gap: state.gap, unit: state.unit, onProgress,
             line: state.line, lineInner: state.lineInner, keep: [...state.keep],
         });
     }
     const gapInput = $('adj-gap');
-    function syncGap() {
-        state.gap = Math.max(0, Math.min(6, parseFloat(gapInput.value) || 0));
-        $('adj-gap-out').textContent = state.gap ? String(state.gap) : 'Off';
+    // Gap and line sizes: px (the SVG's own units) or % of the icon. In px the slider
+    // ranges follow the SVG's size, so a 24 px icon and a 1024 px logo both get useful steps.
+    const unitText = (v) => (v ? +v.toFixed(2) + (state.unit === '%' ? ' %' : ' px') : 'Off');
+    function docSize(doc) {
+        const tag = doc && (/<svg\b[^>]*>/i.exec(doc.norm) || [''])[0];
+        const vb = tag && /\sviewBox\s*=\s*["']\s*[-\d.eE+]+[\s,]+[-\d.eE+]+[\s,]+([\d.eE+]+)[\s,]+([\d.eE+]+)/i.exec(tag);
+        if (vb) return Math.max(+vb[1], +vb[2]) || 128;
+        const w = tag && /\swidth\s*=\s*["']?\s*([\d.]+)(px)?["'\s]/i.exec(tag), h = tag && /\sheight\s*=\s*["']?\s*([\d.]+)(px)?["'\s]/i.exec(tag);
+        return Math.max(w ? +w[1] : 0, h ? +h[1] : 0) || 128;
     }
+    function niceStep(x) {
+        const steps = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100];
+        return [...steps].reverse().find((s) => s <= x) || steps[0];
+    }
+    function syncRanges() {
+        const size = state.unit === '%' ? 100 : docSize(state.doc);
+        // Up to 6/128 (gaps) and 8/128 (lines) of the icon: 6 and 8 px in a devicon icon.
+        for (const [input, max, now] of [[gapInput, 6, state.gap], [lineInput, 8, state.line]]) {
+            const step = state.unit === '%' ? 0.1 : niceStep(size / 256);
+            input.step = String(step);
+            // Never below the current value (say, from a shared link).
+            input.max = String(Math.max(step, +(Math.round((max * size) / 128 / step) * step).toFixed(2), now || 0));
+        }
+    }
+    function syncGap() {
+        state.gap = Math.max(0, Math.min(parseFloat(gapInput.max), parseFloat(gapInput.value) || 0));
+        $('adj-gap-out').textContent = unitText(state.gap);
+    }
+    function setUnit(unit, user) {
+        if (unit === state.unit) return;
+        // Keep the same look: convert the current values to the new unit.
+        const size = docSize(state.doc);
+        const conv = (v) => (unit === '%' ? (v * 100) / size : (v * size) / 100);
+        const [gap, line] = [state.gap, state.line].map((v) => (v ? +conv(v).toFixed(2) : 0));
+        state.unit = unit;
+        state.gap = gap;
+        state.line = line;
+        $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === unit)));
+        syncRanges();
+        gapInput.value = String(gap);
+        lineInput.value = String(line);
+        syncGap();
+        syncLine();
+        if (user && (gap || line)) editsChanged(); else if (user) syncPageUrl();
+    }
+    $$('#unit-tabs button').forEach((b) => b.addEventListener('click', () => setUnit(b.dataset.unit, true)));
     // Gaps are heavy on big drawings: show the value at once, recut when the slider rests.
     let gapTimer = 0;
     gapInput.addEventListener('input', () => { syncGap(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
     // Line version: a band of this width along the edges (devicon "line" icons).
     const lineInput = $('adj-line');
     function syncLine() {
-        state.line = Math.max(0, Math.min(8, parseFloat(lineInput.value) || 0));
+        state.line = Math.max(0, Math.min(parseFloat(lineInput.max), parseFloat(lineInput.value) || 0));
         state.lineInner = $('line-inner').checked;
-        $('adj-line-out').textContent = state.line ? String(state.line) : 'Off';
+        $('adj-line-out').textContent = unitText(state.line);
         $('line-inner-row').hidden = !state.line;
         if (!editPanel.hidden) $('color-edit-keep-row').hidden = !state.line;
     }
@@ -657,6 +701,12 @@
         source = source || (fromUrl ? 'link' : 'file');
         state.doc = { name, size, text, norm, palette: Engine.palette(norm), fromUrl: fromUrl || null, source };
         renderLogoColors();
+        // The slider ranges follow the SVG's size; keep the chosen values.
+        syncRanges();
+        gapInput.value = String(state.gap);
+        lineInput.value = String(state.line);
+        syncGap();
+        syncLine();
         state.result = null;
         // Edits belong to colors: keep the ones this SVG still has (live code edits, shared links).
         const present = new Set(state.doc.palette.map((p) => p[0]));
@@ -1600,9 +1650,14 @@
     syncAdjust(false);
     setMode(MODES[start.get('mode')] ? start.get('mode') : 'colorize', false);
     state.edits = editsFromParams(start);
-    gapInput.value = String(parseFloat(start.get('gap')) || 0);
+    state.unit = start.get('unit') === 'pct' ? '%' : 'px';
+    $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === state.unit)));
+    state.gap = Math.max(0, parseFloat(start.get('gap')) || 0);
+    state.line = Math.max(0, parseFloat(start.get('line')) || 0);
+    syncRanges();
+    gapInput.value = String(state.gap);
     syncGap();
-    lineInput.value = String(parseFloat(start.get('line')) || 0);
+    lineInput.value = String(state.line);
     $('line-inner').checked = start.get('lines') !== 'outer';
     for (const v of (start.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }
     syncLine();
