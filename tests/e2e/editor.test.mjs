@@ -1041,3 +1041,20 @@ test('variants: one-color versions side by side, a pick applies like a recipe', 
     assert.equal(await page.locator('#variants-grid .variant.loading').count(), 0);
     assert.deepEqual(problems, []);
 });
+
+test('variants: a light logo with dark line art gets the two dark-art variants', async () => {
+    const { page, problems } = await open();
+    // A pale face with a black outline and black eyes (like Bun or GCC).
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">'
+        + '<circle cx="64" cy="64" r="58" fill="#000000"/><circle cx="64" cy="64" r="54" fill="#fbf0df"/>'
+        + '<circle cx="44" cy="56" r="8" fill="#000000"/><circle cx="84" cy="56" r="8" fill="#000000"/></svg>');
+    await page.click('#tab-btn-variants');
+    await page.locator('#variants-grid .variant', { hasText: 'Line art: the dark parts only' }).waitFor();
+    await page.locator('#variants-grid .variant', { hasText: 'Plain, dark details cut out' }).waitFor();
+    await page.locator('#variants-grid .variant.loading').first().waitFor({ state: 'detached', timeout: 60000 });
+    assert.equal(await page.locator('#variants-grid .variant').count(), 9);
+    await page.locator('#variants-grid .variant', { hasText: 'Plain, dark details cut out' }).click();
+    await page.waitForURL(/cut=000000/);
+    assert.match(page.url(), /color=000000/);
+    assert.deepEqual(problems, []);
+});

@@ -2651,14 +2651,42 @@
     ];
     // What stays from the current settings: the canvas and placement, SVGO and this SVG's edits.
     const VARIANT_KEEP = ['canvas', 'fit', 'place', 'optimize', 'precision', 'replace', 'hide', 'remove', 'cut'];
+    const LIST_KEYS = ['replace', 'hide', 'remove', 'cut']; // a variant's own list and yours both apply
+    // HSL lightness, 0..1.
+    const lightnessOf = (c) => { const x = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16)); return (Math.max(...x) + Math.min(...x)) / 510; };
+    // Two more, for logos drawn as dark line art (outlines, text, eyes) over lighter fills, as
+    // devicon's own versions of such logos are made (GCC, Bun, Grunt):
+    // - a light logo filled with its darkest color, the dark details cut out of it;
+    // - only the dark line art, in the logo's color.
+    async function variantsFor(doc) {
+        const list = VARIANTS.slice();
+        const colors = doc.palette.map((p) => p[0].replace('#', '').toLowerCase()).filter((c) => /^[0-9a-f]{6}$/.test(c));
+        const dark = colors.filter((c) => lightnessOf(c) < 0.25);
+        if (!dark.length || dark.length === colors.length) return list;
+        let shares = [];
+        try { shares = (await loadGeometry()).colorShares(doc.norm); } catch (err) { shares = []; }
+        const main = shares.length ? shares[0][0] : null;
+        const darkShare = shares.filter(([c]) => dark.includes(c)).reduce((t, [, n]) => t + n, 0);
+        const darkest = dark.slice().sort((a, b) => lightnessOf(a) - lightnessOf(b))[0];
+        if (main && lightnessOf(main) >= 0.6 && !dark.includes(main)) {
+            list.push({ name: 'Plain, dark details cut out', base: 'mode=solid', params: 'color=' + darkest + '&cut=' + dark.join(',') });
+        }
+        if (darkShare > 0 && darkShare < 0.4) {
+            list.push({ name: 'Line art: the dark parts only', base: 'mode=solid&color=auto', params: 'remove=' + colors.filter((c) => !dark.includes(c)).join(',') });
+        }
+        return list;
+    }
     function variantKeep() {
         const keep = new URLSearchParams(), mine = publicParams();
         VARIANT_KEEP.forEach((k) => { if (mine.has(k)) keep.set(k, mine.get(k)); });
         return keep;
     }
     function variantParams(v, keep = variantKeep()) {
-        const q = new URLSearchParams(VARIANT_BASE + (v.params ? '&' + v.params : ''));
-        for (const [k, val] of keep) q.set(k, val);
+        const q = new URLSearchParams((v.base !== undefined ? v.base : VARIANT_BASE) + (v.params ? '&' + v.params : ''));
+        for (const [k, val] of keep) {
+            if (LIST_KEYS.includes(k) && q.get(k)) q.set(k, [...new Set(q.get(k).split(',').concat(val.split(',')))].join(','));
+            else q.set(k, val);
+        }
         return q;
     }
     const variantCache = new Map(); // SVG + kept settings -> [svg text or Error, per variant]
@@ -2707,18 +2735,20 @@
         const doc = state.doc;
         const key = doc.name + ':' + doc.text.length + ':' + doc.text.slice(0, 300) + ':' + keep.toString();
         const run = ++variantRun;
-        const tiles = VARIANTS.map(variantTile);
+        const list = await variantsFor(doc);
+        if (run !== variantRun || doc !== state.doc) return;
+        const tiles = list.map(variantTile);
         grid.replaceChildren(...tiles);
         const done = variantCache.get(key) || [];
-        VARIANTS.forEach((v, i) => { if (done[i] !== undefined) showVariant(tiles[i], v, done[i]); });
-        if (VARIANTS.every((v, i) => done[i] !== undefined)) return;
+        list.forEach((v, i) => { if (done[i] !== undefined) showVariant(tiles[i], v, done[i]); });
+        if (list.every((v, i) => done[i] !== undefined)) return;
         // The rest one after another, each with its settings applied for the moment and then
         // yours again (as the ZIP of a recipe set does).
         const back = publicParams(), backRecipe = state.recipe;
         restoring = true;
         setBusy(true, 'variants');
         try {
-            for (const [i, v] of VARIANTS.entries()) {
+            for (const [i, v] of list.entries()) {
                 if (run !== variantRun || doc !== state.doc) return;
                 if (done[i] !== undefined) continue;
                 applySettings(variantParams(v, keep));

@@ -1189,10 +1189,37 @@
             scope.project.remove();
         }
     }
+    // How much of the visible drawing each color covers, largest first: [[color, share 0..1], ...].
+    // A grid of 48 x 48 points over the drawing; the top shape at each point counts.
+    function colorShares(svgText) {
+        if (!paper) throw new GeometryError('The geometry library did not load.');
+        const input = readShapes(svgText, null, true);
+        const scope = new paper.PaperScope();
+        scope.setup(new paper.Size(1, 1));
+        try {
+            const shapes = input.shapes.map(({ d, rule, color }) => ({ path: new scope.CompoundPath({ pathData: d, fillRule: rule, insert: false }), color }));
+            if (!shapes.length) return [];
+            const box = shapes.map((s) => s.path.bounds).reduce((a, b) => a.unite(b));
+            const N = 48, seen = new Map();
+            let total = 0;
+            for (let i = 0; i < N; i++) {
+                for (let j = 0; j < N; j++) {
+                    const pt = new scope.Point(box.x + (box.width * (i + 0.5)) / N, box.y + (box.height * (j + 0.5)) / N);
+                    for (let k = shapes.length - 1; k >= 0; k--) {
+                        const { path, color } = shapes[k];
+                        if (path.bounds.contains(pt) && path.contains(pt)) { seen.set(color, (seen.get(color) || 0) + 1); total++; break; }
+                    }
+                }
+            }
+            return [...seen].map(([c, n]) => [c, n / (total || 1)]).sort((a, b) => b[1] - a[1]);
+        } finally {
+            scope.project.remove();
+        }
+    }
     function prominentColor(svgText) {
         if (!paper) throw new GeometryError('The geometry library did not load.');
         return prominent(readShapes(svgText, null, true));
     }
 
-    global.SvgGeometry = { cutOut, bounds, compute, boundsOfShapes, prominent, prominentColor, GeometryError, expandArcFlags };
+    global.SvgGeometry = { cutOut, bounds, compute, boundsOfShapes, prominent, prominentColor, colorShares, GeometryError, expandArcFlags };
 })(typeof window !== 'undefined' ? window : globalThis);
