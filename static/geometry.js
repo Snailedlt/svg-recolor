@@ -179,6 +179,7 @@
                 if (rx && !ry) r.setAttribute('ry', rx);
                 if (ry && !rx) r.setAttribute('rx', ry);
             });
+            live._standIns = [...stand.values()].map((c) => c.slice(1).toLowerCase());
             return live;
         } finally {
             box.remove();
@@ -264,7 +265,9 @@
                 return { d: baked.getPathData(null, 12), rule: path.fillRule || 'nonzero', color };
             }).filter((sh) => sh.d);
             const b = root.bounds;
-            return { shapes, viewBox, width, height, bounds: [b.width, b.height] };
+            // Which colors stand in for gradients (Simplify never merges them: each gradient part stays one).
+            // Which colors stand in for gradients (Simplify never merges them: each gradient part stays one).
+            return { shapes, viewBox, width, height, bounds: [b.width, b.height], standIns: live._standIns || [] };
         } finally {
             scope.project.remove();
         }
@@ -452,7 +455,8 @@
             const mergeD = Number(opts.merge) || 0;
             if (mergeD > 0 && byColor.length > 1) {
                 const rgbOf = (c) => [0, 2, 4].map((i) => parseInt(String(c).slice(i, i + 2), 16));
-                const fixed = (c) => soft.has(c) || (opts.cut || []).includes(c) || (opts.keep || []).includes(c);
+                const standIns = new Set(input.standIns || []);
+                const fixed = (c) => soft.has(c) || standIns.has(c) || (opts.cut || []).includes(c) || (opts.keep || []).includes(c);
                 const groups = []; // [colour, [regions], rgb]
                 for (const [c, p] of [...byColor].sort((a, b) => Math.abs(b[1].area) - Math.abs(a[1].area))) {
                     const x = rgbOf(c);
@@ -571,6 +575,46 @@
                     }
                 }
                 byColor = byColor.filter(([, p]) => p && !p.isEmpty());
+                // Thin arms too: a strip of a color narrower than half the gap, still attached to the
+                // rest of it (a hairline of the background shape showing along the edge of a part drawn
+                // over it, as in Bitbucket). The gaps would split it off as a stray line; it joins the
+                // color beside it instead.
+                const gapW = (Number(opts.gap) || 0) * scale;
+                if (gapW > 0 && PaperOffset) {
+                    const r = gapW / 4;
+                    for (const entry of byColor) {
+                        const p = entry[1];
+                        let opened = null;
+                        try {
+                            const shrunk = PaperOffset.offset(p, -r, { join: 'round', insert: false });
+                            opened = shrunk && !shrunk.isEmpty() ? PaperOffset.offset(shrunk, r + Math.max(0.01, r / 50), { join: 'round', insert: false }) : null;
+                        } catch (err) { opened = null; }
+                        if (!opened || opened.isEmpty()) continue;
+                        // Grown a hair past p's own outline, so the two never share an edge exactly
+                        // (paper.js loses parts of a subtraction along shared edges).
+                        const arms = p.subtract(opened, { insert: false });
+                        for (const k of (arms.children ? arms.children.slice() : [arms])) {
+                            const piece = new scope.Path({ segments: k.segments, closed: true, insert: false });
+                            const area = Math.abs(piece.area);
+                            if (!(area > 16 * r * r) || !(piece.length > 0) || (2 * area) / piece.length > 2 * r) continue;
+                            const votes = new Map();
+                            const len = piece.length, e2 = Math.min(2 * r, 0.05 * size);
+                            for (let t = 0; t < 32; t++) {
+                                const at = (len * (t + 0.5)) / 32, pt = piece.getPointAt(at), n = piece.getNormalAt(at);
+                                if (!pt || !n) continue;
+                                for (const q of [pt.add(n.multiply(e2)), pt.subtract(n.multiply(e2))]) {
+                                    for (const other of byColor) if (other !== entry && other[1].contains(q)) votes.set(other, (votes.get(other) || 0) + 1);
+                                }
+                            }
+                            if (!votes.size) continue;
+                            const to = [...votes].sort((x, y) => y[1] - x[1])[0][0];
+                            const grown = safeUnite(to[1], piece);
+                            const rest = safeIntersect(entry[1], entry[1].subtract(piece, { insert: false })) || entry[1].subtract(piece, { insert: false });
+                            if (grown && rest) { to[1] = grown; entry[1] = rest; }
+                        }
+                    }
+                    byColor = byColor.filter(([, p]) => p && !p.isEmpty());
+                }
             }
             // A band of `half` on both sides of every outline of `p`. An outline narrower than the
             // band is covered whole (its inward offset would turn inside out): filled, then grown.
@@ -699,11 +743,51 @@
                     report((lines ? 0.4 : 0.2) + (lines ? 0.5 : 0.7) * (i + 1) / byColor.length);
                     await tick();
                 }
+                const before = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
                 byColor = byColor.map(([c, p], i) => {
                     let out = p;
                     bands.forEach((band, j) => { if (j !== i && band && band.bounds.intersects(out.bounds)) out = out.subtract(band, { insert: false }); });
                     return [c, out];
                 }).filter(([, p]) => !p.isEmpty());
+                // Where a gap leaves the drawing at a shallow angle it would take a long wedge out of
+                // the silhouette (the gap looks far wider at its ends). There the edge stays: the
+                // part of the gap within half a gap of the edge, if it runs along the edge for more
+                // than about two gaps, goes back to the color it borders most. A gap that meets the
+                // edge head-on stays open.
+                // Hairlines the gaps split off (a sliver of a color running along the edge outside
+                // another) would show as stray lines: they go.
+                byColor = byColor.map(([c, p]) => {
+                    if (p.children) p.children.slice().forEach((k) => { if (k.length > 0 && (2 * Math.abs(k.area)) / k.length < half && k.area * (p.area || 1) > 0) k.remove(); });
+                    return [c, p];
+                }).filter(([, p]) => p && !p.isEmpty());
+                if (opts.gapEdges !== false && byColor.length) {
+                    try {
+                        const rim = 2 * half;
+                        const core = PaperOffset.offset(before, -rim, { join: 'round', insert: false });
+                        if (core && !core.isEmpty() && Math.abs(core.area) < Math.abs(before.area)) {
+                            const after = unite(byColor.map(([, p]) => p.clone({ insert: false })));
+                            const lost = before.subtract(after, { insert: false }).subtract(core, { insert: false });
+                            for (const k of (lost.children ? lost.children.slice() : [lost])) {
+                                const piece = new scope.Path({ segments: k.segments, closed: true, insert: false });
+                                const area = Math.abs(piece.area);
+                                if (!(area > 0) || area / rim < 2.2 * 2 * half) continue;
+                                const votes = new Map();
+                                const len = piece.length, step = Math.min(half, 0.05 * size);
+                                for (let t = 0; t < 32; t++) {
+                                    const at = (len * (t + 0.5)) / 32, pt = piece.getPointAt(at), n = piece.getNormalAt(at);
+                                    if (!pt || !n) continue;
+                                    for (const q of [pt.add(n.multiply(step)), pt.subtract(n.multiply(step))]) {
+                                        for (const e of byColor) if (e[1].contains(q)) votes.set(e, (votes.get(e) || 0) + 1);
+                                    }
+                                }
+                                if (!votes.size) continue;
+                                const to = [...votes].sort((x, y) => y[1] - x[1])[0][0];
+                                const grown = safeUnite(to[1], piece);
+                                if (grown) to[1] = grown;
+                            }
+                        }
+                    } catch (err) { /* keep the gaps as they are */ }
+                }
             }
 
             // linePlain: the lines of the one-colour version. Made after holes, outline gaps and
@@ -738,19 +822,36 @@
                     const holes = kids.filter((k) => !filled.includes(k));
                     for (const k of filled) {
                         const inside = holes.filter((h) => k.bounds.contains(h.bounds) && k.contains(h.firstSegment.point) && depth(h) === depth(k) + 1);
+                        // A stroke or a ring (one hole at most); a mesh of strands keeps its outlines.
+                        if (inside.length > 1) continue;
                         const area = Math.abs(k.area) - inside.reduce((t, h) => t + Math.abs(h.area), 0);
                         const per = k.length + inside.reduce((t, h) => t + h.length, 0);
                         if (!(area > 0 && per > 0)) continue;
-                        const width = (2 * area) / per;
-                        if (width < 1.2 * w || width >= 3 * w || (per * per) / (4 * Math.PI * area) < 3) continue;
+                        // Its thickness as a strip's (area = length x thickness, outline = 2 (length + thickness)),
+                        // which counts the ends of a short bar right; and only a long part, at least four
+                        // times longer than thick, is a stroke.
+                        const disc = per * per - 16 * area;
+                        const width = disc > 0 ? (per - Math.sqrt(disc)) / 4 : (2 * area) / per;
+                        if (width < 1.2 * w || width >= 3 * w || area / width < 4 * width) continue;
                         let piece = new scope.Path({ segments: k.segments, closed: true, insert: false });
                         if (piece.area < 0) piece.reverse();
                         for (const h of inside) piece = piece.subtract(h, { insert: false });
-                        const center = shrink(piece, (width - w) / 2);
+                        const d = (width - w) / 2;
+                        const center = shrink(piece, d);
                         if (!center) continue;
+                        // Only a part of fairly even width: grown back, the line covers most of it.
+                        // A mesh of strands of many widths (SQL Server's) would lose its thin strands.
+                        let back = null;
+                        try { back = PaperOffset.offset(center, d, { join: 'round', insert: false }); } catch (err) { back = null; }
+                        if (!back || Math.abs(back.area) < 0.85 * Math.abs(piece.area)) continue;
+                        // And the line it leaves is one line wide (a part of uneven width shrinks too little).
+                        const ca = Math.abs(center.area), cl = center.length, cd = cl * cl - 16 * ca;
+                        if (!(cl > 0) || (cd > 0 ? (cl - Math.sqrt(cd)) / 4 : (2 * ca) / cl) > 1.4 * w) continue;
                         const rest = lines.subtract(piece, { insert: false });
+                        // A boolean step that went wrong takes away more than the part ever covered.
+                        if (Math.abs(lines.area) - Math.abs(rest.area) > 1.02 * Math.abs(piece.area) + 1e-6) continue;
                         const next = safeUnite(rest, center);
-                        if (next && !next.isEmpty()) lines = next;
+                        if (next && !next.isEmpty() && Math.abs(next.area) >= Math.max(Math.abs(rest.area), Math.abs(center.area)) - 1e-6) lines = next;
                     }
                 }
             }

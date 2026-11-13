@@ -336,10 +336,10 @@ def _area(d):
 
 
 def test_simplify_merges_shades_and_drops_specks(client):
-    # A square in two close blues (a highlight), a far red one, and a 1x1 speck.
+    # A square in two close blues (a highlight), a far red one, and a 6x6 speck.
     svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="4" y="4" width="60" height="60" fill="#1867c0"/>'
            '<rect x="64" y="4" width="60" height="60" fill="#2a78d0"/><rect x="4" y="70" width="60" height="50" fill="#e33333"/>'
-           '<rect x="100" y="100" width="1" height="1" fill="#e33333"/></svg>')
+           '<rect x="100" y="100" width="6" height="6" fill="#e33333"/></svg>')
     def parts(q):
         res = client.post(f"/api/recolor?mode=solid&color=000000&gap=4&{q}", content=svg, headers=SVG_CT)
         assert res.status_code == 200, res.text
@@ -347,7 +347,7 @@ def test_simplify_merges_shades_and_drops_specks(client):
         return d.count("M") + d.count("m")
     assert parts("") == 4  # two blues apart, red, speck
     assert parts("merge=40") == 3  # the blues are one part: no gap between them
-    assert parts("merge=40&detail=2") == 2  # and the speck is gone
+    assert parts("merge=40&detail=7") == 2  # and the speck is gone
     for bad in ("merge=-1", "merge=x", "detail=-2"):
         assert client.post(f"/api/recolor?gap=4&{bad}", content=svg, headers=SVG_CT).status_code in (400, 422), bad
 
@@ -373,3 +373,14 @@ def test_gaps_keep_parts_thinner_than_the_gap(client):
     assert res.status_code == 200, res.text
     (_, d), = paths(res.text)
     assert _area(d) > 2 * 50 * 60 + 40, "the bar stays (joined to the squares)"
+
+
+def test_a_hairline_along_the_edge_joins_the_part_beside_it(client):
+    # A square with a second colour drawn over its lower half, 0.4 short of the edge (like
+    # Bitbucket's facet): the gaps must not leave the 0.4 strip as a stray line.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="4" y="4" width="120" height="120" fill="#2684ff"/>'
+           '<rect x="4.4" y="64" width="119.2" height="59.6" fill="#0052cc"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&gap=4", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    assert d.count("M") + d.count("m") == 2, d  # two parts, no hairlines

@@ -421,7 +421,8 @@ def read_shapes(svg: str, lenient: bool = False, flat: Optional[str] = None, mid
     # As the browser's DOM would give them (compute() escapes them again for the output).
     raw = {k: html.unescape(v) for k, v in attrs.items()}
     return {"shapes": shapes, "viewBox": raw.get("viewBox"), "width": raw.get("width"),
-            "height": raw.get("height"), "bounds": [box[2], box[3]]}
+            "height": raw.get("height"), "bounds": [box[2], box[3]],
+            "standIns": [c.lstrip("#").lower() for c in stand.values()]}
 
 
 # --------------------------------------------------------------------------
