@@ -817,7 +817,14 @@
                 const thick = byColor.map(([, p]) => opts.gapSplit !== 'half' && thickOf(p) >= 3 * gap * scale);
                 const bigger = (j, i) => sizes[j] > sizes[i] || (sizes[j] === sizes[i] && j < i);
                 // How i and j share: i loses a whole gap ('full'), half ('half') or nothing.
-                const share = (i, j) => (bigger(j, i) ? (thick[i] ? 'full' : 'half') : (thick[j] ? null : 'half'));
+                // opts.gapSplit 'top': the shape drawn on top keeps its exact shape instead, and what's
+                // under it gives up the gap (BrowserStack's stacked rings, PL/SQL's box on its database:
+                // each gap follows the whole outline of the shape above, as devicon's versions cut them).
+                const over = (j, i) => (opts.gapSplit === 'top' ? j > i : bigger(j, i));
+                // (With shapes on top whole, what's under always gives up the whole gap, thin or not:
+                // a ring's visible crescent is thin, but its gap must follow the whole circle above.)
+                const top = opts.gapSplit === 'top';
+                const share = (i, j) => (over(j, i) ? (top || thick[i] ? 'full' : 'half') : (top || thick[j] ? null : 'half'));
                 const full = [], halfB = [];
                 for (const [i, [, p]] of byColor.entries()) {
                     let needFull = false, needHalf = false;
@@ -1070,7 +1077,7 @@
                 worker = null;
                 compute(input, opts, opts.onProgress).then(resolve, reject); // a worker that can't start: do it here
             };
-            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain, merge: Number(opts.merge) || 0, detail: Number(opts.detail) || 0, lineAlign: opts.lineAlign || null, gaps: opts.gaps || null, lightHoles: !!opts.lightHoles } });
+            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain, merge: Number(opts.merge) || 0, detail: Number(opts.detail) || 0, lineAlign: opts.lineAlign || null, gaps: opts.gaps || null, lightHoles: !!opts.lightHoles, gapSplit: opts.gapSplit || null } });
         });
     }
 
@@ -1189,8 +1196,10 @@
             scope.project.remove();
         }
     }
-    // How much of the visible drawing each color covers, largest first: [[color, share 0..1], ...].
-    // A grid of 48 x 48 points over the drawing; the top shape at each point counts.
+    // How much of the visible drawing each color covers, largest first: [[color, share 0..1,
+    // average width as a share of the drawing's size], ...]. A grid of 48 x 48 points over the
+    // drawing; the top shape at each point counts. The width (2 x area / outline length) tells
+    // thin line work (Bun's hair) from solid parts.
     function colorShares(svgText) {
         if (!paper) throw new GeometryError('The geometry library did not load.');
         const input = readShapes(svgText, null, true);
@@ -1211,7 +1220,11 @@
                     }
                 }
             }
-            return [...seen].map(([c, n]) => [c, n / (total || 1)]).sort((a, b) => b[1] - a[1]);
+            const lengths = new Map();
+            for (const { path, color } of shapes) lengths.set(color, (lengths.get(color) || 0) + path.length);
+            const size = Math.max(box.width, box.height) || 1, cell = (box.width * box.height) / (N * N);
+            return [...seen].map(([c, n]) => [c, n / (total || 1), (2 * n * cell) / Math.max(lengths.get(c) || 0, 1e-9) / size])
+                .sort((a, b) => b[1] - a[1]);
         } finally {
             scope.project.remove();
         }

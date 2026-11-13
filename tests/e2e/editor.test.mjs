@@ -1022,16 +1022,16 @@ test('variants: one-color versions side by side, a pick applies like a recipe', 
     const { page, problems } = await open();
     await pasteSvg(page, GAP_SVG);
     await page.click('#tab-btn-variants');
-    await page.waitForFunction(() => document.querySelectorAll('#variants-grid .variant').length === 7
+    await page.waitForFunction(() => document.querySelectorAll('#variants-grid .variant').length === 8
         && !document.querySelector('#variants-grid .variant.loading'), null, { timeout: 60000 });
     assert.equal(await page.locator('#variants-grid .variant.failed').count(), 0);
     // Plain and plain with gaps differ (the four squares come apart).
     const srcs = await page.$$eval('#variants-grid .variant img', (imgs) => imgs.map((i) => i.src));
-    assert.equal(srcs.length, 7);
+    assert.equal(srcs.length, 8);
     assert.notEqual(srcs[0], srcs[1]);
     // Making them doesn't touch your settings or the page address.
     assert.doesNotMatch(page.url(), /mode=solid/);
-    await page.locator('#variants-grid .variant', { hasText: 'Plain with gaps' }).click();
+    await page.locator('#variants-grid .variant[data-variant="1"]').click();
     await page.waitForURL(/gap=1\.5/);
     assert.match(page.url(), /mode=solid/);
     assert.equal(await page.textContent('#recipe-banner-name'), 'Plain with gaps');
@@ -1052,7 +1052,7 @@ test('variants: a light logo with dark line art gets the two dark-art variants',
     await page.locator('#variants-grid .variant', { hasText: 'Line art: the dark parts only' }).waitFor();
     await page.locator('#variants-grid .variant', { hasText: 'Plain, dark details cut out' }).waitFor();
     await page.locator('#variants-grid .variant.loading').first().waitFor({ state: 'detached', timeout: 60000 });
-    assert.equal(await page.locator('#variants-grid .variant').count(), 9);
+    assert.equal(await page.locator('#variants-grid .variant').count(), 10);
     await page.locator('#variants-grid .variant', { hasText: 'Plain, dark details cut out' }).click();
     await page.waitForURL(/cut=000000/);
     assert.match(page.url(), /color=000000/);

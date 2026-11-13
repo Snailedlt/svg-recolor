@@ -58,6 +58,7 @@
         // | { op: 'hide' } (older links; shown as Invisible)
         edits: {},
         gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
+        gapTop: false, // the shape on top keeps its shape; the gap comes out of what's under it
         gapsAuto: false, // gaps only where the holes don't already show the parts
         lineCenter: false, // lines centered on the edges (half outside) instead of inside them
         merge: 0, // simplify: colors this close (RGB distance) are one part; 0 = off
@@ -288,6 +289,7 @@
         if (state.detail) q.set('detail', String(state.detail));
         if (state.gap) q.set('gap', String(state.gap));
         if (state.gap && state.gapsAuto) q.set('gaps', 'auto');
+        if (state.gap && state.gapTop) q.set('gapsplit', 'top');
         if ((state.gap || state.line || state.detail) && state.unit === '%') q.set('unit', 'pct');
         if (state.holes) q.set('holes', 'light');
         if (state.outlines) q.set('outlines', 'gap');
@@ -590,6 +592,7 @@
     $('svgo-toggle').addEventListener('change', (e) => { state.svgo = e.target.checked; updateOptimizeFold(); editsChanged(); });
     $('holes-toggle').addEventListener('change', (e) => { state.holes = e.target.checked; editsChanged(); });
     $('outlines-toggle').addEventListener('change', (e) => { state.outlines = e.target.checked; editsChanged(); });
+    $('gap-top-toggle').addEventListener('change', (e) => { state.gapTop = e.target.checked; if (state.gap) editsChanged(); else syncPageUrl(); });
     $('gaps-auto-toggle').addEventListener('change', (e) => { state.gapsAuto = e.target.checked; if (state.gap) editsChanged(); else syncPageUrl(); });
     $('line-center-toggle').addEventListener('change', (e) => { state.lineCenter = e.target.checked; if (state.line) editsChanged(); else syncPageUrl(); });
     renderSvgoSettings();
@@ -792,7 +795,7 @@
         const out = await Geo.cutOut(edited, {
             flat: doc ? flatColor(doc, merged) : null,
             cut, holes, outlines: state.outlines, map: merged, gap: state.gap, unit: state.unit, onProgress,
-            merge: state.merge, detail: state.detail, lineAlign: state.lineCenter ? 'center' : null, gaps: state.gapsAuto ? 'auto' : null, lightHoles: !!state.holes,
+            merge: state.merge, detail: state.detail, lineAlign: state.lineCenter ? 'center' : null, gaps: state.gapsAuto ? 'auto' : null, gapSplit: state.gapTop ? 'top' : null, lightHoles: !!state.holes,
             line: state.line, lineInner: state.lineInner, linePlain: state.linePlain, keep: [...state.keep],
         });
         const m = /<!--holes:([^>]*)-->/.exec(out);
@@ -831,6 +834,7 @@
         if (read) state.gap = Math.max(0, Math.min(parseFloat(gapInput.max), parseFloat(gapInput.value) || 0));
         $('adj-gap-out').textContent = unitText(state.gap);
         $('gaps-auto-row').hidden = !state.gap;
+        $('gap-top-row').hidden = !state.gap;
         updateFolds();
     }
     function setUnit(unit, user) {
@@ -1115,6 +1119,8 @@
         $('line-center-toggle').checked = false;
         state.gapsAuto = false;
         $('gaps-auto-toggle').checked = false;
+        state.gapTop = false;
+        $('gap-top-toggle').checked = false;
         state.keep.clear();
         syncLine();
         syncAdjust(false);
@@ -2643,6 +2649,7 @@
     const VARIANTS = [
         { name: 'Plain', params: '' },
         { name: 'Plain with gaps', params: 'gap=1.5&unit=pct' },
+        { name: 'Plain with gaps, shapes on top whole, shades merged lightly', params: 'merge=35&gap=1.5&unit=pct&gapsplit=top' },
         { name: 'Plain, shades merged, gaps', params: 'merge=60&detail=1.5&gap=1.5&unit=pct' },
         { name: 'Line', params: 'line=1' },
         { name: 'Line of the one-color shape', params: 'line=1&lines=plain' },
@@ -2669,7 +2676,10 @@
         const darkShare = shares.filter(([c]) => dark.includes(c)).reduce((t, [, n]) => t + n, 0);
         const darkest = dark.slice().sort((a, b) => lightnessOf(a) - lightnessOf(b))[0];
         if (main && lightnessOf(main) >= 0.6 && !dark.includes(main)) {
-            list.push({ name: 'Plain, dark details cut out', base: 'mode=solid', params: 'color=' + darkest + '&cut=' + dark.join(',') });
+            // Thin line work clearly darker than the light body goes too (Bun's hair); solid
+            // parts stay (GCC's bull).
+            const lines = shares.filter(([c, , w]) => !dark.includes(c) && w < 0.02 && lightnessOf(c) < lightnessOf(main) - 0.12).map(([c]) => c);
+            list.push({ name: 'Plain, dark details cut out', base: 'mode=solid', params: 'color=' + darkest + '&cut=' + dark.concat(lines).join(',') });
         }
         if (darkShare > 0 && darkShare < 0.4) {
             list.push({ name: 'Line art: the dark parts only', base: 'mode=solid&color=auto', params: 'remove=' + colors.filter((c) => !dark.includes(c)).join(',') });
@@ -3029,6 +3039,8 @@
         state.lineCenter = q.get('linealign') === 'center';
         state.gapsAuto = q.get('gaps') === 'auto';
         $('gaps-auto-toggle').checked = state.gapsAuto;
+        state.gapTop = q.get('gapsplit') === 'top';
+        $('gap-top-toggle').checked = state.gapTop;
         $('line-center-toggle').checked = state.lineCenter;
         state.keep.clear();
         for (const v of (q.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }

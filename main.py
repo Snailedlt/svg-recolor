@@ -167,6 +167,10 @@ def extra_query(
         description="With `gap`: `auto` leaves the gaps out when the one-color drawing already shows its parts "
                     "through its holes (a mesh, line art, a grid), where gaps would only cut it up; `always` (default).",
         pattern="^(auto|always)$")] = None,
+    gapsplit: Annotated[Optional[str], Query(
+        description="With `gap`: `smaller` (default) cuts each gap out of the smaller of the two parts; `top` keeps "
+                    "the shape drawn on top whole and cuts the gap out of what's under it (stacked shapes).",
+        pattern="^(top|smaller)$")] = None,
     line: Annotated[Optional[float], Query(
         description="Make a line version (like devicon's line icons): only a band of this width along the edges "
                     "is kept (in `unit`s).", ge=0, examples=[3])] = None,
@@ -213,7 +217,7 @@ def extra_query(
         description="With `optimize`: decimals kept in numbers (default 3).", ge=0, le=8)] = None,
 ) -> dict:
     """Cut out, gaps, lines, canvas and SVGO: the same code as the editor (see server/shapes.py)."""
-    return {"cut": cut, "holes": holes, "outlines": outlines, "merge": merge, "detail": detail, "gap": gap, "gaps": gaps, "line": line, "lines": lines, "linealign": linealign, "keep": keep, "unit": unit, "canvas": canvas,
+    return {"cut": cut, "holes": holes, "outlines": outlines, "merge": merge, "detail": detail, "gap": gap, "gaps": gaps, "gapsplit": gapsplit, "line": line, "lines": lines, "linealign": linealign, "keep": keep, "unit": unit, "canvas": canvas,
             "place": place, "fit": fit, "optimize": optimize, "precision": precision}
 
 
@@ -500,6 +504,7 @@ JSON_BODY_SCHEMA = {
         "lines": {"type": "string", "enum": ["all", "outer", "plain"]},
         "linealign": {"type": "string", "enum": ["inside", "center"], "description": "Lines inside the edges (default) or centered on them."},
         "gaps": {"type": "string", "enum": ["auto", "always"], "description": "auto: no gaps when the parts already show through holes."},
+        "gapsplit": {"type": "string", "enum": ["top", "smaller"], "description": "top: the shape on top stays whole; smaller (default): the smaller part gives up the gap."},
         "keep": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
                  "description": "With line: colors that stay filled."},
         "unit": {"type": "string", "enum": ["px", "pct"]},

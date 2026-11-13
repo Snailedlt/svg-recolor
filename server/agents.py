@@ -150,6 +150,8 @@ MCP_TOOLS = [
                          "description": "Make a line version (like devicon's line icons): only a band of this width along the edges is kept."},
                 "lines": {"type": "string", "enum": ["all", "outer", "plain"],
                           "description": "With line: 'all' (default) also between colors, 'outer' only the outline, 'plain' the outlines of the one-colour version (made first, with its holes and gaps)."},
+                "gapsplit": {"type": "string", "enum": ["top", "smaller"],
+                             "description": "With gap: 'top' keeps the shape drawn on top whole and cuts the gap out of what's under it (stacked shapes); 'smaller' (default) cuts it out of the smaller part."},
                 "gaps": {"type": "string", "enum": ["auto", "always"],
                          "description": "With gap: 'auto' leaves gaps out when the one-color drawing already shows its parts through holes (mesh, line art, grid)."},
                 "linealign": {"type": "string", "enum": ["inside", "center"],
