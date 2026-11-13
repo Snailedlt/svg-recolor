@@ -406,8 +406,9 @@ test('gaps: color boundaries become gaps, so a one-color version keeps its parts
     const hits = await page.evaluate((d) => {
         const ctx = document.createElement('canvas').getContext('2d');
         const p = new Path2D(d);
-        // Inside each piece; on the seams (4 units wide, centered); the outer edge stays put.
-        return [[32, 32], [96, 32], [32, 96], [96, 96], [64, 32], [62.5, 96], [32, 65.5], [0.5, 10], [127.5, 120]]
+        // Inside each piece; on the seams (4 units wide, cut from the later of two equal squares:
+        // 64..68); the outer edge stays put.
+        return [[32, 32], [96, 32], [32, 96], [96, 96], [66, 32], [65.5, 96], [32, 66], [0.5, 10], [127.5, 120]]
             .map(([x, y]) => ctx.isPointInPath(p, x, y, 'nonzero'));
     }, d);
     assert.deepEqual(hits, [true, true, true, true, false, false, false, true, true]);
