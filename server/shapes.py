@@ -76,6 +76,8 @@ class Extras:
     line_inner: bool = True  # lines also between colors
     line_plain: bool = False  # lines of the one-colour version (after holes, outline gaps, gaps)
     keep: tuple = ()  # colors that stay filled in the line version
+    merge: float = 0  # simplify: colors within this RGB distance count as one part
+    detail: float = 0  # simplify: pieces and holes smaller than detail x detail go
     unit: str = "px"  # gap and line sizes: px (the SVG's units) or % of the icon
     canvas: Optional[tuple] = None  # (w, h) of a new viewBox
     place: Optional[tuple] = None  # (x, y, scale) of the drawing on the canvas
@@ -86,7 +88,7 @@ class Extras:
 
     @property
     def geometry(self) -> bool:
-        return bool(self.cut or self.gap or self.line)
+        return bool(self.cut or self.gap or self.line or self.merge or self.detail)
 
     @property
     def active(self) -> bool:
@@ -132,7 +134,8 @@ def is_light(color: str) -> bool:
 
 
 def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None, unit=None,
-                 canvas=None, place=None, fit=None, optimize=None, precision=None, holes=None, outlines=None) -> Extras:
+                 canvas=None, place=None, fit=None, optimize=None, precision=None, holes=None, outlines=None,
+                 merge=None, detail=None) -> Extras:
     """Extras from request values (strings from query strings and forms, or JSON values)."""
     ex = Extras()
     ex.cut = tuple(engine._edit_key(c) for c in edit_list(cut))
@@ -157,6 +160,10 @@ def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None
         ex.gap = _number("gap", gap, 0, hi)
     if line not in (None, ""):
         ex.line = _number("line", line, 0, hi)
+    if merge not in (None, ""):
+        ex.merge = _number("merge", merge, 0, 442)
+    if detail not in (None, ""):
+        ex.detail = _number("detail", detail, 0, hi)
     if lines not in (None, ""):
         v = str(lines).strip().lower()
         if v not in ("all", "outer", "plain"):
@@ -526,9 +533,10 @@ def recolor(svg: str, opts: engine.Options) -> engine.Result:
         hidden = tuple(opts.hide) + tuple(opts.remove) + cut + holes
         place = fit_place(engine.apply_edits(norm, remove=hidden), canvas, ex.fit, deadline)
     edited = engine.apply_edits(placed(norm, canvas, place), hide=opts.hide, remove=opts.remove)
-    if cut or holes or ex.outlines or ex.gap or ex.line:
+    if cut or holes or ex.outlines or ex.gap or ex.line or ex.merge or ex.detail:
         geo = {"cut": list(cut), "holes": list(holes), "outlines": ex.outlines, "map": mapping, "gap": ex.gap, "line": ex.line,
-               "lineInner": ex.line_inner, "linePlain": ex.line_plain, "keep": list(ex.keep), "unit": ex.unit, "flat": None}
+               "lineInner": ex.line_inner, "linePlain": ex.line_plain, "keep": list(ex.keep), "unit": ex.unit, "flat": None,
+               "merge": ex.merge, "detail": ex.detail}
         # Everything one color (like Solid)? Then gradients and transparency don't matter.
         gone = set(opts.hide) | set(opts.remove) | set(cut) | set(holes)
         outs = {mapping.get(c, c) for c in counts if c not in gone}

@@ -327,3 +327,49 @@ def test_a_spike_in_an_outline_does_not_fill_a_line_version(client):
     from picosvg.svg_types import SVGPath
     (_, d), = paths(res.text)
     assert abs(skia_path(SVGPath(d=d).as_cmd_seq(), "nonzero").area) < 1500, "lines, not the filled shape (about 4350)"
+
+
+def _area(d):
+    from picosvg.svg_pathops import skia_path
+    from picosvg.svg_types import SVGPath
+    return abs(skia_path(SVGPath(d=d).as_cmd_seq(), "nonzero").area)
+
+
+def test_simplify_merges_shades_and_drops_specks(client):
+    # A square in two close blues (a highlight), a far red one, and a 1x1 speck.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="4" y="4" width="60" height="60" fill="#1867c0"/>'
+           '<rect x="64" y="4" width="60" height="60" fill="#2a78d0"/><rect x="4" y="70" width="60" height="50" fill="#e33333"/>'
+           '<rect x="100" y="100" width="1" height="1" fill="#e33333"/></svg>')
+    def parts(q):
+        res = client.post(f"/api/recolor?mode=solid&color=000000&gap=4&{q}", content=svg, headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        (_, d), = paths(res.text)
+        return d.count("M") + d.count("m")
+    assert parts("") == 4  # two blues apart, red, speck
+    assert parts("merge=40") == 3  # the blues are one part: no gap between them
+    assert parts("merge=40&detail=2") == 2  # and the speck is gone
+    for bad in ("merge=-1", "merge=x", "detail=-2"):
+        assert client.post(f"/api/recolor?gap=4&{bad}", content=svg, headers=SVG_CT).status_code in (400, 422), bad
+
+
+def test_a_thin_ring_gets_one_line_down_its_middle(client):
+    # A ring 6 wide: with line=3 its two edge lines would sit 0 apart (a filled ring);
+    # it becomes one line 3 wide down its middle instead.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill="#1867c0" fill-rule="evenodd" '
+           'd="M64 14a50 50 0 1 0 0.001 0zM64 20a44 44 0 1 0 0.001 0z"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&line=3", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    ring = 3.14159 * (50 ** 2 - 44 ** 2)  # about 1772
+    center = 3.14159 * (48.5 ** 2 - 45.5 ** 2)  # about 886
+    assert abs(_area(d) - center) < 0.15 * center, (_area(d), ring)
+
+
+def test_gaps_keep_parts_thinner_than_the_gap(client):
+    # Two squares joined by a bar 3 wide in another colour: a gap of 4 would cut the bar away.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="4" y="34" width="50" height="60" fill="#1867c0"/>'
+           '<rect x="74" y="34" width="50" height="60" fill="#1867c0"/><rect x="54" y="62" width="20" height="3" fill="#e33333"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&gap=4", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    assert _area(d) > 2 * 50 * 60 + 40, "the bar stays (joined to the squares)"

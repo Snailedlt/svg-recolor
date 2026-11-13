@@ -58,6 +58,8 @@
         // | { op: 'hide' } (older links; shown as Invisible)
         edits: {},
         gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
+        merge: 0, // simplify: colors this close (RGB distance) are one part; 0 = off
+        detail: 0, // simplify: pieces and holes smaller than this size go; 0 = off
         line: 0, // line version: band width along the edges (same units); 0 = off
         unit: 'px', // gap and line sizes: 'px' (the SVG's own units) or '%' of the icon
         svgo: false, // optimize the result with SVGO
@@ -280,8 +282,10 @@
         const by = { replace: [], hide: [], remove: [], cut: [] };
         for (const [c, e] of Object.entries(state.edits)) by[e.op].push(e.op === 'replace' ? c + ':' + e.to.slice(1).toLowerCase() : c);
         for (const k of ['replace', 'hide', 'remove', 'cut']) if (by[k].length) q.set(k, by[k].join(','));
+        if (state.merge) q.set('merge', String(state.merge));
+        if (state.detail) q.set('detail', String(state.detail));
         if (state.gap) q.set('gap', String(state.gap));
-        if ((state.gap || state.line) && state.unit === '%') q.set('unit', 'pct');
+        if ((state.gap || state.line || state.detail) && state.unit === '%') q.set('unit', 'pct');
         if (state.holes) q.set('holes', 'light');
         if (state.outlines) q.set('outlines', 'gap');
         if (state.svgo) q.set('optimize', '1');
@@ -460,6 +464,7 @@
     });
     function updateFolds() {
         const shape = [];
+        if (state.merge || state.detail) shape.push('simplified');
         if (state.gap) shape.push('gaps ' + unitText(state.gap));
         if (state.line) shape.push((state.linePlain ? 'one-color line ' : state.lineInner ? 'line ' : 'outline ') + unitText(state.line));
         $('shape-sub').textContent = shape.length ? shape.join(' · ') : 'gaps and line versions';
@@ -781,6 +786,7 @@
         const out = await Geo.cutOut(edited, {
             flat: doc ? flatColor(doc, merged) : null,
             cut, holes, outlines: state.outlines, map: merged, gap: state.gap, unit: state.unit, onProgress,
+            merge: state.merge, detail: state.detail,
             line: state.line, lineInner: state.lineInner, linePlain: state.linePlain, keep: [...state.keep],
         });
         const m = /<!--holes:([^>]*)-->/.exec(out);
@@ -806,7 +812,7 @@
     function syncRanges() {
         const size = state.unit === '%' ? 100 : docSize(state.doc);
         // Up to 6/128 (gaps) and 8/128 (lines) of the icon: 6 and 8 px in a devicon icon.
-        for (const [input, max, now] of [[gapInput, 6, state.gap], [lineInput, 8, state.line]]) {
+        for (const [input, max, now] of [[gapInput, 6, state.gap], [lineInput, 8, state.line], [detailInput, 6, state.detail]]) {
             const step = state.unit === '%' ? 0.1 : niceStep(size / 256);
             input.step = String(step);
             // Never below the current value (say, from a shared link).
@@ -825,19 +831,35 @@
         // Keep the same look: convert the current values to the new unit.
         const size = docSize(state.doc);
         const conv = (v) => (unit === '%' ? (v * 100) / size : (v * size) / 100);
-        const [gap, line] = [state.gap, state.line].map((v) => (v ? +conv(v).toFixed(2) : 0));
+        const [gap, line, detail] = [state.gap, state.line, state.detail].map((v) => (v ? +conv(v).toFixed(2) : 0));
         state.unit = unit;
         state.gap = gap;
         state.line = line;
+        state.detail = detail;
+        detailInput.value = String(detail);
+        syncSimplify(false);
         $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === unit)));
         syncRanges();
         gapInput.value = String(gap);
         lineInput.value = String(line);
         syncGap(false);
         syncLine(false);
-        if (user && (gap || line)) editsChanged(); else if (user) syncPageUrl();
+        if (user && (gap || line || detail)) editsChanged(); else if (user) syncPageUrl();
     }
     $$('#unit-tabs button').forEach((b) => b.addEventListener('click', () => setUnit(b.dataset.unit, true)));
+    // Simplify: merge similar shades, drop small details. Recut when the slider rests.
+    const mergeInput = $('adj-merge'), detailInput = $('adj-detail');
+    function syncSimplify(read = true) {
+        if (read) {
+            state.merge = Math.max(0, parseFloat(mergeInput.value) || 0);
+            state.detail = Math.max(0, Math.min(parseFloat(detailInput.max), parseFloat(detailInput.value) || 0));
+        }
+        $('adj-merge-out').textContent = state.merge ? String(state.merge) : 'Off';
+        $('adj-detail-out').textContent = unitText(state.detail);
+        updateFolds();
+    }
+    let simplifyTimer = 0;
+    for (const el of [mergeInput, detailInput]) el.addEventListener('input', () => { syncSimplify(); clearTimeout(simplifyTimer); simplifyTimer = setTimeout(editsChanged, 250); });
     // Gaps are heavy on big drawings: show the value at once, recut when the slider rests.
     let gapTimer = 0;
     gapInput.addEventListener('input', () => { syncGap(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
@@ -1063,6 +1085,9 @@
         ADJ.forEach(([k]) => { $('adj-' + k).value = 0; });
         $('adj-gap').value = 0;
         syncGap();
+        mergeInput.value = 0;
+        detailInput.value = 0;
+        syncSimplify();
         state.canvas = null;
         state.place = null;
         state.fit = null;
@@ -1250,8 +1275,10 @@
         syncRanges();
         gapInput.value = String(state.gap);
         lineInput.value = String(state.line);
+        detailInput.value = String(state.detail);
         syncGap(false);
         syncLine(false);
+        syncSimplify(false);
         state.result = null;
         // Edits belong to colors: keep the ones this SVG still has (live code edits, shared links).
         const present = new Set(state.doc.palette.map((p) => p[0]));
@@ -1329,7 +1356,7 @@
         else if (doc === state.doc) place = state.place;
         const parts = editedSvg(doc, mapping, place);
         let svg = parts.svg;
-        if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line) svg = await cutOutSvg(parts.edited, parts.cut, parts.merged, null, doc, parts.holes);
+        if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line || state.merge || state.detail) svg = await cutOutSvg(parts.edited, parts.cut, parts.merged, null, doc, parts.holes);
         if (state.svgo) svg = await optimizeSvg(svg);
         return svg;
     }
@@ -1739,7 +1766,7 @@
             let svg = parts.svg;
             let geometryFailed = false;
             const info = { holed: parts.holes };
-            if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line) {
+            if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line || state.merge || state.detail) {
                 const label = state.line ? 'Drawing lines… ' : state.gap ? 'Cutting gaps… ' : 'Cutting out… ';
                 setStatus('work', label.trim());
                 try {
@@ -2281,7 +2308,7 @@
         }
         const params = {};
         // Numbers as numbers; lists stay comma-separated strings, which every snippet and the API take.
-        for (const [k, v] of q) params[k] = /^(hue|saturation|lightness|gap|line|precision)$/.test(k) ? Number(v) : v;
+        for (const [k, v] of q) params[k] = /^(hue|saturation|lightness|gap|line|merge|detail|precision)$/.test(k) ? Number(v) : v;
         const getQ = new URLSearchParams(q);
         getQ.set('url', (state.doc && state.doc.fromUrl) || 'https://example.com/icon.svg');
         const input = state.doc && !state.doc.fromUrl ? state.doc.name : 'icon.svg';
@@ -2418,6 +2445,7 @@
         const parts = [MODES[q.get('mode')] ? MODES[q.get('mode')].label : 'Colorize'];
         if (q.get('color') && MODES[q.get('mode') || 'colorize'] && MODES[q.get('mode') || 'colorize'].color) parts[0] += q.get('color') === 'auto' ? ' · auto color' : ' #' + q.get('color').toUpperCase();
         const unit = q.get('unit') === 'pct' ? ' %' : ' px';
+        if (q.get('merge') || q.get('detail')) parts.push('simplified');
         if (q.get('gap')) parts.push('gaps ' + q.get('gap') + unit);
         if (q.get('line')) parts.push('line ' + q.get('line') + unit);
         if (q.get('canvas')) parts.push(q.get('canvas').replace('x', ' × ') + (q.get('fit') !== null ? ', fit ' + q.get('fit') : ''));
@@ -2835,7 +2863,12 @@
         $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === state.unit)));
         state.gap = Math.max(0, parseFloat(q.get('gap')) || 0);
         state.line = Math.max(0, parseFloat(q.get('line')) || 0);
+        state.merge = Math.max(0, parseFloat(q.get('merge')) || 0);
+        state.detail = Math.max(0, parseFloat(q.get('detail')) || 0);
         syncRanges();
+        mergeInput.value = String(state.merge);
+        detailInput.value = String(state.detail);
+        syncSimplify(false);
         gapInput.value = String(state.gap);
         syncGap(false);
         lineInput.value = String(state.line);

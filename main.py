@@ -180,6 +180,12 @@ def extra_query(
         description="`gap`: an outline color (its visible part thin, between thicker parts of other colors) "
                     "becomes a gap, so a one-color version keeps the parts it outlined apart (like Docker's).",
         pattern="^(gap|none)$")] = None,
+    merge: Annotated[Optional[float], Query(
+        description="Simplify: original colors this close (RGB distance, 0-442) count as one part, so shading "
+                    "and highlights get no gaps or lines of their own. Try 40-80.", ge=0, le=442, examples=[60])] = None,
+    detail: Annotated[Optional[float], Query(
+        description="Simplify: pieces and holes smaller than this size squared (in `unit`s) are dropped (a hole "
+                    "fills in), so specks get no gaps or lines.", ge=0, examples=[2])] = None,
     unit: Annotated[Optional[str], Query(
         description="Unit of `gap` and `line`: `px` (default; the SVG's own units) or `pct` (percent of the "
                     "icon's larger side).", pattern="^(px|pct)$")] = None,
@@ -199,7 +205,7 @@ def extra_query(
         description="With `optimize`: decimals kept in numbers (default 3).", ge=0, le=8)] = None,
 ) -> dict:
     """Cut out, gaps, lines, canvas and SVGO: the same code as the editor (see server/shapes.py)."""
-    return {"cut": cut, "holes": holes, "outlines": outlines, "gap": gap, "line": line, "lines": lines, "keep": keep, "unit": unit, "canvas": canvas,
+    return {"cut": cut, "holes": holes, "outlines": outlines, "merge": merge, "detail": detail, "gap": gap, "line": line, "lines": lines, "keep": keep, "unit": unit, "canvas": canvas,
             "place": place, "fit": fit, "optimize": optimize, "precision": precision}
 
 
@@ -489,6 +495,8 @@ JSON_BODY_SCHEMA = {
         "unit": {"type": "string", "enum": ["px", "pct"]},
         "holes": {"type": "string", "enum": ["light", "none"], "description": "light: near-white colors become holes."},
         "outlines": {"type": "string", "enum": ["gap", "none"], "description": "gap: outline colors become gaps."},
+        "merge": {"type": "number", "minimum": 0, "maximum": 442, "description": "Simplify: colors this close (RGB distance) are one part."},
+        "detail": {"type": "number", "minimum": 0, "description": "Simplify: pieces and holes smaller than this size squared go."},
         "canvas": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "number"}}],
                    "description": "New canvas (viewBox) size: \"128x128\" or [128, 128]."},
         "place": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "number"}}],

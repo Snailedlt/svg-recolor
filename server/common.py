@@ -57,7 +57,7 @@ def _edit_list(value) -> tuple:
     return engine.parse_edit_list(str(value))
 
 
-EXTRA_FIELDS = ("cut", "holes", "outlines", "gap", "line", "lines", "keep", "unit", "canvas", "place", "fit", "optimize", "precision")
+EXTRA_FIELDS = ("cut", "holes", "outlines", "merge", "detail", "gap", "line", "lines", "keep", "unit", "canvas", "place", "fit", "optimize", "precision")
 
 
 def options(mode, color, hue, saturation, lightness, replace=None, hide=None, remove=None, **extra) -> engine.Options:

@@ -446,6 +446,37 @@
                 }
                 return false;
             };
+            // Simplify (opts.merge, an RGB distance): shades of one colour (shading, highlights,
+            // the facets of a gradient-like logo) count as one part, so they get no gaps or lines
+            // of their own. Each colour joins the largest part whose colour is within the distance.
+            const mergeD = Number(opts.merge) || 0;
+            if (mergeD > 0 && byColor.length > 1) {
+                const rgbOf = (c) => [0, 2, 4].map((i) => parseInt(String(c).slice(i, i + 2), 16));
+                const fixed = (c) => soft.has(c) || (opts.cut || []).includes(c) || (opts.keep || []).includes(c);
+                const groups = []; // [colour, [regions], rgb]
+                for (const [c, p] of [...byColor].sort((a, b) => Math.abs(b[1].area) - Math.abs(a[1].area))) {
+                    const x = rgbOf(c);
+                    const g = fixed(c) ? null : groups.find(([d, , y]) => !fixed(d) && Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) <= mergeD);
+                    if (g) g[1].push(p); else groups.push([c, [p], x]);
+                }
+                if (groups.length < byColor.length) {
+                    const was = byColor.map(([c]) => c);
+                    byColor = groups.map(([c, list]) => [c, list.length > 1 ? clean(unite(list)) : list[0]])
+                        .filter(([, q]) => q && !q.isEmpty())
+                        .sort((a, b) => was.indexOf(a[0]) - was.indexOf(b[0]));
+                }
+            }
+            // Simplify (opts.detail, a size): a piece or a hole smaller than detail x detail goes
+            // (a piece drops, a hole fills in), so small specks get no gaps or lines of their own.
+            const detail = (Number(opts.detail) || 0) * scale;
+            if (detail > 0) {
+                const least = detail * detail;
+                byColor = byColor.map(([c, q]) => {
+                    if (q.children) q.children.slice().forEach((k) => { if (Math.abs(k.area) < least) k.remove(); });
+                    else if (Math.abs(q.area) < least) return [c, null];
+                    return [c, q];
+                }).filter(([, q]) => q && !q.isEmpty() && Math.abs(q.area) > 0);
+            }
             if (soft.size) {
                 const others = byColor.filter(([c]) => !soft.has(c));
                 byColor = byColor.filter(([c, p]) => {
@@ -506,7 +537,10 @@
             // usually a sliver where two shapes of the original almost line up. Left alone, its gap or
             // lines would bite into its neighbors (a notch in Node's outer edge). It joins the
             // neighbor it borders most instead.
-            const thin = Math.max(Number(opts.gap) || 0, Number(opts.line) || 0) * scale / 2;
+            // With gaps, a part thinner than the gap itself would be cut away from both sides
+            // (SQL Server's connecting bars, the ring around GCC's egg) and the drawing would lose
+            // it: it joins its neighbour too, so the silhouette keeps it.
+            const thin = Math.max(Number(opts.gap) || 0, (Number(opts.line) || 0) / 2) * scale;
             if (thin > 0 && byColor.length > 1) {
                 for (const entry of byColor) {
                     const p = entry[1];
@@ -683,6 +717,44 @@
                 await tick();
             }
 
+            // A thin, long part (a stroke drawn as a shape: a curve, a ring, a bar) between one and
+            // three line widths wide would get a line along each side: two lines close together that
+            // read as one thick one, or a filled stripe. It gets one line down its middle instead:
+            // the part shrunk until it is one line wide.
+            if (lines && opts.centerlines !== false) {
+                const w = line * scale;
+                const shrink = (piece, d) => {
+                    try {
+                        const r = PaperOffset.offset(piece, -d, { join: 'round', insert: false });
+                        if (r && !r.isEmpty() && Math.abs(r.area) > 0 && Math.abs(r.area) < Math.abs(piece.area)) return r;
+                    } catch (err) { /* keep it as it was */ }
+                    return null;
+                };
+                for (const [, p] of byColor) {
+                    const kids = p.children ? p.children : [p];
+                    // Filled or a hole: how many of the other outlines it lies inside (even: filled).
+                    const depth = (k) => { const at = k.firstSegment && k.firstSegment.point; return at ? kids.filter((c) => c !== k && c.bounds.contains(k.bounds) && c.contains(at)).length : 0; };
+                    const filled = kids.filter((k) => depth(k) % 2 === 0);
+                    const holes = kids.filter((k) => !filled.includes(k));
+                    for (const k of filled) {
+                        const inside = holes.filter((h) => k.bounds.contains(h.bounds) && k.contains(h.firstSegment.point) && depth(h) === depth(k) + 1);
+                        const area = Math.abs(k.area) - inside.reduce((t, h) => t + Math.abs(h.area), 0);
+                        const per = k.length + inside.reduce((t, h) => t + h.length, 0);
+                        if (!(area > 0 && per > 0)) continue;
+                        const width = (2 * area) / per;
+                        if (width < 1.2 * w || width >= 3 * w || (per * per) / (4 * Math.PI * area) < 3) continue;
+                        let piece = new scope.Path({ segments: k.segments, closed: true, insert: false });
+                        if (piece.area < 0) piece.reverse();
+                        for (const h of inside) piece = piece.subtract(h, { insert: false });
+                        const center = shrink(piece, (width - w) / 2);
+                        if (!center) continue;
+                        const rest = lines.subtract(piece, { insert: false });
+                        const next = safeUnite(rest, center);
+                        if (next && !next.isEmpty()) lines = next;
+                    }
+                }
+            }
+
             // Line version: each color keeps only its part of the lines, unless it stays filled.
             if (lines) {
                 // Merge the colors that end up the same color first, then take their part of the
@@ -768,7 +840,7 @@
                 worker = null;
                 compute(input, opts, opts.onProgress).then(resolve, reject); // a worker that can't start: do it here
             };
-            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain } });
+            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain, merge: Number(opts.merge) || 0, detail: Number(opts.detail) || 0 } });
         });
     }
 
