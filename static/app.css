@@ -698,6 +698,7 @@ pre.code.fill { flex: 1; min-height: 0; white-space: pre-wrap; overflow-wrap: an
     transition: opacity .15s, background-color .15s, border-color .15s;
 }
 .copy-chip svg { width: 14px; height: 14px; }
+.side-copy { position: absolute; top: 8px; right: 10px; z-index: 2; }
 .copy-chip:hover, .copy-chip:focus-visible { opacity: 1; border-color: #4a5266; background: color-mix(in srgb, var(--code-bg) 70%, #fff 30%); }
 .copy-chip:focus-visible { outline: 2px solid var(--pick, #7c5cff); outline-offset: 2px; }
 .copy-chip.done { color: #8ee6a0; border-color: #2f6b3e; opacity: 1; }

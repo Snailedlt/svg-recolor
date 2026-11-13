@@ -179,6 +179,18 @@ test('code blocks are highlighted and copy their full text', async () => {
     }).length);
     assert.equal(overlaps, 0);
     assert.deepEqual(problems, []);
+    // Ctrl+A in a code block selects that code, not the page.
+    await page.click('#tab-btn-api');
+    await page.focus('#snippet');
+    await page.keyboard.press('Control+a');
+    assert.equal(await page.evaluate(() => String(window.getSelection()).trim()), (await page.textContent('#snippet')).trim());
+    // The code next to the picture ("With code") copies the whole SVG too.
+    await page.click('#tab-btn-preview');
+    await page.click('#view-tabs [data-view="code"], [data-view="code"]');
+    await page.locator('.code-pane .side-copy').waitFor();
+    await page.click('.code-pane .side-copy');
+    await page.locator('.code-pane .side-copy', { hasText: 'Copied' }).waitFor();
+    assert.match(await page.evaluate(() => navigator.clipboard.readText()), /^<svg[\s\S]*<\/svg>\s*$/);
 });
 
 const EDIT_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 10"><rect width="30" height="10" fill="#ffffff"/>'

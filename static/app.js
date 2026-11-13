@@ -149,9 +149,10 @@
     // right); small blocks get Copy in the button row under them. Never on the code.
     function setupCodeBlock(pre) {
         const fill = pre.classList.contains('fill');
+        const pane = pre.classList.contains('side-code'); // the code next to the picture
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = fill ? 'copy-chip' : 'btn btn-ghost btn-sm copy-btn-row';
+        btn.className = pane ? 'copy-chip side-copy' : fill ? 'copy-chip' : 'btn btn-ghost btn-sm copy-btn-row';
         btn.title = 'Copy all (or focus the code and press Ctrl+C)';
         btn.setAttribute('aria-label', 'Copy ' + (pre.getAttribute('aria-label') || 'code').toLowerCase());
         const label = document.createElement('span');
@@ -170,14 +171,29 @@
             }
         };
         btn.addEventListener('click', copy);
-        // Ctrl/Cmd+C with nothing selected copies the whole block.
+        // Ctrl/Cmd+A selects just this code (not the page); Ctrl/Cmd+C with nothing or all of it
+        // selected copies the whole of it (also what a long view leaves out).
         pre.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'c' && !String(window.getSelection())) {
+            if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+            const key = e.key.toLowerCase();
+            if (key === 'a') {
                 e.preventDefault();
-                copy();
+                const range = document.createRange();
+                range.selectNodeContents(pre);
+                const sel = window.getSelection();
+                sel.empty();
+                sel.addRange(range);
+            } else if (key === 'c') {
+                const sel = String(window.getSelection());
+                if (!sel || sel.replace(/\s+/g, '') === pre.textContent.replace(/\s+/g, '')) {
+                    e.preventDefault();
+                    copy();
+                }
             }
         });
-        if (fill) {
+        if (pane) {
+            pre.parentElement.appendChild(btn);
+        } else if (fill) {
             const box = document.createElement('div');
             box.className = 'code-box';
             const head = document.createElement('div');
@@ -200,7 +216,8 @@
         if (pre.dataset.lang) showCode(pre, pre.textContent, pre.dataset.lang);
     }
     function setCodeLang(id, text) { const el = $(id + '-lang'); if (el) el.textContent = text; }
-    $$('pre.code').forEach(setupCodeBlock);
+    $$('pre.code, pre.side-code').forEach(setupCodeBlock);
+    copySources.set('side-code', () => (state.result ? [state.result.svg, 'SVG'] : ['', '']));
 
     async function errorDetail(res) {
         const body = await res.text();
