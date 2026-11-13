@@ -63,6 +63,7 @@
         svgo: false, // optimize the result with SVGO
         recipe: null, // { name, params }: the recipe in use, shown at the top
         holes: false, // light (near-white) colors become holes, unless edited
+        outlines: false, // outline colors become gaps (the geometry finds them)
         colorAuto: false, // the color is each SVG's most prominent one (state.color holds it)
         recipeSet: null, // [{ name, suffix, params }]: the recipes of a link with several
         canvas: null, // [w, h] of a new viewBox (null = the SVG's own)
@@ -264,6 +265,7 @@
         if (state.gap) q.set('gap', String(state.gap));
         if ((state.gap || state.line) && state.unit === '%') q.set('unit', 'pct');
         if (state.holes) q.set('holes', 'light');
+        if (state.outlines) q.set('outlines', 'gap');
         if (state.svgo) q.set('optimize', '1');
         if (state.canvas) q.set('canvas', state.canvas.map(fmt).join('x'));
         if (state.fit !== null) q.set('fit', fmt(state.fit));
@@ -559,6 +561,7 @@
     $('svgo-reset').addEventListener('click', () => { svgoSettings = svgoDefaults(); renderSvgoSettings(); svgoSettingsChanged(); });
     $('svgo-toggle').addEventListener('change', (e) => { state.svgo = e.target.checked; updateOptimizeFold(); editsChanged(); });
     $('holes-toggle').addEventListener('change', (e) => { state.holes = e.target.checked; editsChanged(); });
+    $('outlines-toggle').addEventListener('change', (e) => { state.outlines = e.target.checked; editsChanged(); });
     renderSvgoSettings();
 
     let svgoWorker = null, svgoJobs = 0;
@@ -604,14 +607,15 @@
     }
     function editedSvg(doc, mapping, place = state.place) {
         const merged = Object.assign({}, mapping);
-        const hide = [], remove = [], cut = [];
+        const hide = [], remove = [], cut = [], holes = [];
         for (const [c, e] of Object.entries(editsOf(doc))) {
             if (e.op === 'replace') merged[c] = e.to.slice(1).toLowerCase();
+            else if (e.auto) holes.push(c); // light: a hole or a part, the geometry decides
             else ({ hide, remove, cut })[e.op].push(c);
         }
         const edited = Engine.edit(placed(doc, null, place), hide, remove);
         const svg = cut.length ? Engine.apply(Engine.edit(edited, [], cut), merged) : Engine.apply(edited, merged);
-        return { svg, merged, edited, cut };
+        return { svg, merged, edited, cut, holes };
     }
     // Cut out: real geometry (paper.js), loaded the first time it's needed.
     let geometryReady = null;
@@ -751,14 +755,18 @@
         const outs = new Set(doc.palette.map(([c]) => c).filter((c) => !gone.has(c)).map((c) => (merged[c] || c).toLowerCase()));
         return outs.size === 1 ? [...outs][0] : null;
     }
-    async function cutOutSvg(edited, cut, merged, onProgress, doc = state.doc) {
+    // `info.holed`: which light colors became holes (the rest stayed parts of the logo).
+    async function cutOutSvg(edited, cut, merged, onProgress, doc = state.doc, holes = [], info = {}) {
         const Geo = await loadGeometry();
         edited = await textToShapes(edited);
-        return Geo.cutOut(edited, {
+        const out = await Geo.cutOut(edited, {
             flat: doc ? flatColor(doc, merged) : null,
-            cut, map: merged, gap: state.gap, unit: state.unit, onProgress,
+            cut, holes, outlines: state.outlines, map: merged, gap: state.gap, unit: state.unit, onProgress,
             line: state.line, lineInner: state.lineInner, keep: [...state.keep],
         });
+        const m = /<!--holes:([^>]*)-->/.exec(out);
+        info.holed = m ? m[1].split(',').filter(Boolean) : [];
+        return out.replace(/<!--holes:[^>]*-->/, '');
     }
     const gapInput = $('adj-gap');
     // Gap and line sizes: px (the SVG's own units) or % of the icon. In px the slider
@@ -1039,6 +1047,8 @@
         $('svgo-toggle').checked = false;
         state.holes = false;
         $('holes-toggle').checked = false;
+        state.outlines = false;
+        $('outlines-toggle').checked = false;
         state.colorAuto = false;
         syncAutoColor();
         lineInput.value = 0;
@@ -1294,7 +1304,7 @@
         else if (doc === state.doc) place = state.place;
         const parts = editedSvg(doc, mapping, place);
         let svg = parts.svg;
-        if (parts.cut.length || state.gap || state.line) svg = await cutOutSvg(parts.edited, parts.cut, parts.merged, null, doc);
+        if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line) svg = await cutOutSvg(parts.edited, parts.cut, parts.merged, null, doc, parts.holes);
         if (state.svgo) svg = await optimizeSvg(svg);
         return svg;
     }
@@ -1692,11 +1702,12 @@
             const { merged } = parts;
             let svg = parts.svg;
             let geometryFailed = false;
-            if (parts.cut.length || state.gap || state.line) {
+            const info = { holed: parts.holes };
+            if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line) {
                 const label = state.line ? 'Drawing lines… ' : state.gap ? 'Cutting gaps… ' : 'Cutting out… ';
                 setStatus('work', label.trim());
                 try {
-                    svg = await cutOutSvg(parts.edited, parts.cut, merged, (f) => { if (id === reqId) setStatus('work', label + Math.round(f * 100) + '%'); });
+                    svg = await cutOutSvg(parts.edited, parts.cut, merged, (f) => { if (id === reqId) setStatus('work', label + Math.round(f * 100) + '%'); }, doc, parts.holes, info);
                 } catch (err) {
                     if (id !== reqId || doc !== state.doc) return;
                     // Show the rest of the edits, with the cut colors left invisible, and say why;
@@ -1717,6 +1728,10 @@
                 if (id !== reqId || doc !== state.doc) return;
             }
             const effective = editsOf(doc);
+            // Light colors that stayed parts of the logo follow the style, like any color.
+            for (const c of parts.holes) if (!info.holed.includes(c)) delete effective[c];
+            // Outline colors the geometry turned into gaps show as cut out.
+            for (const c of info.holed) if (!effective[c]) effective[c] = { op: 'cut', auto: true };
             const to = (c) => {
                 const e = effective[c];
                 return e && e.op === 'cut' ? 'cut' : e && (e.op === 'remove' || e.op === 'hide') ? 'removed' : '#' + (merged[c] || c);
@@ -2308,6 +2323,7 @@
         if (q.get('line')) parts.push('line ' + q.get('line') + unit);
         if (q.get('canvas')) parts.push(q.get('canvas').replace('x', ' × ') + (q.get('fit') !== null ? ', fit ' + q.get('fit') : ''));
         if (q.get('holes') === 'light') parts.push('light → holes');
+        if (q.get('outlines') === 'gap') parts.push('outlines → gaps');
         if (q.get('optimize')) parts.push('optimized');
         return parts.join(' · ');
     }
@@ -2690,6 +2706,8 @@
         $('svgo-toggle').checked = state.svgo;
         state.holes = q.get('holes') === 'light';
         $('holes-toggle').checked = state.holes;
+        state.outlines = q.get('outlines') === 'gap';
+        $('outlines-toggle').checked = state.outlines;
         updateOptimizeFold();
         {
             const c = (q.get('canvas') || '').split('x').map(Number);

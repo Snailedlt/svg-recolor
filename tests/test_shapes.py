@@ -248,3 +248,35 @@ def test_pale_tints_count_as_light_but_pastels_do_not():
     assert shapes.is_light("ffffff") and shapes.is_light("ebebeb") and shapes.is_light("d4eef1")  # Docker's eye
     assert not shapes.is_light("bfdbe0")  # Docker's belly shine stays
     assert not shapes.is_light("ffc0cb") and not shapes.is_light("ffd43b")  # pink, Python's yellow
+
+
+def test_light_colors_are_holes_only_where_drawn_against_other_colors(client):
+    # The white square sits on the red: a hole. The gray square stands apart (CMake's middle): a part.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><rect width="20" height="20" fill="#e44d26"/>'
+           '<rect x="5" y="5" width="10" height="10" fill="#ffffff"/><rect x="25" y="5" width="10" height="10" fill="#cccccc"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&holes=light&format=json", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    data = res.json()
+    to = {p["from"]: p["to"] for p in data["palette"]}
+    assert to["#ffffff"] == "cut" and to["#cccccc"] == "#000000", to
+    (_, d), = paths(data["svg"])
+    assert d.count("M") + d.count("m") == 3, "red with a hole, and the gray part: " + d
+    assert "holes:" not in data["svg"]
+
+
+def test_outline_colors_become_gaps(client):
+    # Two blue boxes in a dark frame, a dark stripe between them: the dark is an outline.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="10" y="10" width="108" height="108" fill="#3a4d54"/>'
+           '<rect x="12" y="12" width="51" height="104" fill="#019bc6"/><rect x="65" y="12" width="51" height="104" fill="#00acd3"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&outlines=gap&format=json", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert {p["from"]: p["to"] for p in data["palette"]}["#3a4d54"] == "cut"
+    (_, d), = paths(data["svg"])
+    assert d.count("M") + d.count("m") == 2, "the two boxes, apart: " + d
+    # Line art (thin lines that are the drawing, by a thick part) isn't an outline.
+    art = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="100" cy="64" r="20" fill="#019bc6"/>'
+           '<path d="M10 20H80M10 64H80M10 108H80" stroke="#00bd9f" stroke-width="2" fill="none"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&outlines=gap&format=json", content=art, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    assert {p["from"]: p["to"] for p in res.json()["palette"]}["#00bd9f"] != "cut"

@@ -51,8 +51,11 @@ On top of any mode, single colors (the original ones, as listed by `/api/palette
 | Remove | `remove=ffffff,...` | Shapes painted with the color are deleted, including ones that inherit it from a group or a CSS class. A shape keeps its fill or stroke when only the other is removed. Shapes inside `<defs>`, `<clipPath>`, `<mask>` and similar are only hidden, never deleted. |
 
 A one-color icon, like a devicon `plain` version, is `mode=solid&color=auto&holes=light` (Solid, and white or
-near-white parts become holes; in the editor, **Light colors become holes** under Color). `remove=ffffff` instead
-just drops a white background.
+near-white parts become holes where they're drawn against other colors; in the editor, **Light colors become holes**
+under Color). A light part standing on its own, like CMake's gray triangle, stays. Add `outlines=gap` (**Outline colors
+become gaps**) for logos drawn with an outline color, like Docker: a color whose visible part is thin and runs between
+other parts becomes a gap, so the parts stay apart; in a line version it is the line drawing itself. `remove=ffffff`
+instead just drops a white background.
 
 Three more edits need path geometry. The editor runs them in the browser, and the API and MCP server run the very
 same code (paper.js and SVGO in QuickJS, with picosvg reading the shapes), so the results match:

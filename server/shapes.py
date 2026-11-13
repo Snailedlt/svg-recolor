@@ -70,6 +70,7 @@ def svgo_config(precision: int = SVGO_PRECISION) -> dict:
 class Extras:
     cut: tuple = ()  # colors that become gaps
     holes: bool = False  # light colors (near white) become gaps too, unless edited
+    outlines: bool = False  # outline colors (thin, between thicker parts) become gaps, or the lines
     gap: float = 0  # gap width between colors
     line: float = 0  # line version: band width along the edges
     line_inner: bool = True  # lines also between colors
@@ -88,7 +89,7 @@ class Extras:
 
     @property
     def active(self) -> bool:
-        return self.geometry or self.holes or self.canvas is not None or self.place is not None or self.fit is not None or self.optimize
+        return self.geometry or self.holes or self.outlines or self.canvas is not None or self.place is not None or self.fit is not None or self.optimize
 
 
 def _number(name: str, value, lo: float, hi: float) -> float:
@@ -130,7 +131,7 @@ def is_light(color: str) -> bool:
 
 
 def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None, unit=None,
-                 canvas=None, place=None, fit=None, optimize=None, precision=None, holes=None) -> Extras:
+                 canvas=None, place=None, fit=None, optimize=None, precision=None, holes=None, outlines=None) -> Extras:
     """Extras from request values (strings from query strings and forms, or JSON values)."""
     ex = Extras()
     ex.cut = tuple(engine._edit_key(c) for c in edit_list(cut))
@@ -139,6 +140,11 @@ def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None
         if holes is not True and v not in ("light", "none"):
             raise engine.RecolorError("'holes' must be 'light' (near-white colors become holes) or 'none'.")
         ex.holes = holes is True or v == 'light'
+    if outlines not in (None, "", False):
+        v = str(outlines).strip().lower()
+        if outlines is not True and v not in ("gap", "none"):
+            raise engine.RecolorError("'outlines' must be 'gap' (outline colors become gaps) or 'none'.")
+        ex.outlines = outlines is True or v == "gap"
     ex.keep = tuple(engine._edit_key(c) for c in edit_list(keep))
     if unit not in (None, ""):
         u = str(unit).strip().lower()
@@ -495,26 +501,32 @@ def recolor(svg: str, opts: engine.Options) -> engine.Result:
     counts = engine.extract_palette(norm)
     mapping = {**engine.map_colors(list(counts), opts), **{c: v for c, v in opts.replace.items() if c in counts}}
     canvas, place = ex.canvas, ex.place
-    # holes=light: near-white colors become holes too, unless they're edited some other way.
+    # holes=light: near-white colors not edited otherwise become holes where they're drawn against
+    # other colors, and stay parts of the logo where they stand on their own (geometry.js decides).
     edited_colors = set(opts.replace) | set(opts.hide) | set(opts.remove) | set(ex.cut)
-    cut = tuple(ex.cut) + tuple(c for c in counts if ex.holes and is_light(c) and c not in edited_colors)
+    holes = tuple(c for c in counts if ex.holes and is_light(c) and c not in edited_colors)
+    cut = tuple(ex.cut)
+    holed: set = set()
     if ex.fit is not None:
         canvas = canvas or orig_box(norm)[2:]
-        hidden = tuple(opts.hide) + tuple(opts.remove) + cut
+        hidden = tuple(opts.hide) + tuple(opts.remove) + cut + holes
         place = fit_place(engine.apply_edits(norm, remove=hidden), canvas, ex.fit, deadline)
     edited = engine.apply_edits(placed(norm, canvas, place), hide=opts.hide, remove=opts.remove)
-    if cut or ex.gap or ex.line:
-        geo = {"cut": list(cut), "map": mapping, "gap": ex.gap, "line": ex.line, "lineInner": ex.line_inner,
-               "keep": list(ex.keep), "unit": ex.unit, "flat": None}
+    if cut or holes or ex.outlines or ex.gap or ex.line:
+        geo = {"cut": list(cut), "holes": list(holes), "outlines": ex.outlines, "map": mapping, "gap": ex.gap, "line": ex.line,
+               "lineInner": ex.line_inner, "keep": list(ex.keep), "unit": ex.unit, "flat": None}
         # Everything one color (like Solid)? Then gradients and transparency don't matter.
-        gone = set(opts.hide) | set(opts.remove) | set(cut)
+        gone = set(opts.hide) | set(opts.remove) | set(cut) | set(holes)
         outs = {mapping.get(c, c) for c in counts if c not in gone}
         flat = next(iter(outs)) if len(outs) == 1 else None
         geo["flat"] = flat
         out = js("SvgGeometry.compute(args[0], args[1])", read_shapes(edited, flat=flat), geo, deadline=deadline)
+        m = re.search(r"<!--holes:([^>]*)-->", out)
+        holed = set(filter(None, m.group(1).split(","))) if m else set()
+        out = re.sub(r"<!--holes:[^>]*-->", "", out)
     else:
         out = engine.apply_mapping(edited, mapping)
     if ex.optimize:
         out = js("SVGO.optimize(args[0], args[1]).data", out, svgo_config(ex.precision), deadline=deadline).rstrip() + "\n"
     return engine.Result(svg=out, mapping=mapping, counts=counts, hidden=set(opts.hide) & set(counts),
-                         removed=set(opts.remove) & set(counts), cut=set(cut) & set(counts))
+                         removed=set(opts.remove) & set(counts), cut=(set(cut) | holed) & set(counts))

@@ -359,6 +359,76 @@
             // Sizes are in the SVG's own units (px), or with unit '%' in percent of its larger side.
             const scale = opts.unit === '%' ? size / 100 : 1;
 
+            // "Light colors become holes" (opts.holes: the light colors): a light color is a hole
+            // where it's drawn against other colors (the "5" on HTML5's shield, Docker's eye, a white
+            // background) and stays a part of the logo where it stands on its own (CMake's gray
+            // triangle). A hole loses its visible part, as a cut-out does (it still covers what's below).
+            const soft = new Set((opts.holes || []).map((c) => String(c).toLowerCase()));
+            const holed = [];
+            const asLines = []; // outline colors that are a line version's lines as they are
+            const eps = 0.004 * size;
+            // Does p border q (within eps)? Sampled along p's outlines.
+            const touch = (p, q) => {
+                if (!q.bounds.expand(eps * 2).intersects(p.bounds)) return false;
+                for (const k of (p.children ? p.children : [p])) {
+                    const len = k.length;
+                    const count = Math.max(24, Math.min(200, Math.round(len / eps)));
+                    for (let i = 0; i < count && len > 0; i++) {
+                        const at = (len * (i + 0.5)) / count;
+                        const pt = k.getPointAt(at), n = k.getNormalAt(at);
+                        if (pt && n && (q.contains(pt.add(n.multiply(eps))) || q.contains(pt.subtract(n.multiply(eps))))) return true;
+                    }
+                }
+                return false;
+            };
+            if (soft.size) {
+                const others = byColor.filter(([c]) => !soft.has(c));
+                byColor = byColor.filter(([c, p]) => {
+                    if (!soft.has(c) || !others.some(([, q]) => touch(p, q))) return true;
+                    holed.push(c);
+                    return false;
+                });
+            }
+            // opts.outlines: an outline color (its visible part thin, at most 2% of the icon wide on
+            // average, running between parts of other colors at least twice as wide) becomes a gap,
+            // so a one-color version keeps the parts it outlined apart (Docker's dark outline).
+            if (opts.outlines && byColor.length > 2) {
+                const width = (p) => { const kids = p.children ? p.children : [p]; const len = kids.reduce((t, k) => t + k.length, 0); return len > 0 ? (2 * Math.abs(p.area)) / len : 0; };
+                const widths = new Map(byColor.map(([c, p]) => [c, width(p)]));
+                const keepColors = new Set(opts.keep || []);
+                // Of p's outline, the share that runs against (within eps of) one of `parts`; and
+                // how many of them it meets.
+                const against = (p, parts) => {
+                    let near = 0, all = 0;
+                    const met = new Set();
+                    for (const k of (p.children ? p.children : [p])) {
+                        const len = k.length;
+                        const count = Math.max(8, Math.min(120, Math.round(len / (4 * eps))));
+                        for (let i = 0; i < count && len > 0; i++) {
+                            const at = (len * (i + 0.5)) / count;
+                            const pt = k.getPointAt(at), n = k.getNormalAt(at);
+                            if (!pt || !n) continue;
+                            all++;
+                            const hit = [pt.add(n.multiply(eps)), pt.subtract(n.multiply(eps))].map((q) => parts.findIndex(([, r]) => r.bounds.contains(q) && r.contains(q))).find((j) => j >= 0);
+                            if (hit !== undefined) { near++; met.add(hit); }
+                        }
+                    }
+                    return { share: all ? near / all : 0, met: met.size };
+                };
+                // An outline runs against other colors for much of its length (line art, whose thin
+                // lines are the drawing, doesn't), between at least two parts, some much thicker.
+                const outline = byColor.filter(([c]) => !keepColors.has(c) && !(opts.cut || []).includes(c) && widths.get(c) <= 0.02 * size).map(([c, p]) => {
+                    const near = byColor.filter(([d, q]) => d !== c && q.bounds.expand(eps * 2).intersects(p.bounds));
+                    if (near.length < 2 || !near.some(([d]) => widths.get(d) >= 2 * widths.get(c))) return null;
+                    const { share, met } = against(p, near);
+                    return share >= 0.4 && met >= 2 ? c : null;
+                }).filter(Boolean);
+                if (outline.length && outline.length < byColor.length) {
+                    if (Number(opts.line) > 0) asLines.push(...outline); // a line version: they are the lines
+                    else { byColor = byColor.filter(([c]) => !outline.includes(c)); holed.push(...outline); }
+                }
+            }
+
             // A part thinner than half the gap or line (on average) can't show as a part of its own:
             // usually a sliver where two shapes of the original almost line up. Left alone, its gap or
             // lines would bite into its neighbors (a notch in Node's outer edge). It joins the
@@ -415,7 +485,7 @@
                     // or with pieces missing; those fail here and get built the slow, reliable way.
                     const len = path.length;
                     const samples = [];
-                    const count = Math.max(24, Math.min(400, Math.round(len / half)));
+                    const count = Math.max(12, Math.min(120, Math.round(len / (4 * half))));
                     for (let i = 0; i < count && len > 0; i++) {
                         const at = (len * (i + 0.5)) / count;
                         const pt = path.getPointAt(at), n = path.getNormalAt(at);
@@ -428,7 +498,7 @@
                     const sane = (r) => {
                         if (!r || Math.abs(r.area) > 1.35 * len * 2 * half + 4 * Math.PI * half * half) return false;
                         let misses = 0;
-                        for (const sm of samples) if (r.contains(sm.pt) !== sm.in && ++misses > 0) return false;
+                        for (const sm of samples) if (r.contains(sm.pt) !== sm.in && ++misses > 1) return false;
                         return true;
                     };
                     const band = () => {
@@ -485,6 +555,12 @@
                         report((opts.gap > 0 ? 0.15 : 0.3) + (opts.gap > 0 ? 0.25 : 0.6) * (i + 1) / byColor.length);
                         await tick();
                     }
+                }
+                // Outline colors are the line drawing as they are. The other colors' lines along them
+                // (the double line around Docker, its filled container slats) give way to them.
+                if (asLines.length) {
+                    const drawn = unite(byColor.filter(([c]) => asLines.includes(c)).map(([, p]) => p.clone({ insert: false })));
+                    lines = lines.subtract(stroke(drawn, w / 2), { insert: false }).unite(drawn, { insert: false });
                 }
             }
 
@@ -556,7 +632,9 @@
             const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             const sizeAttrs = (width ? ' width="' + esc(width) + '"' : '') + (height ? ' height="' + esc(height) + '"' : '');
             const vbAttr = viewBox ? ' viewBox="' + esc(viewBox) + '"' : '';
-            return '<svg xmlns="http://www.w3.org/2000/svg"' + vbAttr + sizeAttrs + '>' + paths.join('') + '</svg>\n';
+            // Which light colors became holes, for the caller (it takes this comment out again).
+            const note = soft.size || opts.outlines ? '<!--holes:' + holed.join(',') + '-->' : '';
+            return '<svg xmlns="http://www.w3.org/2000/svg"' + vbAttr + sizeAttrs + '>' + paths.join('') + note + '</svg>\n';
         } finally {
             scope.project.remove();
         }
@@ -590,7 +668,7 @@
                 worker = null;
                 compute(input, opts, opts.onProgress).then(resolve, reject); // a worker that can't start: do it here
             };
-            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null } });
+            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines } });
         });
     }
 
