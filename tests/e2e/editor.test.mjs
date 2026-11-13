@@ -485,9 +485,15 @@ test('line version: only the edges stay, colors can stay filled', async () => {
     await page.mouse.click(pt.x, pt.y);
     await page.uncheck('#color-edit-keep');
     await page.keyboard.press('Escape');
-    await page.click('#line-inner-row .switch');
+    await page.click('#line-mode [data-lines="outer"]');
     await page.waitForURL(/lines=outer/);
     assert.deepEqual(await hitsAt(points), [true, false, false, false, false]);
+    // Lines of the one-colour version: made after the gaps, so each part gets its own outline.
+    await page.click('#line-mode [data-lines="plain"]');
+    await page.waitForURL(/lines=plain/);
+    assert.equal(await page.getAttribute('#line-mode [data-lines="plain"]', 'aria-pressed'), 'true');
+    await page.click('#line-mode [data-lines="outer"]');
+    await page.waitForURL(/lines=outer/);
     await page.click('#tab-btn-api');
     assert.match(await page.textContent('#snippet'), /line=8.*lines=outer|lines=outer.*line=8/, 'the API draws lines too');
     assert.deepEqual(problems, []);

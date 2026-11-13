@@ -167,8 +167,9 @@ def extra_query(
         description="Make a line version (like devicon's line icons): only a band of this width along the edges "
                     "is kept (in `unit`s).", ge=0, examples=[3])] = None,
     lines: Annotated[Optional[str], Query(
-        description="With `line`: `all` (default) also draws lines between colors, `outer` only the outline.",
-        pattern="^(all|outer)$")] = None,
+        description="With `line`: `all` (default) also draws lines between colors, `outer` only the outline, "
+                    "`plain` the outlines of the one-colour version (made first, with its holes and gaps).",
+        pattern="^(all|outer|plain)$")] = None,
     keep: Annotated[Optional[str], Query(
         description="With `line`: colors that stay filled, comma-separated.", examples=["ffffff"])] = None,
     holes: Annotated[Optional[str], Query(
@@ -482,7 +483,7 @@ JSON_BODY_SCHEMA = {
                 "description": "Colors that become real gaps (one path per color)."},
         "gap": {"type": "number", "minimum": 0, "description": "Gap width where two original colors meet."},
         "line": {"type": "number", "minimum": 0, "description": "Line version: band width along the edges."},
-        "lines": {"type": "string", "enum": ["all", "outer"]},
+        "lines": {"type": "string", "enum": ["all", "outer", "plain"]},
         "keep": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
                  "description": "With line: colors that stay filled."},
         "unit": {"type": "string", "enum": ["px", "pct"]},

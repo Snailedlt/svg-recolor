@@ -300,3 +300,30 @@ def test_lighter_thin_parts_are_not_outlines(client):
         res = client.post("/api/recolor?mode=solid&color=000000&outlines=gap&format=json", content=svg(stripe), headers=SVG_CT)
         assert res.status_code == 200, res.text
         assert ({p["from"]: p["to"] for p in res.json()["palette"]}[stripe] == "cut") is cut, stripe
+
+
+def test_lines_of_the_one_colour_version(client):
+    # Two touching squares of different colours, a gap between them: lines=plain outlines each part
+    # (two rings), where lines=outer draws one ring around both.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="4" y="34" width="60" height="60" fill="#e44d26"/>'
+           '<rect x="64" y="34" width="60" height="60" fill="#f16529"/></svg>')
+    def rings(q):
+        res = client.post(f"/api/recolor?mode=solid&color=000000&line=2&{q}", content=svg, headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        (_, d), = paths(res.text)
+        return d.count("M") + d.count("m")
+    assert rings("lines=outer") == 2  # one ring: its outside and its hole
+    assert rings("lines=plain&gap=4") == 4  # two rings
+    assert client.post("/api/recolor?line=2&lines=nope", content=svg, headers=SVG_CT).status_code in (400, 422)
+
+
+def test_a_spike_in_an_outline_does_not_fill_a_line_version(client):
+    # An outline that runs along a curve and straight back (left where two shapes shared an edge).
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill="#1867c0" d="M128.063 8.565 96.054 '
+           '64.031l-32.022 55.468S91.796 48.396 79.692 8.566c12.104 39.831-15.66 110.933-15.66 110.933L39.853 77.596l39.839-69.03z"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&line=1", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    from picosvg.svg_pathops import skia_path
+    from picosvg.svg_types import SVGPath
+    (_, d), = paths(res.text)
+    assert abs(skia_path(SVGPath(d=d).as_cmd_seq(), "nonzero").area) < 1500, "lines, not the filled shape (about 4350)"

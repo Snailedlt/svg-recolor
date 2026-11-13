@@ -71,6 +71,7 @@
         fit: null, // auto Fit: padding (each SVG is fitted to the canvas), or null
         place: null, // [x, y, scale]: where the original viewBox's top-left lands, and its scale (null = centered, 100 %)
         lineInner: true, // lines also between colors, not just around the whole shape
+        linePlain: false, // lines of the one-colour version (made first) instead
         keep: new Set(), // colors that stay filled in the line version
     };
     const mapCache = new Map();
@@ -289,7 +290,8 @@
         else if (state.place) q.set('place', state.place.map(fmt).join(','));
         if (state.line) {
             q.set('line', String(state.line));
-            if (!state.lineInner) q.set('lines', 'outer');
+            if (state.linePlain) q.set('lines', 'plain');
+            else if (!state.lineInner) q.set('lines', 'outer');
             if (state.keep.size) q.set('keep', [...state.keep].join(','));
         }
         return q;
@@ -459,7 +461,7 @@
     function updateFolds() {
         const shape = [];
         if (state.gap) shape.push('gaps ' + unitText(state.gap));
-        if (state.line) shape.push((state.lineInner ? 'line ' : 'outline ') + unitText(state.line));
+        if (state.line) shape.push((state.linePlain ? 'one-color line ' : state.lineInner ? 'line ' : 'outline ') + unitText(state.line));
         $('shape-sub').textContent = shape.length ? shape.join(' · ') : 'gaps and line versions';
         $('shape-step').classList.toggle('active', shape.length > 0);
         const placedNow = !!(state.canvas || state.place);
@@ -779,7 +781,7 @@
         const out = await Geo.cutOut(edited, {
             flat: doc ? flatColor(doc, merged) : null,
             cut, holes, outlines: state.outlines, map: merged, gap: state.gap, unit: state.unit, onProgress,
-            line: state.line, lineInner: state.lineInner, keep: [...state.keep],
+            line: state.line, lineInner: state.lineInner, linePlain: state.linePlain, keep: [...state.keep],
         });
         const m = /<!--holes:([^>]*)-->/.exec(out);
         info.holed = m ? m[1].split(',').filter(Boolean) : [];
@@ -843,14 +845,19 @@
     const lineInput = $('adj-line');
     function syncLine(read = true) {
         if (read) state.line = Math.max(0, Math.min(parseFloat(lineInput.max), parseFloat(lineInput.value) || 0));
-        state.lineInner = $('line-inner').checked;
+        $$('#line-mode button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lines === (state.linePlain ? 'plain' : state.lineInner ? 'all' : 'outer'))));
         $('adj-line-out').textContent = unitText(state.line);
         $('line-inner-row').hidden = !state.line;
         updateFolds();
         if (!editPanel.hidden) $('color-edit-keep-row').hidden = !state.line;
     }
     lineInput.addEventListener('input', () => { syncLine(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
-    $('line-inner').addEventListener('change', () => { syncLine(false); editsChanged(); });
+    $$('#line-mode button').forEach((b) => b.addEventListener('click', () => {
+        state.lineInner = b.dataset.lines !== 'outer';
+        state.linePlain = b.dataset.lines === 'plain';
+        syncLine(false);
+        editsChanged();
+    }));
     function settingsChanged() {
         scheduleThumbs();
         updateSnippet();
@@ -1069,7 +1076,8 @@
         state.colorAuto = false;
         syncAutoColor();
         lineInput.value = 0;
-        $('line-inner').checked = true;
+        state.lineInner = true;
+        state.linePlain = false;
         state.keep.clear();
         syncLine();
         syncAdjust(false);
@@ -2831,7 +2839,8 @@
         gapInput.value = String(state.gap);
         syncGap(false);
         lineInput.value = String(state.line);
-        $('line-inner').checked = q.get('lines') !== 'outer';
+        state.lineInner = q.get('lines') !== 'outer';
+        state.linePlain = q.get('lines') === 'plain';
         state.keep.clear();
         for (const v of (q.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }
         syncLine(false);

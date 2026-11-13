@@ -74,6 +74,7 @@ class Extras:
     gap: float = 0  # gap width between colors
     line: float = 0  # line version: band width along the edges
     line_inner: bool = True  # lines also between colors
+    line_plain: bool = False  # lines of the one-colour version (after holes, outline gaps, gaps)
     keep: tuple = ()  # colors that stay filled in the line version
     unit: str = "px"  # gap and line sizes: px (the SVG's units) or % of the icon
     canvas: Optional[tuple] = None  # (w, h) of a new viewBox
@@ -158,9 +159,11 @@ def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None
         ex.line = _number("line", line, 0, hi)
     if lines not in (None, ""):
         v = str(lines).strip().lower()
-        if v not in ("all", "outer"):
-            raise engine.RecolorError("'lines' must be 'all' (also between colors) or 'outer' (just the outline).")
-        ex.line_inner = v == "all"
+        if v not in ("all", "outer", "plain"):
+            raise engine.RecolorError("'lines' must be 'all' (also between colors), 'outer' (just the outline) "
+                                      "or 'plain' (the outlines of the one-colour version).")
+        ex.line_inner = v != "outer"
+        ex.line_plain = v == "plain"
     if canvas not in (None, ""):
         w, h = _numbers("canvas", canvas, 2, "128x128", "x")
         if w <= 0 or h <= 0:
@@ -523,7 +526,7 @@ def recolor(svg: str, opts: engine.Options) -> engine.Result:
     edited = engine.apply_edits(placed(norm, canvas, place), hide=opts.hide, remove=opts.remove)
     if cut or holes or ex.outlines or ex.gap or ex.line:
         geo = {"cut": list(cut), "holes": list(holes), "outlines": ex.outlines, "map": mapping, "gap": ex.gap, "line": ex.line,
-               "lineInner": ex.line_inner, "keep": list(ex.keep), "unit": ex.unit, "flat": None}
+               "lineInner": ex.line_inner, "linePlain": ex.line_plain, "keep": list(ex.keep), "unit": ex.unit, "flat": None}
         # Everything one color (like Solid)? Then gradients and transparency don't matter.
         gone = set(opts.hide) | set(opts.remove) | set(cut) | set(holes)
         outs = {mapping.get(c, c) for c in counts if c not in gone}

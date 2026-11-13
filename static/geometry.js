@@ -311,6 +311,31 @@
         }
     }
 
+    // A zero-width spike: an outline that runs along a curve and straight back (boolean steps leave
+    // these where two shapes share an edge, like the two blues of Vuetify merged in a one-colour
+    // version). It encloses nothing but confuses widths and outlines (a line version filled the
+    // shape in). Fold each one away: drop the tip and the point it returns to.
+    function despike(item) {
+        for (const k of (item.children ? item.children : [item])) {
+            for (let guard = 0; guard < 500 && k.segments && k.segments.length > 3; guard++) {
+                const cs = k.curves;
+                let hit = -1;
+                for (let i = 0; i < cs.length; i++) {
+                    const a = cs[i], b = cs[(i + 1) % cs.length];
+                    const tol = 1e-3 * Math.max(1, a.length);
+                    if (a.point1.getDistance(b.point2) < tol && Math.abs(a.length - b.length) < tol
+                        && a.getPointAtTime(0.5).getDistance(b.getPointAtTime(0.5)) < tol) { hit = i; break; }
+                }
+                if (hit < 0) break;
+                const n = k.segments.length;
+                const start = k.segments[hit], tip = (hit + 1) % n, back = (hit + 2) % n;
+                start.handleOut = k.segments[back].handleOut.clone(); // the curve after the spike starts here
+                for (const j of [tip, back].sort((x, y) => y - x)) k.segments[j].remove();
+            }
+        }
+        return item;
+    }
+
     async function compute(input, opts, progress) {
         const report = progress || (() => {});
         const { shapes: raw, viewBox, width, height, bounds } = input;
@@ -327,6 +352,7 @@
                 // A fill closes every outline, `z` or not; lines and gaps need them closed too, or the
                 // missing last edge gets no band (Android's arm, head and eyes).
                 path.children.forEach((k) => { k.closed = true; });
+                despike(path);
                 return { path, color };
             });
 
@@ -353,6 +379,7 @@
             // Hairline slivers (outlines on average under 0.02 units wide) are rounding left
             // over where colors meet. Invisible, but lines and gaps would outline them.
             const clean = (p) => {
+                if (p) despike(p);
                 if (p && p.children) p.children.slice().forEach((k) => { if (k.length > 0 && (2 * Math.abs(k.area)) / k.length < 0.02) k.remove(); });
                 return p;
             };
@@ -437,7 +464,7 @@
                     return share >= 0.4 && met >= 2 && outside <= 0.45 && darker ? c : null;
                 }).filter(Boolean);
                 if (outline.length && outline.length < byColor.length) {
-                    if (Number(opts.line) > 0) asLines.push(...outline); // a line version: they are the lines
+                    if (Number(opts.line) > 0 && !opts.linePlain) asLines.push(...outline); // a line version: they are the lines
                     else { outline.forEach((c) => splitOutlines.set(c, widths.get(c))); holed.push(...outline); }
                 }
             }
@@ -568,7 +595,7 @@
             // lineInner) a band centered on every boundary between two colors.
             const line = Number(opts.line) || 0;
             let lines = null;
-            if (line > 0 && byColor.length) {
+            if (line > 0 && byColor.length && !opts.linePlain) {
                 if (!PaperOffset) throw new GeometryError('Lines need the offset library, which did not load.');
                 const w = line * scale;
                 const whole = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
@@ -611,6 +638,17 @@
                 }).filter(([, p]) => !p.isEmpty());
             }
 
+            // linePlain: the lines of the one-colour version. Made after holes, outline gaps and
+            // gaps, so whatever the plain version shows apart gets its own outline (the way
+            // devicon's tools make line icons: the plain shape, outlined inward).
+            if (line > 0 && byColor.length && opts.linePlain) {
+                if (!PaperOffset) throw new GeometryError('Lines need the offset library, which did not load.');
+                const whole = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
+                lines = whole.intersect(stroke(whole, line * scale), { insert: false });
+                report(0.9);
+                await tick();
+            }
+
             // Line version: each color keeps only its part of the lines, unless it stays filled.
             if (lines) {
                 // Merge the colors that end up the same color first, then take their part of the
@@ -651,6 +689,7 @@
             for (const color of outColors) {
                 const merged = unite(outRegions.get(color));
                 if (!merged || merged.isEmpty()) continue;
+                despike(merged);
                 orient(merged); // outer shapes clockwise, holes the other way (icon fonts fill nonzero)
                 paths.push('<path fill="#' + color + '" d="' + merged.getPathData(null, PRECISION) + '"/>');
             }
@@ -694,7 +733,7 @@
                 worker = null;
                 compute(input, opts, opts.onProgress).then(resolve, reject); // a worker that can't start: do it here
             };
-            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines } });
+            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain } });
         });
     }
 
@@ -805,7 +844,10 @@
             const gray = (c) => { const x = rgb(c); return Math.max(...x) - Math.min(...x) < 40; };
             const score = (c) => pool.reduce((sum, [d, n]) => sum + (near(c, d) ? n : 0), 0) * (gray(c) ? 1 / 3 : 1);
             pool.sort((a, b) => score(b[0]) - score(a[0]) || b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
-            return pool[0][0];
+            // A one-colour icon has to show on white: skip pale colours (HSL lightness over 72%,
+            // like GCC's peach egg) when there's a darker one.
+            const lightness = (c) => { const x = rgb(c); return (Math.max(...x) + Math.min(...x)) / 510; };
+            return (pool.find(([c]) => lightness(c) <= 0.72) || pool[0])[0];
         } finally {
             scope.project.remove();
         }

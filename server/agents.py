@@ -79,7 +79,8 @@ Base URL: {base}
   - `gap=2`: a gap of that width wherever two original colors meet. For logos whose parts just touch.
   - `line=3`: a line version (like devicon's line icons), only a band of that width along the edges.
     Devicon's line icons mostly use about 1 unit on the 128 canvas: `line=1` with `canvas=128x128`.
-    `lines=outer` draws just the outline (default `all`: also between colors); `keep=ffffff,...` stays filled.
+    `lines=outer` draws just the outline (default `all`: also between colors); `lines=plain` outlines the
+    one-colour version instead (made first, with its holes and gaps); `keep=ffffff,...` stays filled.
   - `unit`: `px` (default; the SVG's own units) or `pct` (percent of the icon) for `gap` and `line`.
   - `canvas=128x128`: a new viewBox size, drawing centered. `place=x,y,scale` moves and scales it;
     `fit=1` scales and centers the visible drawing (strokes included) with that padding.
@@ -147,8 +148,8 @@ MCP_TOOLS = [
                         "description": "Cut a gap of this width wherever two original colors meet (in `unit`s). With solid, the parts stay apart."},
                 "line": {"type": "number", "minimum": 0,
                          "description": "Make a line version (like devicon's line icons): only a band of this width along the edges is kept."},
-                "lines": {"type": "string", "enum": ["all", "outer"],
-                          "description": "With line: 'all' (default) also between colors, 'outer' only the outline."},
+                "lines": {"type": "string", "enum": ["all", "outer", "plain"],
+                          "description": "With line: 'all' (default) also between colors, 'outer' only the outline, 'plain' the outlines of the one-colour version (made first, with its holes and gaps)."},
                 "keep": {"type": "array", "items": {"type": "string"}, "description": "With line: original colors that stay filled."},
                 "holes": {"type": "string", "enum": ["light", "none"],
                           "description": "'light': near-white colors become holes (cut out), unless edited. With mode solid: a one-color icon whose white parts stay see-through."},

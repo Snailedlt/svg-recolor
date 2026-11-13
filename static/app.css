@@ -552,6 +552,10 @@ kbd {
 .color-edit input[type="checkbox"] { accent-color: var(--pick); margin: 0; }
 .line-inner-row { margin: -2px 0 0; }
 .unit-row { margin: 2px 0 0; }
+.line-mode-row { display: grid; gap: 6px; }
+.line-mode-row[hidden] { display: none; }
+.line-mode-label { font-size: 0.8rem; color: var(--text-muted); }
+#line-mode button { font-size: 0.76rem; }
 .holes-row { margin-top: 10px; }
 .auto-color { flex: none; align-self: stretch; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-muted); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
 .auto-color:hover { color: var(--text); border-color: var(--border-strong); }
