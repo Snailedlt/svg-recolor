@@ -847,6 +847,39 @@ test('color Auto: each SVG its most prominent color, until you pick one', async 
     assert.deepEqual(problems, []);
 });
 
+test('a link with several recipes: switch between them, every SVG in every recipe in one ZIP', async () => {
+    const { page, problems } = await open();
+    const run = (q) => 'run=' + encodeURIComponent(q);
+    await page.goto(BASE + '/?' + [run('mode=solid&color=auto&holes=light&canvas=128x128&fit=0&recipe=Devicon plain&suffix=plain'),
+        run('mode=solid&color=auto&holes=light&line=1&canvas=128x128&fit=0&recipe=Devicon line&suffix=line')].join('&'));
+    await page.locator('#recipe-set:not([hidden])').waitFor();
+    assert.equal(await page.textContent('#recipe-banner-name'), 'Devicon plain');
+    assert.equal(await page.locator('#recipe-set-list button').count(), 2);
+    assert.equal(await page.isVisible('#recipe-banner-edited'), false, 'not edited: the same settings in another order');
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#e44d26"/>'
+        + '<rect x="10" y="10" width="20" height="20" fill="#ffffff"/></svg>';
+    await page.setInputFiles('#files', [{ name: 'docker-original.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(svg) }]);
+    await page.locator('#status-text', { hasText: /^Solid #E44D26/ }).waitFor();
+    // Switch to the second recipe: its settings, and the link keeps both.
+    await page.click('#recipe-set-list button:nth-child(2)');
+    await page.waitForURL(/line=1/);
+    assert.equal(await page.textContent('#recipe-banner-name'), 'Devicon line');
+    assert.equal(new URL(page.url()).searchParams.getAll('run').length, 2);
+    const [download] = await Promise.all([page.waitForEvent('download'), page.click('#recipe-set-zip')]);
+    const { execFileSync } = await import('node:child_process');
+    const files = JSON.parse(execFileSync(process.env.PYTHON || 'python3', ['-c', `
+import json, sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+print(json.dumps({n: z.read(n).decode() for n in z.namelist()}))`, await download.path()], { encoding: 'utf8' }));
+    assert.deepEqual(Object.keys(files).sort(), ['docker-line.svg', 'docker-plain.svg']);
+    assert.match(files['docker-plain.svg'], /viewBox="0 0 128 128"/);
+    assert.ok(files['docker-line.svg'].length !== files['docker-plain.svg'].length, 'each in its own recipe');
+    // Afterwards, your settings are back.
+    await page.waitForURL(/line=1/);
+    assert.equal(await page.textContent('#recipe-banner-name'), 'Devicon line');
+    assert.deepEqual(problems, []);
+});
+
 test('cut out explains what it can\'t do instead of guessing', async () => {
     const { page } = await open();
     await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#f00"/></linearGradient></defs>'

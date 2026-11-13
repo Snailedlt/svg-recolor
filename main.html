@@ -139,6 +139,14 @@
                                     <b id="recipe-banner-name"></b>
                                     <small id="recipe-banner-desc"></small>
                                     <button type="button" class="btn btn-ghost btn-sm" id="recipe-banner-save">Save to my recipes</button>
+                                    <div class="recipe-set" id="recipe-set" hidden>
+                                        <span class="recipe-banner-label" id="recipe-set-label">Recipes in this link</span>
+                                        <div class="recipe-set-list" id="recipe-set-list" role="group" aria-labelledby="recipe-set-label"></div>
+                                        <div class="recipe-set-actions">
+                                            <button type="button" class="btn btn-primary btn-sm" id="recipe-set-zip" title="Every SVG you add, in every recipe of this link, in one ZIP"><span class="spinner" aria-hidden="true"></span>Download all (ZIP)</button>
+                                            <button type="button" class="link-btn" id="recipe-set-save">Save all to my recipes</button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <button type="button" class="icon-btn" id="recipe-banner-close" aria-label="Hide the recipe name">✕</button>
                             </div>
@@ -328,6 +336,9 @@
                                     <label class="sr-only" for="recipe-name">Recipe name</label>
                                     <input id="recipe-name" type="text" maxlength="60" placeholder="Name, e.g. One-color icon" autocomplete="off">
                                     <button type="button" class="btn btn-ghost btn-sm" id="recipe-save-btn">Save current</button>
+                                </div>
+                                <div class="recipes-all" id="recipes-all" hidden>
+                                    <button type="button" class="link-btn" id="recipes-copy-all" title="One link that runs all your recipes: every SVG in each of them, in one ZIP">Copy a link to all of them</button>
                                 </div>
                             </div>
                             <div class="foot-meta">

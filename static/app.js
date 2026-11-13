@@ -64,6 +64,7 @@
         recipe: null, // { name, params }: the recipe in use, shown at the top
         holes: false, // light (near-white) colors become holes, unless edited
         colorAuto: false, // the color is each SVG's most prominent one (state.color holds it)
+        recipeSet: null, // [{ name, suffix, params }]: the recipes of a link with several
         canvas: null, // [w, h] of a new viewBox (null = the SVG's own)
         batch: null, // [{ name, text, size, failed }]: several SVGs with the same settings
         fit: null, // auto Fit: padding (each SVG is fitted to the canvas), or null
@@ -2313,6 +2314,7 @@
     function renderRecipes() {
         const list = $('recipes-list');
         list.replaceChildren();
+        $('recipes-all').hidden = recipes.length < 2;
         if (!recipes.length) {
             const li = document.createElement('li');
             li.className = 'empty';
@@ -2362,6 +2364,118 @@
         settingsApplied();
         showRecipe(r.name, r.params);
     }
+    // ------------------------------------------------------------------
+    // Several recipes in one link (run=<a recipe's parameters>, repeated): switch between them,
+    // and download every SVG you add in every recipe, in one ZIP. A recipe's optional suffix
+    // names its files: docker-original.svg in a recipe with suffix=plain gives docker-plain.svg.
+    // ------------------------------------------------------------------
+    const MAX_RUNS = 12;
+    const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    function parseRun(v, i) {
+        const q = new URLSearchParams(v);
+        const name = (q.get('recipe') || 'Recipe ' + (i + 1)).slice(0, 60);
+        const suffix = slug(q.get('suffix'));
+        ['recipe', 'suffix', 'url', 'run', ...PER_SVG].forEach((k) => q.delete(k));
+        return { name, suffix, params: q.toString() };
+    }
+    function runParam(r) {
+        const q = new URLSearchParams(r.params);
+        q.set('recipe', r.name);
+        if (r.suffix) q.set('suffix', r.suffix);
+        return q.toString();
+    }
+    const setLink = (list) => SITE + '/?' + list.map((r) => 'run=' + encodeURIComponent(runParam(r))).join('&');
+    function renderRecipeSet() {
+        const set = state.recipeSet;
+        $('recipe-set').hidden = !set;
+        if (!set) return;
+        const box = $('recipe-set-list');
+        box.replaceChildren();
+        set.forEach((r) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = r.name;
+            b.title = describeRecipe(r.params) + ' · files: …-' + (r.suffix || slug(r.name)) + '.svg';
+            b.setAttribute('aria-pressed', String(!!state.recipe && state.recipe.name === r.name));
+            b.addEventListener('click', () => applyRecipe(r));
+            box.appendChild(b);
+        });
+        $('recipe-set-label').textContent = set.length + ' recipes in this link';
+    }
+    // docker-original.svg in "plain" → docker-plain.svg; other names get the suffix added.
+    function setFileName(src, r, i) {
+        const stem = (src || 'image.svg').replace(/\.svg$/i, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'image';
+        const suffix = r.suffix || slug(r.name) || 'recipe-' + (i + 1);
+        return (/(^|[-_])original([-_]|$)/.test(stem) ? stem.replace(/(^|[-_])original(?=[-_]|$)/, '$1' + suffix) : stem + '-' + suffix) + '.svg';
+    }
+    async function downloadSet() {
+        const set = state.recipeSet;
+        if (!set) return;
+        const sources = state.batch ? state.batch.map((it) => ({ text: it.text, name: it.name }))
+            : state.doc ? [{ text: state.doc.text, name: state.doc.name }] : [];
+        if (!sources.length) { showError('Add one or more SVGs first: drop them, paste one, or load a link.'); return; }
+        const btn = $('recipe-set-zip');
+        btn.classList.add('loading');
+        btn.disabled = true;
+        setBusy(true);
+        // Each recipe's settings in turn (with this SVG's color edits), then back to yours.
+        const back = publicParams(), backRecipe = state.recipe;
+        const mine = editParams(new URLSearchParams());
+        const out = [], used = new Set(), failed = [];
+        const total = set.length * sources.length;
+        restoring = true;
+        try {
+            for (const [ri, r] of set.entries()) {
+                const q = new URLSearchParams(r.params);
+                PER_SVG.filter((k) => k !== 'place').forEach((k) => { if (mine.get(k)) q.set(k, mine.get(k)); });
+                applySettings(q);
+                for (const [si, src] of sources.entries()) {
+                    setStatus('work', r.name + ' · ' + (ri * sources.length + si + 1) + ' of ' + total);
+                    try {
+                        const svg = await renderDoc(makeDoc(src.text, src.name));
+                        let name = setFileName(src.name, r, ri);
+                        for (let k = 2; used.has(name); k++) name = name.replace(/(_\d+)?\.svg$/, '_' + k + '.svg');
+                        used.add(name);
+                        out.push([name, svg]);
+                    } catch (err) {
+                        failed.push(src.name + ' in ' + r.name + ' (' + err.message + ')');
+                    }
+                }
+            }
+            if (out.length) {
+                const url = URL.createObjectURL(makeZip(out));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'svg-recolor-' + set.length + '-recipes-' + out.length + '.zip';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            }
+            toast(out.length + ' of ' + total + ' SVGs in the ZIP');
+        } finally {
+            applySettings(back);
+            restoring = false;
+            if (backRecipe) showRecipe(backRecipe.name, backRecipe.params);
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            setBusy(false);
+            settingsApplied();
+            if (failed.length) setTimeout(() => showError('Not in the ZIP: ' + failed.join('; ')), 0);
+        }
+    }
+    $('recipe-set-zip').addEventListener('click', downloadSet);
+    $('recipe-set-save').addEventListener('click', () => {
+        for (const r of state.recipeSet || []) {
+            const at = recipes.findIndex((x) => x.name.toLowerCase() === r.name.toLowerCase());
+            if (at >= 0) recipes[at] = { name: r.name, params: r.params }; else recipes.push({ name: r.name, params: r.params });
+        }
+        store.set('recipes', recipes);
+        syncRecipeBanner();
+        toast('Saved ' + (state.recipeSet || []).length + ' recipes');
+    });
+    $('recipes-copy-all').addEventListener('click', () => copyText(setLink(recipes.map((r) => ({ name: r.name, params: r.params })).slice(0, MAX_RUNS)), 'Link to all your recipes'));
+
     // The recipe in use (from a link or the list), named at the top of the settings so
     // whoever opens a recipe link sees what it is. Marked edited once the settings move.
     function showRecipe(name, params) {
@@ -2370,16 +2484,19 @@
         if (!state.recipe) return;
         $('recipe-banner-name').textContent = state.recipe.name;
         $('recipe-banner-desc').textContent = describeRecipe(state.recipe.params);
+        renderRecipeSet();
         syncRecipeBanner();
     }
-    function recipeIntact() { return !!state.recipe && recipeParams().toString() === state.recipe.params; }
+    // The same settings, in any order (a link's recipe may list them differently).
+    const sameParams = (a, b) => { const c = (x) => [...new URLSearchParams(x)].map((kv) => kv.join('=')).sort().join('&'); return c(a) === c(b); };
+    function recipeIntact() { return !!state.recipe && sameParams(recipeParams().toString(), state.recipe.params); }
     function syncRecipeBanner() {
         if (!state.recipe) return;
         $('recipe-banner-edited').hidden = recipeIntact();
-        const saved = recipes.some((r) => r.name.toLowerCase() === state.recipe.name.toLowerCase() && r.params === state.recipe.params);
+        const saved = recipes.some((r) => r.name.toLowerCase() === state.recipe.name.toLowerCase() && sameParams(r.params, state.recipe.params));
         $('recipe-banner-save').hidden = saved;
     }
-    $('recipe-banner-close').addEventListener('click', () => { showRecipe(null); syncPageUrl(); });
+    $('recipe-banner-close').addEventListener('click', () => { state.recipeSet = null; renderRecipeSet(); showRecipe(null); syncPageUrl(); });
     $('recipe-banner-save').addEventListener('click', () => {
         const { name, params } = state.recipe;
         const at = recipes.findIndex((r) => r.name.toLowerCase() === name.toLowerCase());
@@ -2448,6 +2565,7 @@
         const q = publicParams();
         if (state.doc && state.doc.fromUrl) q.set('url', state.doc.fromUrl);
         if (recipeIntact()) q.set('recipe', state.recipe.name);
+        for (const r of state.recipeSet || []) q.append('run', runParam(r));
         return q;
     }
     function syncPageUrl() {
@@ -2605,6 +2723,13 @@
     if (start.get('recipe')) {
         // Named by the link; its settings are the ones just applied (less the per-SVG ones).
         showRecipe(start.get('recipe'), recipeParams().toString());
+    }
+    if (start.getAll('run').length) {
+        state.recipeSet = start.getAll('run').slice(0, MAX_RUNS).map(parseRun);
+        // Only recipes in the link: start with the first one's settings.
+        if (!start.has('mode')) applySettings(new URLSearchParams(state.recipeSet[0].params));
+        const first = state.recipe && state.recipeSet.find((r) => r.name === state.recipe.name) || state.recipeSet[0];
+        showRecipe(first.name, first.params);
     }
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));

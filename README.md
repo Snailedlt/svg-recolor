@@ -205,6 +205,10 @@ How:
   a recipe's link. They keep style, color, adjustments, shapes, canvas, Fit and Optimize, not the edits of single colors.
   A recipe's link carries its name (`recipe=`), shown at the top of the settings with a button to save it; add
   `url=` to open an SVG with it.
+  Several recipes in one link: repeat `run=<a recipe's parameters, URL-encoded>` (each with its `recipe=` name and an
+  optional `suffix=`). The editor shows them as buttons to switch between, and **Download all** puts every SVG you add
+  through every recipe into one ZIP. Files are named by suffix: `docker-original.svg` in a recipe with `suffix=plain`
+  becomes `docker-plain.svg`. In **Recipes**, **Copy a link to all of them** makes one from your saved recipes.
 - **Undo / redo** settings changes with the buttons by Reset settings, or <kbd>Ctrl</kbd>+<kbd>Z</kbd> /
   <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>.
 - **Share** copies a link with your SVG and settings. A linked SVG is shared by its address; a pasted or uploaded one travels in the link itself, compressed, after the `#` (never sent to the server). Very large SVGs don't fit in a link: share them from a public URL instead.

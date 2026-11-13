@@ -363,6 +363,15 @@ body.code-expanded { overflow: hidden; }
 .recipe-banner-text small { font-size: 0.75rem; color: var(--text-muted); }
 .recipe-banner .btn { align-self: flex-start; margin-top: 8px; white-space: nowrap; }
 .recipe-banner .btn[hidden] { display: none; }
+.recipe-set { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.recipe-set[hidden] { display: none; }
+.recipe-set-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.recipe-set-list button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-muted); font: inherit; font-size: 0.8rem; cursor: pointer; }
+.recipe-set-list button[aria-pressed="true"] { color: var(--text); border-color: var(--accent-2); background: color-mix(in srgb, var(--accent-2) 14%, transparent); }
+.recipe-set-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 2px; }
+.recipe-set-actions .btn { margin-top: 0; }
+.recipes-all { margin-top: 8px; text-align: right; font-size: 0.85rem; }
+.recipes-all[hidden] { display: none; }
 .recipe-banner-icon { margin-top: 2px; }
 .recipes-pop {
     position: absolute; left: 12px; right: 12px; bottom: calc(100% - 4px); z-index: 30; display: flex; flex-direction: column; gap: 8px; padding: 12px;
