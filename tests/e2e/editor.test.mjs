@@ -968,7 +968,7 @@ test('no accessibility violations (axe) in every tab, both themes', async () => 
         const { page } = await open({ colorScheme, bypassCSP: true });
         await page.click('#try-example');
         await page.waitForSelector('#file-chip:not([hidden])');
-        for (const tab of ['preview', 'code', 'api']) {
+        for (const tab of ['preview', 'code', 'variants', 'api']) {
             await page.click(`#tab-btn-${tab}`);
             await page.addScriptTag({ content: axe });
             const violations = await page.evaluate(async () => (await window.axe.run()).violations.map((v) => `${v.id}: ${v.nodes[0].target}`));
@@ -983,7 +983,7 @@ test('phone layout has no horizontal scroll', async () => {
     assert.equal(await page.getAttribute('#stage', 'data-view'), 'slider');
     await page.click('#stage [data-action="example"]');
     await page.waitForSelector('#file-chip:not([hidden])');
-    for (const tab of ['preview', 'code', 'api']) {
+    for (const tab of ['preview', 'code', 'variants', 'api']) {
         await page.click(`#tab-btn-${tab}`);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390, tab);
     }
@@ -1016,4 +1016,28 @@ test('request budget: no API calls on load, one per settings change (keeps hosti
     await page.click('.style[data-mode="solid"]');
     await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
     assert.equal(calls.length, 1, 'switching style reuses what was already fetched');
+});
+
+test('variants: one-color versions side by side, a pick applies like a recipe', async () => {
+    const { page, problems } = await open();
+    await pasteSvg(page, GAP_SVG);
+    await page.click('#tab-btn-variants');
+    await page.waitForFunction(() => document.querySelectorAll('#variants-grid .variant').length === 7
+        && !document.querySelector('#variants-grid .variant.loading'), null, { timeout: 60000 });
+    assert.equal(await page.locator('#variants-grid .variant.failed').count(), 0);
+    // Plain and plain with gaps differ (the four squares come apart).
+    const srcs = await page.$$eval('#variants-grid .variant img', (imgs) => imgs.map((i) => i.src));
+    assert.equal(srcs.length, 7);
+    assert.notEqual(srcs[0], srcs[1]);
+    // Making them doesn't touch your settings or the page address.
+    assert.doesNotMatch(page.url(), /mode=solid/);
+    await page.locator('#variants-grid .variant', { hasText: 'Plain with gaps' }).click();
+    await page.waitForURL(/gap=1\.5/);
+    assert.match(page.url(), /mode=solid/);
+    assert.equal(await page.textContent('#recipe-banner-name'), 'Plain with gaps');
+    assert.equal(await page.getAttribute('#tab-btn-preview', 'aria-selected'), 'true');
+    // Opening them again is instant: the same SVG and kept settings are cached.
+    await page.click('#tab-btn-variants');
+    assert.equal(await page.locator('#variants-grid .variant.loading').count(), 0);
+    assert.deepEqual(problems, []);
 });

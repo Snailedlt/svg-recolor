@@ -1280,6 +1280,7 @@
         if (state.doc && !keepPlacement) state.place = null; // a new SVG starts centered on the same canvas
         keepPlacement = false;
         state.doc = { name, size, text, norm, palette: Engine.palette(norm), fromUrl: fromUrl || null, source };
+        if (state.tab === 'variants') setTimeout(renderVariants, 0);
         $('text-font-row').hidden = !/<text\b/i.test(norm);
         syncCanvasUI();
         renderLogoColors();
@@ -2364,9 +2365,10 @@
     function setTab(tab) {
         state.tab = tab;
         $$('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === tab)));
-        ['preview', 'code', 'api'].forEach((name) => { $('tab-' + name).hidden = name !== tab; });
+        ['preview', 'code', 'variants', 'api'].forEach((name) => { $('tab-' + name).hidden = name !== tab; });
         $$('.ws-tools').forEach((el) => { el.hidden = el.dataset.for !== tab; });
         if (tab === 'code') renderCode();
+        if (tab === 'variants') renderVariants();
         if (tab === 'api') updateSnippet();
         syncCopyButton();
         syncDownload();
@@ -2631,6 +2633,110 @@
     });
     $('recipes-copy-all').addEventListener('click', () => copyText(setLink(recipes.map((r) => ({ name: r.name, params: r.params })).slice(0, MAX_RUNS)), 'Link to all your recipes'));
 
+    // ------------------------------------------------------------------
+    // Variants: the current SVG as a one-color icon made several ways, side by side. No one way
+    // suits every logo (gaps help one and cut another up, merging shades simplifies one and
+    // wipes out another's facets), so the person picks; a pick is applied like a recipe.
+    // Each keeps the canvas, Fit, Optimize and this SVG's color edits.
+    // ------------------------------------------------------------------
+    const VARIANT_BASE = 'mode=solid&color=auto&holes=light&outlines=gap';
+    const VARIANTS = [
+        { name: 'Plain', params: '' },
+        { name: 'Plain with gaps', params: 'gap=1.5&unit=pct' },
+        { name: 'Plain, shades merged, gaps', params: 'merge=60&detail=1.5&gap=1.5&unit=pct' },
+        { name: 'Line', params: 'line=1' },
+        { name: 'Line of the one-color shape', params: 'line=1&lines=plain' },
+        { name: 'Line, shades merged', params: 'merge=60&detail=1.5&line=1&unit=pct' },
+        { name: 'Line of the one-color shape, merged, gaps', params: 'merge=60&detail=1.5&gap=1.5&line=1&lines=plain&unit=pct' },
+    ];
+    // What stays from the current settings: the canvas and placement, SVGO and this SVG's edits.
+    const VARIANT_KEEP = ['canvas', 'fit', 'place', 'optimize', 'precision', 'replace', 'hide', 'remove', 'cut'];
+    function variantKeep() {
+        const keep = new URLSearchParams(), mine = publicParams();
+        VARIANT_KEEP.forEach((k) => { if (mine.has(k)) keep.set(k, mine.get(k)); });
+        return keep;
+    }
+    function variantParams(v, keep = variantKeep()) {
+        const q = new URLSearchParams(VARIANT_BASE + (v.params ? '&' + v.params : ''));
+        for (const [k, val] of keep) q.set(k, val);
+        return q;
+    }
+    const variantCache = new Map(); // SVG + kept settings -> [svg text or Error, per variant]
+    let variantRun = 0;
+    function variantTile(v, i) {
+        const t = document.createElement('button');
+        t.type = 'button';
+        t.className = 'variant loading';
+        t.dataset.variant = String(i);
+        t.title = 'Use this: ' + v.name;
+        const pic = document.createElement('span');
+        pic.className = 'variant-pic';
+        const spin = document.createElement('span');
+        spin.className = 'spinner';
+        spin.setAttribute('aria-hidden', 'true');
+        pic.appendChild(spin);
+        const label = document.createElement('span');
+        label.className = 'variant-name';
+        label.textContent = v.name;
+        t.append(pic, label);
+        t.addEventListener('click', () => {
+            if (t.classList.contains('loading') || t.classList.contains('failed')) return;
+            applyRecipe({ name: v.name, params: variantParams(v).toString() });
+            setTab('preview');
+        });
+        return t;
+    }
+    function showVariant(t, v, out) {
+        t.classList.remove('loading');
+        const pic = t.querySelector('.variant-pic');
+        if (out instanceof Error) {
+            t.classList.add('failed');
+            t.title = v.name + ': ' + out.message;
+            pic.textContent = 'Not possible';
+            return;
+        }
+        const img = new Image();
+        img.alt = v.name;
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(out);
+        pic.replaceChildren(img);
+    }
+    async function renderVariants() {
+        const grid = $('variants-grid');
+        if (!state.doc) { grid.replaceChildren(); return; }
+        const keep = variantKeep();
+        const doc = state.doc;
+        const key = doc.name + ':' + doc.text.length + ':' + doc.text.slice(0, 300) + ':' + keep.toString();
+        const run = ++variantRun;
+        const tiles = VARIANTS.map(variantTile);
+        grid.replaceChildren(...tiles);
+        const done = variantCache.get(key) || [];
+        VARIANTS.forEach((v, i) => { if (done[i] !== undefined) showVariant(tiles[i], v, done[i]); });
+        if (VARIANTS.every((v, i) => done[i] !== undefined)) return;
+        // The rest one after another, each with its settings applied for the moment and then
+        // yours again (as the ZIP of a recipe set does).
+        const back = publicParams(), backRecipe = state.recipe;
+        restoring = true;
+        setBusy(true, 'variants');
+        try {
+            for (const [i, v] of VARIANTS.entries()) {
+                if (run !== variantRun || doc !== state.doc) return;
+                if (done[i] !== undefined) continue;
+                applySettings(variantParams(v, keep));
+                let out;
+                try { out = await renderDoc(doc); } catch (err) { out = err instanceof Error ? err : new Error(String(err)); }
+                applySettings(back);
+                done[i] = out;
+                variantCache.set(key, done);
+                if (run === variantRun) showVariant(tiles[i], v, out);
+            }
+        } finally {
+            applySettings(back);
+            restoring = false;
+            if (backRecipe) showRecipe(backRecipe.name, backRecipe.params);
+            setBusy(false, 'variants');
+        }
+    }
+
     // The recipe in use (from a link or the list), named at the top of the settings so
     // whoever opens a recipe link sees what it is. Marked edited once the settings move.
     function showRecipe(name, params) {
@@ -2739,6 +2845,9 @@
     function syncPageUrl() {
         clearTimeout(urlTimer);
         urlTimer = setTimeout(() => {
+            // Settings swapped in for a moment (variants, a recipe set's ZIP) are not the page's:
+            // wait until they're back, or the address and the undo history would get them.
+            if (restoring) { syncPageUrl(); return; }
             try { history.replaceState(null, '', location.pathname + '?' + shareParams().toString() + location.hash); } catch (e) { /* ignore */ }
             recordHistory();
             syncRecipeBanner();
@@ -2826,6 +2935,7 @@
         else if (key === 'l') { showSourcePicker('link'); $('url-input').focus(); }
         else if (key === 'c') { hexInput.focus(); hexInput.select(); }
         else if (key === 'p') setTab('preview');
+        else if (key === 'o') setTab('variants');
         else if (key === 'e') setTab('code');
         else if (key === 'a') setTab('api');
         else if (key === 'f') {

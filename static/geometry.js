@@ -461,7 +461,9 @@
             const mergeD = Number(opts.merge) || 0;
             if (mergeD > 0 && byColor.length > 1) {
                 const rgbOf = (c) => [0, 2, 4].map((i) => parseInt(String(c).slice(i, i + 2), 16));
-                const standIns = new Set(input.standIns || []);
+                // Near-identical colors only (a small distance, under 20): the parts of gradients stay
+                // apart (Node's facets). A larger distance simplifies shading, gradients included.
+                const standIns = new Set(mergeD < 20 ? input.standIns || [] : []);
                 const fixed = (c) => soft.has(c) || standIns.has(c) || (opts.cut || []).includes(c) || (opts.keep || []).includes(c);
                 const groups = []; // [colour, [regions], rgb]
                 for (const [c, p] of [...byColor].sort((a, b) => Math.abs(b[1].area) - Math.abs(a[1].area))) {

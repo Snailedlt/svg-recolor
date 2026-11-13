@@ -445,6 +445,8 @@ kbd {
 .tab svg { width: 16px; height: 16px; }
 .tab:hover { color: var(--text); background: var(--surface-2); }
 .tab[aria-selected="true"] { color: var(--text); background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--pick); }
+/* Four tabs on a phone: words only, a little tighter. */
+@media (max-width: 480px) { .tab { padding: 7px 8px; gap: 5px; font-size: 0.84rem; } .tab svg { display: none; } }
 .ws-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .ws-body { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .tab-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -831,3 +833,17 @@ dialog.shortcuts dd { margin: 0; color: var(--text-muted); }
 
 @media (max-width: 700px), (hover: none) { .kbd-hint, #shortcuts-btn, .style kbd { display: none; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Variants: the SVG as a one-color icon made several ways, to pick from. */
+.variants { flex: 1; min-height: 0; overflow: auto; padding: 14px; display: grid; gap: 12px; align-content: start; }
+.variants-hint { margin: 0; }
+.variants-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.variant { display: grid; gap: 6px; justify-items: center; padding: 8px; border-radius: 10px; border: 2px solid var(--border); background: transparent; color: var(--text); cursor: pointer; font: inherit; }
+.variant:hover { border-color: var(--border-strong); }
+.variant:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.variant.loading, .variant.failed { cursor: default; }
+.variant.loading:hover, .variant.failed:hover { border-color: var(--border); }
+.variant-pic { width: 100%; aspect-ratio: 1; border-radius: 7px; display: grid; place-items: center; background: repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 50% / 12px 12px; font-size: 0.78rem; color: var(--text-muted); }
+.variant-pic img { width: 88%; height: 88%; object-fit: contain; }
+.variant-pic .spinner { border-color: color-mix(in srgb, var(--text) 25%, transparent); border-top-color: var(--text); }
+.variant-name { font-size: 0.78rem; text-align: center; line-height: 1.25; }

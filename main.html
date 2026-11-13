@@ -385,6 +385,9 @@
                                 <button type="button" class="tab" role="tab" id="tab-btn-code" aria-controls="tab-code" aria-selected="false" data-tab="code" title="Code (E)">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>Code
                                 </button>
+                                <button type="button" class="tab" role="tab" id="tab-btn-variants" aria-controls="tab-variants" aria-selected="false" data-tab="variants" title="One-color variants to choose from (O)">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Variants
+                                </button>
                                 <button type="button" class="tab" role="tab" id="tab-btn-api" aria-controls="tab-api" aria-selected="false" data-tab="api" title="API (A)">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>API
                                 </button>
@@ -486,6 +489,12 @@
                                 </div>
                             </div>
 
+                            <div class="tab-panel" role="tabpanel" id="tab-variants" aria-labelledby="tab-btn-variants" hidden>
+                                <div class="variants">
+                                    <p class="field-hint variants-hint" id="variants-hint">One-color versions made different ways: plain and line, with and without gaps, with shades merged. No one way suits every logo, so pick the best one and fine-tune it. Your canvas, Fit, Optimize and color edits apply to all of them.</p>
+                                    <div class="variants-grid" id="variants-grid" role="group" aria-label="Variants"></div>
+                                </div>
+                            </div>
                             <div class="tab-panel" role="tabpanel" id="tab-api" aria-labelledby="tab-btn-api" hidden>
                                 <div class="lang-layout">
                                     <nav class="lang-nav" aria-label="Languages">
