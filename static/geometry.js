@@ -938,7 +938,28 @@
                         if (!back || Math.abs(back.area) < 0.85 * Math.abs(piece.area)) continue;
                         // And the line it leaves is one line wide (a part of uneven width shrinks too little).
                         const ca = Math.abs(center.area), cl = center.length, cd = cl * cl - 16 * ca;
-                        if (!(cl > 0) || (cd > 0 ? (cl - Math.sqrt(cd)) / 4 : (2 * ca) / cl) > 1.4 * w) continue;
+                        const ct = cd > 0 ? (cl - Math.sqrt(cd)) / 4 : (2 * ca) / cl;
+                        if (!(cl > 0) || ct > 1.4 * w) continue;
+                        // Even in thickness: no point of the line is more than about a line's width from
+                        // its edge. A part with a thick bit (a box on a thin connector) would otherwise keep
+                        // that bit solid as its "line". (Sampled on a grid; offsets shrunk past a part's
+                        // middle can return garbage, so they're no help here.)
+                        const cb = center.bounds, step = Math.max(w / 2, Math.max(cb.width, cb.height) / 60);
+                        let thickBit = false;
+                        for (let x = cb.x + step / 2; x < cb.x + cb.width && !thickBit; x += step) {
+                            for (let y = cb.y + step / 2; y < cb.y + cb.height; y += step) {
+                                const pt = new scope.Point(x, y);
+                                if (!center.contains(pt)) continue;
+                                const near = center.getNearestPoint(pt);
+                                if (near && near.getDistance(pt) > 0.85 * w) { thickBit = true; break; }
+                            }
+                        }
+                        // Unless the lines there are a solid blob anyway (a tapering wedge, SQL Server's):
+                        // then even an uneven centerline is better.
+                        if (thickBit) {
+                            const there = safeIntersect(lines, piece);
+                            if (!there || Math.abs(there.area) < 0.92 * Math.abs(piece.area)) continue;
+                        }
                         let cut = piece;
                         if (centered) { try { const g = PaperOffset.offset(piece, w / 2, { join: 'round', insert: false }); if (g && Math.abs(g.area) > Math.abs(piece.area)) cut = g; } catch (err) { cut = piece; } }
                         const rest = lines.subtract(cut, { insert: false });
