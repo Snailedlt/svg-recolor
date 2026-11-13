@@ -683,7 +683,7 @@
                     // can still show (over 3/4 of a band).
                     const pa = Math.abs(path.area), pd = len * len - 16 * pa;
                     const thickness = pd > 0 ? (len - Math.sqrt(pd)) / 4 : len / 4;
-                    if (forLines ? thickness < 2.75 * half : (2 * pa) / Math.max(len, 1e-9) < 2 * half) {
+                    if (forLines ? thickness < 2.2 * half : (2 * pa) / Math.max(len, 1e-9) < 2 * half) {
                         if (path.area < 0) path.reverse();
                         let keep = path;
                         // Thin on average, but maybe not everywhere: a box with long thin connectors
@@ -954,11 +954,12 @@
                                 if (near && near.getDistance(pt) > 0.85 * w) { thickBit = true; break; }
                             }
                         }
-                        // Unless the lines there are a solid blob anyway (a tapering wedge, SQL Server's):
+                        // Unless the lines there are nearly a solid blob anyway (a tapering wedge, SQL Server's
+                        // and CachyOS's; a box keeps its hole, so well under this):
                         // then even an uneven centerline is better.
                         if (thickBit) {
                             const there = safeIntersect(lines, piece);
-                            if (!there || Math.abs(there.area) < 0.92 * Math.abs(piece.area)) continue;
+                            if (!there || Math.abs(there.area) < 0.85 * Math.abs(piece.area)) continue;
                         }
                         let cut = piece;
                         if (centered) { try { const g = PaperOffset.offset(piece, w / 2, { join: 'round', insert: false }); if (g && Math.abs(g.area) > Math.abs(piece.area)) cut = g; } catch (err) { cut = piece; } }
