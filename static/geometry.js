@@ -141,6 +141,9 @@
                 };
             }
             for (const el of all) {
+                // Gradient and pattern definitions keep their own styles: their stops' colours are
+                // read later (a gradient's middle colour), and stop-color is often in a style attribute.
+                if (el.closest('linearGradient, radialGradient, pattern')) continue;
                 const cs = getComputedStyle(el);
                 if (cs.display === 'none' || (cs.visibility !== 'visible' && el.matches('path, rect, circle, ellipse, line, polyline, polygon'))) {
                     el.setAttribute('display', 'none');
@@ -152,6 +155,8 @@
                 for (const p of props) {
                     let v = p === 'stroke-width' ? String(parseFloat(cs.strokeWidth) || 0) : cs.getPropertyValue(p);
                     if (mids && (p === 'fill' || p === 'stroke') && /url\(/.test(v)) v = middleOf(v);
+                    // Measuring (Fit): only the shapes count, so a paint server's colour doesn't matter.
+                    if (lenient && !flat && !mids && (p === 'fill' || p === 'stroke') && /url\(/.test(v)) v = '#000000';
                     if (flat && (p === 'fill' || p === 'stroke') && /url\(/.test(v)) v = standIn(v.replace(/\s+/g, ''));
                     // One color: mostly see-through (shadows, glows) goes, the rest counts as solid.
                     if ((flat || mids) && /opacity$/.test(p)) v = parseFloat(v) < 0.5 ? '0' : '1';
@@ -161,6 +166,12 @@
                 el.removeAttribute('class');
             }
             live.querySelectorAll('style').forEach((n) => n.remove());
+            // Every gradient or pattern paint is a colour by now (or the SVG was refused above).
+            // Their definitions go: paper.js fails on gradients that take their stops from another
+            // gradient through href (CachyOS), and nothing uses them anymore.
+            if (![...live.querySelectorAll('*')].some((el) => /url\(/.test((el.getAttribute('fill') || '') + (el.getAttribute('stroke') || '')))) {
+                live.querySelectorAll('linearGradient, radialGradient, pattern').forEach((n) => n.remove());
+            }
             live.querySelectorAll('path[d]').forEach((p) => p.setAttribute('d', expandArcFlags(p.getAttribute('d'))));
             // A rect with only rx (or ry) has round corners per the spec; paper reads the missing one as 0.
             live.querySelectorAll('rect').forEach((r) => {
@@ -373,7 +384,29 @@
                 if (i % 25 === 0) { report((shapes.length - i) / shapes.length * (opts.gap > 0 || opts.line > 0 ? 0.15 : 1)); await tick(); } // also keeps the page responsive without a worker
             }
 
-            const unite = (list) => list.reduce((a, p) => (a ? a.unite(p, { insert: false }) : p), null);
+            // Union, without the zero-width spikes a union leaves where shapes share an edge (the next
+            // boolean step on such an outline can fail and return the region filled in).
+            const unite = (list) => { const u = list.reduce((a, p) => (a ? a.unite(p, { insert: false }) : p), null); return u && list.length > 1 ? despike(u) : u; };
+            // paper.js's boolean steps fail now and then on awkward outlines (Vuetify's blues): a union
+            // that lost area, an intersection bigger than either side. Check by area, retry with the
+            // sides swapped, and else take the safe side.
+            const area = (q) => (q ? Math.abs(q.area) : 0);
+            const safeUnite = (a, b) => {
+                const most = Math.max(area(a), area(b)), tol = 0.01 * most + 1e-6;
+                for (const r of [() => a.unite(b, { insert: false }), () => b.unite(a, { insert: false })]) {
+                    const u = r();
+                    if (area(u) >= most - tol && area(u) <= area(a) + area(b) + tol) return u;
+                }
+                return area(a) >= area(b) ? a : b;
+            };
+            const safeIntersect = (a, b) => {
+                const least = Math.min(area(a), area(b)), tol = 0.01 * least + 1e-6;
+                for (const r of [() => a.intersect(b, { insert: false }), () => b.intersect(a, { insert: false })]) {
+                    const x = r();
+                    if (area(x) <= least + tol) return x;
+                }
+                return null;
+            };
             // One region per original color, in the order the colors first appear (bottom first).
             const order = [...regions.keys()].reverse();
             // Hairline slivers (outlines on average under 0.02 units wide) are rounding left
@@ -604,7 +637,8 @@
                 await tick();
                 if (opts.lineInner !== false && byColor.length > 1) {
                     for (const [i, [, p]] of byColor.entries()) {
-                        lines = lines.unite(whole.intersect(stroke(p, w / 2), { insert: false }), { insert: false });
+                        const inner = safeIntersect(whole, stroke(p, w / 2));
+                        if (inner) lines = safeUnite(lines, inner);
                         report((opts.gap > 0 ? 0.15 : 0.3) + (opts.gap > 0 ? 0.25 : 0.6) * (i + 1) / byColor.length);
                         await tick();
                     }
@@ -669,7 +703,8 @@
                 const keptAll = kept.length ? unite(kept.map(([, p]) => p.clone({ insert: false }))) : null;
                 byColor = regionsOf.map(([c, region], i) => {
                     const a = region.intersect(lines, { insert: false });
-                    if (regionsOf.length + kept.length < 2) return [c, a];
+                    // One colour in the end: the lines lie inside the drawing already, so they are its part.
+                    if (regionsOf.length + kept.length < 2) return [c, safeIntersect(region, lines) || lines];
                     let others = keptAll ? keptAll.clone({ insert: false }) : null;
                     regionsOf.forEach(([, r], j) => { if (j !== i) others = others ? others.unite(r, { insert: false }) : r.clone({ insert: false }); });
                     const b = others ? lines.subtract(others, { insert: false }) : a;

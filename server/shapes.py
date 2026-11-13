@@ -340,6 +340,8 @@ def read_shapes(svg: str, lenient: bool = False, flat: Optional[str] = None, mid
         raise engine.RecolorError("Cut out, gaps and lines don't support masks yet.")
     if lenient:  # picosvg can't apply masks; for measuring, the unmasked drawing is close enough
         svg = re.sub(r"\smask\s*=\s*(\"[^\"]*\"|'[^']*')", "", svg)
+    # Lengths with a unit picosvg can't read ("0.497px" in CachyOS): px is the user unit anyway.
+    svg = re.sub(r"(\d|\.)px\b", r"\1", svg)
     try:
         pico = SVG.fromstring(svg).topicosvg()
     except Exception as e:  # noqa: BLE001 - picosvg raises many kinds; all mean "can't read this"

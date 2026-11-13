@@ -862,6 +862,12 @@ test('color Auto: each SVG its most prominent color, until you pick one', async 
     await page.click('#change-file');
     await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#019bc6"/></svg>');
     await page.locator('#status-text', { hasText: /^Solid #019BC6/ }).waitFor();
+    // A gradient counts as its middle colour, also with stop-color in a style attribute.
+    await page.click('#change-file');
+    await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g">'
+        + '<stop offset="0" style="stop-color:#ff0000"/><stop offset="1" style="stop-color:#0000ff"/></linearGradient></defs>'
+        + '<rect width="10" height="10" fill="url(#g)"/></svg>');
+    await page.locator('#status-text', { hasText: /^Solid #800080/ }).waitFor();
     // Picking a color yourself ends Auto.
     await page.fill('#hex-input', '123456');
     await page.waitForURL(/color=123456/);
