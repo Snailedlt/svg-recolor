@@ -792,7 +792,7 @@
         const out = await Geo.cutOut(edited, {
             flat: doc ? flatColor(doc, merged) : null,
             cut, holes, outlines: state.outlines, map: merged, gap: state.gap, unit: state.unit, onProgress,
-            merge: state.merge, detail: state.detail, lineAlign: state.lineCenter ? 'center' : null, gaps: state.gapsAuto ? 'auto' : null,
+            merge: state.merge, detail: state.detail, lineAlign: state.lineCenter ? 'center' : null, gaps: state.gapsAuto ? 'auto' : null, lightHoles: !!state.holes,
             line: state.line, lineInner: state.lineInner, linePlain: state.linePlain, keep: [...state.keep],
         });
         const m = /<!--holes:([^>]*)-->/.exec(out);

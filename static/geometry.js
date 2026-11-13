@@ -431,6 +431,12 @@
             // background) and stays a part of the logo where it stands on its own (CMake's gray
             // triangle). A hole loses its visible part, as a cut-out does (it still covers what's below).
             const soft = new Set((opts.holes || []).map((c) => String(c).toLowerCase()));
+            // A light gradient (Azure SQL's letters, a pale highlight) is a light color too: with
+            // light colors as holes (opts.lightHoles), its stand-in joins them.
+            if (opts.lightHoles) {
+                const isLight = (c) => ((x) => Math.min(...x) >= 0xe0 || (Math.min(...x) >= 0xc8 && Math.max(...x) - Math.min(...x) <= 48))([0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16)));
+                for (const c of input.standIns || []) if (/^[0-9a-f]{6}$/.test(c) && isLight(c) && !(opts.keep || []).includes(c)) soft.add(c);
+            }
             const holed = [];
             const asLines = []; // outline colors that are a line version's lines as they are
             const splitOutlines = new Map(); // outline color -> its width: gaps inside, ink on the edge
@@ -664,9 +670,14 @@
                         return sausage(path, half, scope);
                     };
                     let part;
-                    // Narrower than the band on average: already a line (a thin stripe, an antenna, a
-                    // sliver). Outlining it would leave ticks; it stays as it is instead.
-                    if ((2 * Math.abs(path.area)) / Math.max(len, 1e-9) < 2 * half) {
+                    // Narrower than the band: already a line (a thin stripe, an antenna, a sliver).
+                    // Outlining it would leave ticks, or a hole too small to see; it stays as it is.
+                    // Its thickness as a strip's (area = length x thickness), so a small square
+                    // (HAProxy's boxes) is measured by its side, and gets an outline while its hole
+                    // can still show (over 3/4 of a band).
+                    const pa = Math.abs(path.area), pd = len * len - 16 * pa;
+                    const thickness = pd > 0 ? (len - Math.sqrt(pd)) / 4 : len / 4;
+                    if (thickness < 2.75 * half) {
                         if (path.area < 0) path.reverse();
                         acc = acc ? acc.unite(path, { insert: false }) : path;
                         continue;
@@ -729,7 +740,25 @@
                 // (the double line around Docker, its filled container slats) give way to them.
                 if (asLines.length) {
                     const drawn = unite(byColor.filter(([c]) => asLines.includes(c)).map(([, p]) => p.clone({ insert: false })));
-                    lines = lines.subtract(stroke(drawn, w / 2), { insert: false }).unite(drawn, { insert: false });
+                    // Where the outline color swells into a blob (GCC's hoof and ear, drawn solid in
+                    // the outline color) it is outlined too, not drawn solid: the parts more than three
+                    // lines thick (what is left of it shrunk by 1.5 lines and grown back).
+                    let asDrawn = drawn;
+                    try {
+                        const r = 1.5 * w;
+                        const shrunk = PaperOffset.offset(drawn, -r, { join: 'round', insert: false });
+                        const blobs = shrunk && !shrunk.isEmpty() ? PaperOffset.offset(shrunk, r + Math.max(0.01, r / 50), { join: 'round', insert: false }) : null;
+                        if (blobs && !blobs.isEmpty() && Math.abs(blobs.area) > 4 * w * w) {
+                            const inside = safeIntersect(blobs, drawn);
+                            if (inside && !inside.isEmpty()) {
+                                const ring = safeIntersect(inside, stroke(inside, w));
+                                const rest = drawn.subtract(inside, { insert: false });
+                                const next = ring ? safeUnite(rest, ring) : null;
+                                if (next && Math.abs(next.area) < Math.abs(drawn.area) + 1e-6) asDrawn = next;
+                            }
+                        }
+                    } catch (err) { asDrawn = drawn; }
+                    lines = lines.subtract(stroke(drawn, w / 2), { insert: false }).unite(asDrawn, { insert: false });
                 }
             }
 
@@ -995,7 +1024,7 @@
                 worker = null;
                 compute(input, opts, opts.onProgress).then(resolve, reject); // a worker that can't start: do it here
             };
-            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain, merge: Number(opts.merge) || 0, detail: Number(opts.detail) || 0, lineAlign: opts.lineAlign || null, gaps: opts.gaps || null } });
+            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain, merge: Number(opts.merge) || 0, detail: Number(opts.detail) || 0, lineAlign: opts.lineAlign || null, gaps: opts.gaps || null, lightHoles: !!opts.lightHoles } });
         });
     }
 

@@ -419,3 +419,15 @@ def test_auto_gaps_leave_a_mesh_alone(client):
              '<rect x="64" y="4" width="60" height="120" fill="#e33333"/></svg>')
     assert area("&gaps=auto", plain) < 120 * 120 - 100, "no holes: the gap stays"
     assert client.post("/api/recolor?gap=4&gaps=sometimes", content=plain, headers=SVG_CT).status_code in (400, 422)
+
+
+def test_a_light_gradient_becomes_a_hole_with_light_holes(client):
+    # Pale gradient "letters" (a bar) on a blue square, like Azure SQL's: with holes=light they're
+    # cut out like a white fill would be.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="g">'
+           '<stop offset="0" stop-color="#f2f2f2"/><stop offset="1" stop-color="#e6e6e6"/></linearGradient></defs>'
+           '<rect x="4" y="4" width="120" height="120" fill="#0078d4"/><rect x="34" y="54" width="60" height="20" fill="url(#g)"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&holes=light&gap=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    assert abs(_area(d) - (120 * 120 - 60 * 20)) < 40, _area(d)

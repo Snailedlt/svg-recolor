@@ -549,7 +549,8 @@ def recolor(svg: str, opts: engine.Options) -> engine.Result:
     if cut or holes or ex.outlines or ex.gap or ex.line or ex.merge or ex.detail:
         geo = {"cut": list(cut), "holes": list(holes), "outlines": ex.outlines, "map": mapping, "gap": ex.gap, "line": ex.line,
                "lineInner": ex.line_inner, "linePlain": ex.line_plain, "keep": list(ex.keep), "unit": ex.unit, "flat": None,
-               "merge": ex.merge, "detail": ex.detail, "lineAlign": ex.line_align, "gaps": ex.gaps or None}
+               "merge": ex.merge, "detail": ex.detail, "lineAlign": ex.line_align, "gaps": ex.gaps or None,
+               "lightHoles": bool(ex.holes)}
         # Everything one color (like Solid)? Then gradients and transparency don't matter.
         gone = set(opts.hide) | set(opts.remove) | set(cut) | set(holes)
         outs = {mapping.get(c, c) for c in counts if c not in gone}
