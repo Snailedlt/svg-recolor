@@ -150,6 +150,8 @@ MCP_TOOLS = [
                          "description": "Make a line version (like devicon's line icons): only a band of this width along the edges is kept."},
                 "lines": {"type": "string", "enum": ["all", "outer", "plain"],
                           "description": "With line: 'all' (default) also between colors, 'outer' only the outline, 'plain' the outlines of the one-colour version (made first, with its holes and gaps)."},
+                "linealign": {"type": "string", "enum": ["inside", "center"],
+                              "description": "With line: 'inside' (default) keeps the drawing's size; 'center' draws the lines on the edges, half outside, like devicon's Stroke to Path (leave half a line with fit)."},
                 "keep": {"type": "array", "items": {"type": "string"}, "description": "With line: original colors that stay filled."},
                 "holes": {"type": "string", "enum": ["light", "none"],
                           "description": "'light': near-white colors become holes (cut out), unless edited. With mode solid: a one-color icon whose white parts stay see-through."},

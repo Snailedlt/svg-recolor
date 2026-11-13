@@ -58,6 +58,7 @@
         // | { op: 'hide' } (older links; shown as Invisible)
         edits: {},
         gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
+        lineCenter: false, // lines centered on the edges (half outside) instead of inside them
         merge: 0, // simplify: colors this close (RGB distance) are one part; 0 = off
         detail: 0, // simplify: pieces and holes smaller than this size go; 0 = off
         line: 0, // line version: band width along the edges (same units); 0 = off
@@ -296,6 +297,7 @@
             q.set('line', String(state.line));
             if (state.linePlain) q.set('lines', 'plain');
             else if (!state.lineInner) q.set('lines', 'outer');
+            if (state.lineCenter) q.set('linealign', 'center');
             if (state.keep.size) q.set('keep', [...state.keep].join(','));
         }
         return q;
@@ -586,6 +588,7 @@
     $('svgo-toggle').addEventListener('change', (e) => { state.svgo = e.target.checked; updateOptimizeFold(); editsChanged(); });
     $('holes-toggle').addEventListener('change', (e) => { state.holes = e.target.checked; editsChanged(); });
     $('outlines-toggle').addEventListener('change', (e) => { state.outlines = e.target.checked; editsChanged(); });
+    $('line-center-toggle').addEventListener('change', (e) => { state.lineCenter = e.target.checked; if (state.line) editsChanged(); else syncPageUrl(); });
     renderSvgoSettings();
 
     let svgoWorker = null, svgoJobs = 0;
@@ -786,7 +789,7 @@
         const out = await Geo.cutOut(edited, {
             flat: doc ? flatColor(doc, merged) : null,
             cut, holes, outlines: state.outlines, map: merged, gap: state.gap, unit: state.unit, onProgress,
-            merge: state.merge, detail: state.detail,
+            merge: state.merge, detail: state.detail, lineAlign: state.lineCenter ? 'center' : null,
             line: state.line, lineInner: state.lineInner, linePlain: state.linePlain, keep: [...state.keep],
         });
         const m = /<!--holes:([^>]*)-->/.exec(out);
@@ -870,6 +873,7 @@
         $$('#line-mode button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lines === (state.linePlain ? 'plain' : state.lineInner ? 'all' : 'outer'))));
         $('adj-line-out').textContent = unitText(state.line);
         $('line-inner-row').hidden = !state.line;
+        $('line-align-row').hidden = !state.line;
         updateFolds();
         if (!editPanel.hidden) $('color-edit-keep-row').hidden = !state.line;
     }
@@ -1103,6 +1107,8 @@
         lineInput.value = 0;
         state.lineInner = true;
         state.linePlain = false;
+        state.lineCenter = false;
+        $('line-center-toggle').checked = false;
         state.keep.clear();
         syncLine();
         syncAdjust(false);
@@ -2874,6 +2880,8 @@
         lineInput.value = String(state.line);
         state.lineInner = q.get('lines') !== 'outer';
         state.linePlain = q.get('lines') === 'plain';
+        state.lineCenter = q.get('linealign') === 'center';
+        $('line-center-toggle').checked = state.lineCenter;
         state.keep.clear();
         for (const v of (q.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }
         syncLine(false);

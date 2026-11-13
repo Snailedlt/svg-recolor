@@ -170,6 +170,10 @@ def extra_query(
         description="With `line`: `all` (default) also draws lines between colors, `outer` only the outline, "
                     "`plain` the outlines of the one-colour version (made first, with its holes and gaps).",
         pattern="^(all|outer|plain)$")] = None,
+    linealign: Annotated[Optional[str], Query(
+        description="With `line`: `inside` (default) draws the lines inside the edges, so the drawing keeps its size; "
+                    "`center` on the edges, half outside, like a stroke turned into a shape (devicon's guide: Inkscape's "
+                    "Stroke to Path). Leave room with `fit` (half a line).", pattern="^(inside|center)$")] = None,
     keep: Annotated[Optional[str], Query(
         description="With `line`: colors that stay filled, comma-separated.", examples=["ffffff"])] = None,
     holes: Annotated[Optional[str], Query(
@@ -205,7 +209,7 @@ def extra_query(
         description="With `optimize`: decimals kept in numbers (default 3).", ge=0, le=8)] = None,
 ) -> dict:
     """Cut out, gaps, lines, canvas and SVGO: the same code as the editor (see server/shapes.py)."""
-    return {"cut": cut, "holes": holes, "outlines": outlines, "merge": merge, "detail": detail, "gap": gap, "line": line, "lines": lines, "keep": keep, "unit": unit, "canvas": canvas,
+    return {"cut": cut, "holes": holes, "outlines": outlines, "merge": merge, "detail": detail, "gap": gap, "line": line, "lines": lines, "linealign": linealign, "keep": keep, "unit": unit, "canvas": canvas,
             "place": place, "fit": fit, "optimize": optimize, "precision": precision}
 
 
@@ -490,6 +494,7 @@ JSON_BODY_SCHEMA = {
         "gap": {"type": "number", "minimum": 0, "description": "Gap width where two original colors meet."},
         "line": {"type": "number", "minimum": 0, "description": "Line version: band width along the edges."},
         "lines": {"type": "string", "enum": ["all", "outer", "plain"]},
+        "linealign": {"type": "string", "enum": ["inside", "center"], "description": "Lines inside the edges (default) or centered on them."},
         "keep": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
                  "description": "With line: colors that stay filled."},
         "unit": {"type": "string", "enum": ["px", "pct"]},

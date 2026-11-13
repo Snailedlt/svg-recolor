@@ -384,3 +384,18 @@ def test_a_hairline_along_the_edge_joins_the_part_beside_it(client):
     assert res.status_code == 200, res.text
     (_, d), = paths(res.text)
     assert d.count("M") + d.count("m") == 2, d  # two parts, no hairlines
+
+
+def test_centered_lines_straddle_the_edge(client):
+    # A 60x60 square, line 4: inside the edge the outline spans 34..94; centered, 32..96.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="34" y="34" width="60" height="60" fill="#1867c0"/></svg>')
+    def box(q):
+        res = client.post(f"/api/recolor?mode=solid&color=000000&line=4{q}", content=svg, headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        (_, d), = paths(res.text)
+        return d, _area(d)
+    d_in, a_in = box("")
+    d_c, a_c = box("&linealign=center")
+    assert "M34,34" in d_in.replace(" ", "") and abs(a_in - (60 * 60 - 52 * 52)) < 1
+    assert "32" in d_c and abs(a_c - (64 * 64 - 56 * 56)) < 5, (d_c, a_c)  # round outer corners
+    assert client.post("/api/recolor?line=4&linealign=middle", content=svg, headers=SVG_CT).status_code in (400, 422)

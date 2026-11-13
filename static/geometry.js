@@ -705,17 +705,21 @@
             // Lines, from the regions before gaps: a band inside the outer edge, plus (with
             // lineInner) a band centered on every boundary between two colors.
             const line = Number(opts.line) || 0;
+            const centered = opts.lineAlign === 'center';
             let lines = null;
             if (line > 0 && byColor.length && !opts.linePlain) {
                 if (!PaperOffset) throw new GeometryError('Lines need the offset library, which did not load.');
                 const w = line * scale;
                 const whole = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
-                lines = whole.intersect(stroke(whole, w), { insert: false });
+                // opts.lineAlign 'center': the line straddles the edge, half outside, as a stroke drawn
+                // on the outline and turned into a shape (Inkscape's Stroke to Path, the way devicon's
+                // guide makes line icons). Default: inside the edge, so the drawing keeps its size.
+                lines = centered ? stroke(whole, w / 2) : whole.intersect(stroke(whole, w), { insert: false });
                 report(opts.gap > 0 ? 0.15 : 0.3);
                 await tick();
                 if (opts.lineInner !== false && byColor.length > 1) {
                     for (const [i, [, p]] of byColor.entries()) {
-                        const inner = safeIntersect(whole, stroke(p, w / 2));
+                        const inner = centered ? stroke(p, w / 2) : safeIntersect(whole, stroke(p, w / 2));
                         if (inner) lines = safeUnite(lines, inner);
                         report((opts.gap > 0 ? 0.15 : 0.3) + (opts.gap > 0 ? 0.25 : 0.6) * (i + 1) / byColor.length);
                         await tick();
@@ -796,7 +800,7 @@
             if (line > 0 && byColor.length && opts.linePlain) {
                 if (!PaperOffset) throw new GeometryError('Lines need the offset library, which did not load.');
                 const whole = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
-                lines = whole.intersect(stroke(whole, line * scale), { insert: false });
+                lines = centered ? stroke(whole, (line * scale) / 2) : whole.intersect(stroke(whole, line * scale), { insert: false });
                 report(0.9);
                 await tick();
             }
@@ -847,9 +851,11 @@
                         // And the line it leaves is one line wide (a part of uneven width shrinks too little).
                         const ca = Math.abs(center.area), cl = center.length, cd = cl * cl - 16 * ca;
                         if (!(cl > 0) || (cd > 0 ? (cl - Math.sqrt(cd)) / 4 : (2 * ca) / cl) > 1.4 * w) continue;
-                        const rest = lines.subtract(piece, { insert: false });
+                        let cut = piece;
+                        if (centered) { try { const g = PaperOffset.offset(piece, w / 2, { join: 'round', insert: false }); if (g && Math.abs(g.area) > Math.abs(piece.area)) cut = g; } catch (err) { cut = piece; } }
+                        const rest = lines.subtract(cut, { insert: false });
                         // A boolean step that went wrong takes away more than the part ever covered.
-                        if (Math.abs(lines.area) - Math.abs(rest.area) > 1.02 * Math.abs(piece.area) + 1e-6) continue;
+                        if (Math.abs(lines.area) - Math.abs(rest.area) > 1.02 * Math.abs(cut.area) + 1e-6) continue;
                         const next = safeUnite(rest, center);
                         if (next && !next.isEmpty() && Math.abs(next.area) >= Math.max(Math.abs(rest.area), Math.abs(center.area)) - 1e-6) lines = next;
                     }
@@ -874,10 +880,23 @@
                 // keep the smaller one.
                 const regionsOf = [...groups.values()].map(([c, list]) => [c, unite(list)]);
                 const keptAll = kept.length ? unite(kept.map(([, p]) => p.clone({ insert: false }))) : null;
-                byColor = regionsOf.map(([c, region], i) => {
+                // Centered lines reach half a line outside the drawing: each color takes the lines
+                // within half a line of its region, the first come keeping a shared stretch.
+                if (centered && regionsOf.length + kept.length > 1) {
+                    let taken = keptAll ? keptAll.clone({ insert: false }) : null;
+                    const half = (line * scale) / 2;
+                    byColor = regionsOf.map(([c, region]) => {
+                        let near = region;
+                        try { const g = PaperOffset.offset(region, half * 1.02, { join: 'round', insert: false }); if (g && Math.abs(g.area) > Math.abs(region.area)) near = g; } catch (err) { near = region; }
+                        let part = safeIntersect(near, lines) || near.intersect(lines, { insert: false });
+                        if (taken) part = part.subtract(taken, { insert: false });
+                        taken = taken ? safeUnite(taken, part) : part.clone({ insert: false });
+                        return [c, part];
+                    }).concat(kept).filter(([, p]) => p && !p.isEmpty());
+                } else byColor = regionsOf.map(([c, region], i) => {
                     const a = region.intersect(lines, { insert: false });
                     // One colour in the end: the lines lie inside the drawing already, so they are its part.
-                    if (regionsOf.length + kept.length < 2) return [c, safeIntersect(region, lines) || lines];
+                    if (regionsOf.length + kept.length < 2) return [c, centered ? lines : safeIntersect(region, lines) || lines];
                     let others = keptAll ? keptAll.clone({ insert: false }) : null;
                     regionsOf.forEach(([, r], j) => { if (j !== i) others = others ? others.unite(r, { insert: false }) : r.clone({ insert: false }); });
                     const b = others ? lines.subtract(others, { insert: false }) : a;
@@ -941,7 +960,7 @@
                 worker = null;
                 compute(input, opts, opts.onProgress).then(resolve, reject); // a worker that can't start: do it here
             };
-            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain, merge: Number(opts.merge) || 0, detail: Number(opts.detail) || 0 } });
+            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain, merge: Number(opts.merge) || 0, detail: Number(opts.detail) || 0, lineAlign: opts.lineAlign || null } });
         });
     }
 
