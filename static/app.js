@@ -1667,16 +1667,20 @@
     }
     // Dim the picture only when the work takes a while; quick updates just swap.
     let busyTimer = 0;
+    let spinTimer = 0;
     function setBusy(on) {
         $('submit-btn').classList.toggle('loading', on);
         clearTimeout(busyTimer);
+        clearTimeout(spinTimer);
         const dim = (v) => {
             const img = $('result-container').querySelector('img');
             if (img) img.classList.toggle('busy', v);
-            $('work-overlay').hidden = !v; // spinner, message and progress on the picture
+            $('work-overlay').hidden = !v; // message and progress on the picture
         };
-        if (on) busyTimer = setTimeout(() => dim(true), 300);
-        else dim(false);
+        // A spinner on the result soon (the old result stays to compare); the message for longer work.
+        const spin = (v) => { $('result-spinner').hidden = !(v && $('result-container').querySelector('img')); };
+        if (on) { spinTimer = setTimeout(() => spin(true), 120); busyTimer = setTimeout(() => dim(true), 300); }
+        else { spin(false); dim(false); }
     }
     async function recolor() {
         clearTimeout(debounceTimer);
@@ -1760,6 +1764,7 @@
         const r = state.result;
         if (resultUrl) URL.revokeObjectURL(resultUrl);
         resultUrl = URL.createObjectURL(new Blob([r.svg], { type: 'image/svg+xml' }));
+        hoverCanvas.remove(); // a new picture: the outline follows the pointer again
         renderImage($('result-container'), resultUrl, 'Recolored ' + state.doc.name);
         $('code-preview-img').src = resultUrl;
         document.querySelectorAll('#sizes-panel img').forEach((img) => { img.src = resultUrl; });
@@ -1979,6 +1984,7 @@
             img.classList.toggle('pickable', !!color);
             img.title = color ? '#' + color.toUpperCase() + ': click to edit this color' : '';
         }
+        drawHoverOutline(img, color);
     }
     stage.addEventListener('pointermove', (e) => {
         if (!isPreviewImg(e.target) || e.pointerType === 'touch') return;
@@ -1986,6 +1992,66 @@
         if (c !== undefined) setHover(c, e.target);
     });
     stage.addEventListener('pointerout', (e) => { if (isPreviewImg(e.target)) setHover(null, e.target); });
+
+    // The color under the pointer, outlined in the picture: its visible pixels on the pick
+    // canvas (where it's on top), with a white edge inside and a dark one outside.
+    const hoverCanvas = document.createElement('canvas');
+    hoverCanvas.className = 'hover-outline';
+    hoverCanvas.setAttribute('aria-hidden', 'true');
+    // Square dilation of a 0/1 mask by r pixels (separable, so cheap).
+    function dilate(m, w, h, r) {
+        const a = new Uint8Array(w * h), b = new Uint8Array(w * h);
+        for (let y = 0; y < h; y++) {
+            let run = 0;
+            for (let x = -r; x < w + r; x++) {
+                if (x + r < w && m[y * w + x + r]) run++;
+                if (x - r - 1 >= 0 && m[y * w + x - r - 1]) run--;
+                if (x >= 0 && x < w) a[y * w + x] = run > 0 ? 1 : 0;
+            }
+        }
+        for (let x = 0; x < w; x++) {
+            let run = 0;
+            for (let y = -r; y < h + r; y++) {
+                if (y + r < h && a[(y + r) * w + x]) run++;
+                if (y - r - 1 >= 0 && a[(y - r - 1) * w + x]) run--;
+                if (y >= 0 && y < h) b[y * w + x] = run > 0 ? 1 : 0;
+            }
+        }
+        return b;
+    }
+    function drawHoverOutline(img, color) {
+        const p = pick;
+        const i = color && p && p.ready ? p.colors.indexOf(color) : -1;
+        if (i < 0 || !img || !img.isConnected) { hoverCanvas.remove(); return; }
+        const key = p.text.length + '|' + p.w + 'x' + p.h + '|' + color + '|' + (p.doc && p.doc.name);
+        if (hoverCanvas.dataset.key !== key || hoverCanvas.pick !== p) {
+            const { w, h } = p;
+            const src = p.ctx.getImageData(0, 0, w, h).data;
+            const [ir, ig, ib] = p.ids[i];
+            const inside = new Uint8Array(w * h);
+            for (let k = 0, j = 0; k < w * h; k++, j += 4) {
+                if (src[j + 3] >= 128 && Math.abs(src[j] - ir) < 12 && Math.abs(src[j + 1] - ig) < 12 && Math.abs(src[j + 2] - ib) < 12) inside[k] = 1;
+            }
+            const outside = new Uint8Array(w * h);
+            for (let k = 0; k < w * h; k++) outside[k] = inside[k] ? 0 : 1;
+            const nearOut = dilate(outside, w, h, 3), nearIn = dilate(inside, w, h, 2);
+            const out = new ImageData(w, h);
+            for (let k = 0, j = 0; k < w * h; k++, j += 4) {
+                if (inside[k] && nearOut[k]) { out.data[j] = 255; out.data[j + 1] = 255; out.data[j + 2] = 255; out.data[j + 3] = 255; } // edge, inside
+                else if (!inside[k] && nearIn[k]) { out.data[j] = 17; out.data[j + 1] = 19; out.data[j + 2] = 28; out.data[j + 3] = 235; } // edge, outside
+                else if (inside[k]) { out.data[j] = 124; out.data[j + 1] = 92; out.data[j + 2] = 255; out.data[j + 3] = 46; } // a faint tint
+            }
+            hoverCanvas.width = w;
+            hoverCanvas.height = h;
+            hoverCanvas.getContext('2d').putImageData(out, 0, 0);
+            hoverCanvas.dataset.key = key;
+            hoverCanvas.pick = p;
+        }
+        const box = img.closest('.pane') || img.parentElement; // the positioned box around the picture
+        const r = drawnRect(img), b = box.getBoundingClientRect();
+        Object.assign(hoverCanvas.style, { left: (r.left - b.left) + 'px', top: (r.top - b.top) + 'px', width: r.width + 'px', height: r.height + 'px' });
+        if (hoverCanvas.parentElement !== box) box.appendChild(hoverCanvas);
+    }
     stage.addEventListener('click', async (e) => {
         if (!isPreviewImg(e.target)) return;
         let c = colorAt(e.target, e.clientX, e.clientY);

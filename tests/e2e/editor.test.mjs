@@ -247,6 +247,9 @@ test('clicking a shape in the picture opens that color, like its chip', async ()
     assert.equal(await page.textContent('#color-edit-title'), '#E879F9');
     await page.mouse.move(pt.x + 1, pt.y);
     await page.locator('.chip.hover[data-color="e879f9"]').waitFor(); // hovering the shape marks its chip
+    await page.locator('.pane .hover-outline').waitFor(); // and outlines it in the picture
+    await page.mouse.move(5, 5);
+    await page.locator('.pane .hover-outline').waitFor({ state: 'detached' });
     pt = await pointOf(page, '#preview-container img', [25, 5], [30, 10]);
     await page.mouse.click(pt.x, pt.y);
     assert.equal(await page.textContent('#color-edit-title'), '#0F766E');
@@ -774,6 +777,7 @@ test('one-color results: text becomes shapes, gradients and transparency are fin
     await page.click('.style[data-mode="solid"]');
     await page.locator('#adj-gap').evaluate((el) => { el.value = '1'; el.dispatchEvent(new Event('input', { bubbles: true })); });
     await page.locator('#status-text', { hasText: /^Solid/ }).waitFor();
+    assert.equal(await page.isVisible('#result-spinner'), false, 'the spinner goes when the result is in');
     await page.click('#tab-btn-code');
     await page.locator('#code-view', { hasText: '<path' }).waitFor();
     assert.equal(await page.isVisible('#error-message'), false, 'no refusal for text');
