@@ -1755,7 +1755,8 @@
                 }
                 if (id !== reqId || doc !== state.doc) return;
             }
-            const effective = editsOf(doc);
+            // A copy: the colors the geometry decided on are shown, never added to your own edits.
+            const effective = Object.assign({}, editsOf(doc));
             // Light colors that stayed parts of the logo follow the style, like any color.
             for (const c of parts.holes) if (!info.holed.includes(c)) delete effective[c];
             // Outline colors the geometry turned into gaps show as cut out.
@@ -2599,10 +2600,23 @@
     function syncRecipeBanner() {
         if (!state.recipe) return;
         $('recipe-banner-edited').hidden = recipeIntact();
+        $('recipe-banner-back').hidden = recipeIntact() && !Object.keys(state.edits).length && !state.keep.size;
         const saved = recipes.some((r) => r.name.toLowerCase() === state.recipe.name.toLowerCase() && sameParams(r.params, state.recipe.params));
         $('recipe-banner-save').hidden = saved;
     }
     $('recipe-banner-close').addEventListener('click', () => { state.recipeSet = null; renderRecipeSet(); showRecipe(null); syncPageUrl(); });
+    // Back to the recipe exactly as it came: its settings, and no color edits (a recipe has none).
+    $('recipe-banner-back').addEventListener('click', () => {
+        if (!state.recipe) return;
+        const r = state.recipe;
+        applySettings(new URLSearchParams(r.params));
+        state.edits = {};
+        state.keep.clear();
+        closeColorEdit(false);
+        settingsApplied();
+        showRecipe(r.name, r.params);
+        toast('Back to ' + r.name + ' (Ctrl+Z undoes)');
+    });
     $('recipe-banner-save').addEventListener('click', () => {
         const { name, params } = state.recipe;
         const at = recipes.findIndex((r) => r.name.toLowerCase() === name.toLowerCase());

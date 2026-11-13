@@ -896,6 +896,31 @@ print(json.dumps({n: z.read(n).decode() for n in z.namelist()}))`, await downloa
     assert.deepEqual(problems, []);
 });
 
+test('recipes: Back to recipe undoes your changes; found outlines never become your own edits', async () => {
+    const { page, problems } = await open();
+    // A dark frame and stripe between two boxes: an outline the geometry finds (holes off).
+    const FRAMED = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="10" y="10" width="108" height="108" fill="#3a4d54"/>'
+        + '<rect x="12" y="12" width="51" height="104" fill="#019bc6"/><rect x="65" y="12" width="51" height="104" fill="#00acd3"/></svg>';
+    await page.goto(BASE + '/?mode=solid&color=auto&outlines=gap&recipe=Outlined');
+    await pasteSvg(page, FRAMED);
+    await page.locator('.chip.edited.cut[data-color="3a4d54"]').waitFor(); // shown as cut out...
+    assert.ok(!/cut=/.test(page.url()), '...but not one of your edits');
+    // Change things: the recipe is marked edited, and Back to recipe puts it back.
+    await page.click('.style[data-mode="hue"]');
+    await page.click('.chip[data-color="019bc6"]');
+    await page.check('#color-edit [value="remove"]');
+    await page.keyboard.press('Escape');
+    await page.locator('#recipe-banner-back:not([hidden])').waitFor();
+    await page.click('#recipe-banner-back');
+    await page.waitForURL((u) => /mode=solid/.test(u) && !/remove=/.test(u) && /recipe=Outlined/.test(u));
+    assert.equal(await page.isVisible('#recipe-banner-edited'), false);
+    assert.equal(await page.isVisible('#recipe-banner-back'), false);
+    await page.click('#reset-all');
+    await page.waitForURL((u) => /mode=colorize/.test(u));
+    assert.ok(!/cut=/.test(page.url()), 'Reset settings leaves no cut colors behind');
+    assert.deepEqual(problems, []);
+});
+
 test('cut out explains what it can\'t do instead of guessing', async () => {
     const { page } = await open();
     await pasteSvg(page, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop stop-color="#f00"/></linearGradient></defs>'

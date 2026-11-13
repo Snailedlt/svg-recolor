@@ -363,6 +363,7 @@ body.code-expanded { overflow: hidden; }
 .recipe-banner-text small { font-size: 0.75rem; color: var(--text-muted); }
 .recipe-banner .btn { align-self: flex-start; margin-top: 8px; white-space: nowrap; }
 .recipe-banner .btn[hidden] { display: none; }
+.recipe-banner-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .recipe-set { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .recipe-set[hidden] { display: none; }
 .recipe-set-list { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -273,7 +273,14 @@ def test_outline_colors_become_gaps(client):
     data = res.json()
     assert {p["from"]: p["to"] for p in data["palette"]}["#3a4d54"] == "cut"
     (_, d), = paths(data["svg"])
-    assert d.count("M") + d.count("m") == 2, "the two boxes, apart: " + d
+    # The stripe between the boxes is a gap; the frame along the edge stays ink (the silhouette
+    # keeps its size), so the frame is one path with the two boxes' areas inside.
+    from picosvg.svg_types import SVGPath
+    box = SVGPath(d=d).bounding_box()
+    assert abs(box.x - 10) < 0.1 and abs(box.w - 108) < 0.1, box
+    from picosvg.svg_pathops import skia_path
+    area = abs(skia_path(SVGPath(d=d).as_cmd_seq(), "nonzero").area)
+    assert 108 * 108 - 2 * 104 - 60 < area < 108 * 108 - 150, area  # the frame, less the stripe
     # Line art (thin lines that are the drawing, by a thick part) isn't an outline.
     art = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="100" cy="64" r="20" fill="#019bc6"/>'
            '<path d="M10 20H80M10 64H80M10 108H80" stroke="#00bd9f" stroke-width="2" fill="none"/></svg>')

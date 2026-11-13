@@ -370,6 +370,7 @@
             const soft = new Set((opts.holes || []).map((c) => String(c).toLowerCase()));
             const holed = [];
             const asLines = []; // outline colors that are a line version's lines as they are
+            const splitOutlines = new Map(); // outline color -> its width: gaps inside, ink on the edge
             const eps = 0.004 * size;
             // Does p border q (within eps)? Sampled along p's outlines.
             const touch = (p, q) => {
@@ -437,7 +438,7 @@
                 }).filter(Boolean);
                 if (outline.length && outline.length < byColor.length) {
                     if (Number(opts.line) > 0) asLines.push(...outline); // a line version: they are the lines
-                    else { byColor = byColor.filter(([c]) => !outline.includes(c)); holed.push(...outline); }
+                    else { outline.forEach((c) => splitOutlines.set(c, widths.get(c))); holed.push(...outline); }
                 }
             }
 
@@ -549,6 +550,19 @@
                 }
                 return acc || new scope.Path({ insert: false });
             };
+
+            // Outline colors (opts.outlines), by the rule devicon's maintainers use for outlined
+            // logos: where an outline has fill on both sides it becomes a gap; along the edge of
+            // the drawing (fill on one side, nothing on the other) it stays ink, so the silhouette
+            // keeps its shape (Docker's outer ring).
+            if (splitOutlines.size) {
+                const all = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
+                byColor = byColor.map(([c, p]) => {
+                    if (!splitOutlines.has(c)) return [c, p];
+                    const edge = all.intersect(stroke(all, 1.5 * splitOutlines.get(c)), { insert: false });
+                    return [c, clean(p.intersect(edge, { insert: false }))];
+                }).filter(([, p]) => p && !p.isEmpty());
+            }
 
             // Lines, from the regions before gaps: a band inside the outer edge, plus (with
             // lineInner) a band centered on every boundary between two colors.
