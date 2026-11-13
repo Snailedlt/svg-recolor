@@ -395,14 +395,14 @@
         const btn = $(center ? 'center-btn' : 'fit-btn');
         btn.classList.add('loading');
         btn.disabled = true;
-        setBusy(true);
+        setBusy(true, 'fit');
         setStatus('work', 'Measuring the drawing…');
         try {
             await fitToCanvasNow(center);
         } finally {
             btn.classList.remove('loading');
             btn.disabled = false;
-            setBusy(false);
+            setBusy(false, 'fit');
         }
     }
     // Where `doc` goes to fill the canvas minus `pad` (or, with a scale, just centered):
@@ -1361,7 +1361,7 @@
         const btn = $('batch-zip');
         btn.classList.add('loading');
         btn.disabled = true;
-        setBusy(true);
+        setBusy(true, 'zip');
         const out = [], used = new Set(), failed = [];
         const n = state.batch.length;
         try {
@@ -1393,7 +1393,7 @@
         } finally {
             btn.classList.remove('loading');
             btn.disabled = false;
-            setBusy(false);
+            setBusy(false, 'zip');
             renderBatch();
             if (state.doc) recolor(); // (clears messages first, so the one below comes after)
         }
@@ -1685,7 +1685,14 @@
     // Dim the picture only when the work takes a while; quick updates just swap.
     let busyTimer = 0;
     let spinTimer = 0;
-    function setBusy(on) {
+    // Busy while any work is on (a recolor, a fit, a download): one ending doesn't hide the
+    // spinner while another still runs (a fit used to, mid "Drawing lines…").
+    const busyWith = new Set();
+    function setBusy(on, what = 'recolor') {
+        const was = busyWith.size > 0;
+        if (on) busyWith.add(what); else busyWith.delete(what);
+        on = busyWith.size > 0;
+        if (on === was) return;
         $('submit-btn').classList.toggle('loading', on);
         clearTimeout(busyTimer);
         clearTimeout(spinTimer);
@@ -2516,7 +2523,7 @@
         const btn = $('recipe-set-zip');
         btn.classList.add('loading');
         btn.disabled = true;
-        setBusy(true);
+        setBusy(true, 'zip');
         // Each recipe's settings in turn (with this SVG's color edits), then back to yours.
         const back = publicParams(), backRecipe = state.recipe;
         const mine = editParams(new URLSearchParams());
@@ -2558,7 +2565,7 @@
             if (backRecipe) showRecipe(backRecipe.name, backRecipe.params);
             btn.classList.remove('loading');
             btn.disabled = false;
-            setBusy(false);
+            setBusy(false, 'zip');
             settingsApplied();
             if (failed.length) setTimeout(() => showError('Not in the ZIP: ' + failed.join('; ')), 0);
         }

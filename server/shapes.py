@@ -343,8 +343,10 @@ def read_shapes(svg: str, lenient: bool = False, flat: Optional[str] = None, mid
         msg = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
         raise engine.RecolorError(f"This SVG could not be read for cut out, gaps or lines: {msg[:200]}")
     shapes = []
-    middles = _middles(pico.svg_root) if mids else {}
-    stand: dict = {}  # flat: each gradient a color of its own (one the SVG doesn't use), as in geometry.js
+    middles = _middles(pico.svg_root) if mids or flat else {}
+    # flat: each gradient a color of its own: its middle color, nudged until unused (outlines are told
+    # by how dark they are), else any unused color. As in geometry.js.
+    stand: dict = {}
     used = set()
     if flat:
         for s in pico.shapes():
@@ -354,11 +356,18 @@ def read_shapes(svg: str, lenient: bool = False, flat: Optional[str] = None, mid
 
     def stand_in(paint: str) -> str:
         if paint not in stand:
-            while True:
-                nxt[0] = (nxt[0] + 0x050301) % 0x1000000
-                c = f"{nxt[0]:06x}"
-                if c not in used:
+            m = re.match(r"url\(\s*[\"']?#([^\"')]+)", paint)
+            c = middles.get(m.group(1)) if m else None
+            for _ in range(256):
+                if not c or c not in used:
                     break
+                c = c[:4] + f"{(int(c[4:], 16) + 1) % 256:02x}"
+            if not c or c in used:
+                while True:
+                    nxt[0] = (nxt[0] + 0x050301) % 0x1000000
+                    c = f"{nxt[0]:06x}"
+                    if c not in used:
+                        break
             used.add(c)
             stand[paint] = "#" + c
         return stand[paint]

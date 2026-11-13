@@ -126,10 +126,14 @@
                     for (const v of [cs.fill, cs.stroke]) { const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(v); if (m) used.add(m.slice(1).map((n) => (+n).toString(16).padStart(2, '0')).join('')); }
                 }
                 let next = 0x0a0b0c;
+                // Its middle color, nudged until unused (so it looks like what it is: outlines are
+                // told by how dark they are); else any unused color.
                 standIn = (v) => {
                     if (!stand.has(v)) {
-                        let c;
-                        do { c = (next = (next + 0x050301) % 0x1000000).toString(16).padStart(6, '0'); } while (used.has(c));
+                        const mid = middleOf(v);
+                        let c = mid !== 'none' ? mid.slice(1) : null;
+                        for (let k = 0; c && used.has(c) && k < 256; k++) c = c.slice(0, 4) + ((parseInt(c.slice(4), 16) + 1) % 256).toString(16).padStart(2, '0');
+                        if (!c || used.has(c)) do { c = (next = (next + 0x050301) % 0x1000000).toString(16).padStart(6, '0'); } while (used.has(c));
                         used.add(c);
                         stand.set(v, '#' + c);
                     }
@@ -399,7 +403,7 @@
                 // Of p's outline, the share that runs against (within eps of) one of `parts`; and
                 // how many of them it meets.
                 const against = (p, parts) => {
-                    let near = 0, all = 0;
+                    let near = 0, all = 0, out = 0;
                     const met = new Set();
                     for (const k of (p.children ? p.children : [p])) {
                         const len = k.length;
@@ -409,19 +413,27 @@
                             const pt = k.getPointAt(at), n = k.getNormalAt(at);
                             if (!pt || !n) continue;
                             all++;
-                            const hit = [pt.add(n.multiply(eps)), pt.subtract(n.multiply(eps))].map((q) => parts.findIndex(([, r]) => r.bounds.contains(q) && r.contains(q))).find((j) => j >= 0);
-                            if (hit !== undefined) { near++; met.add(hit); }
+                            const sides = [pt.add(n.multiply(eps)), pt.subtract(n.multiply(eps))];
+                            const hit = sides.map((q) => parts.findIndex(([, r]) => r.bounds.contains(q) && r.contains(q))).find((j) => j >= 0);
+                            if (hit !== undefined) { near++; met.add(hit); } else if (sides.some((q) => !p.contains(q))) out++; // the outside
                         }
                     }
-                    return { share: all ? near / all : 0, met: met.size };
+                    return { share: all ? near / all : 0, met: met.size, outside: all ? out / all : 0, metColors: [...met].map((j) => parts[j][0]) };
                 };
                 // An outline runs against other colors for much of its length (line art, whose thin
-                // lines are the drawing, doesn't), between at least two parts, some much thicker.
+                // lines are the drawing, doesn't), between at least two parts, some much thicker, and
+                // mostly inside the drawing: a thin band along its edge (an octopus's tentacle
+                // undersides) is part of the silhouette, and cutting it would change the shape.
                 const outline = byColor.filter(([c]) => !keepColors.has(c) && !(opts.cut || []).includes(c) && widths.get(c) <= 0.02 * size).map(([c, p]) => {
                     const near = byColor.filter(([d, q]) => d !== c && q.bounds.expand(eps * 2).intersects(p.bounds));
                     if (near.length < 2 || !near.some(([d]) => widths.get(d) >= 2 * widths.get(c))) return null;
-                    const { share, met } = against(p, near);
-                    return share >= 0.4 && met >= 2 ? c : null;
+                    const { share, met, outside, metColors } = against(p, near);
+                    // ...and darker than the parts it runs between (lighter thin parts, like an
+                    // octopus's pink tentacle undersides, are parts of the drawing, not outlines).
+                    const lum = (h) => { const x = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)); return (Math.max(...x) + Math.min(...x)) / 2; }; // HSL lightness
+                    const around = metColors.map((d) => lum(d));
+                    const darker = around.length && lum(c) < around.reduce((t, v) => t + v, 0) / around.length - 20;
+                    return share >= 0.4 && met >= 2 && outside <= 0.45 && darker ? c : null;
                 }).filter(Boolean);
                 if (outline.length && outline.length < byColor.length) {
                     if (Number(opts.line) > 0) asLines.push(...outline); // a line version: they are the lines

@@ -280,3 +280,16 @@ def test_outline_colors_become_gaps(client):
     res = client.post("/api/recolor?mode=solid&color=000000&outlines=gap&format=json", content=art, headers=SVG_CT)
     assert res.status_code == 200, res.text
     assert {p["from"]: p["to"] for p in res.json()["palette"]}["#00bd9f"] != "cut"
+
+
+def test_lighter_thin_parts_are_not_outlines(client):
+    # A thin pink stripe between two red parts (like an octopus's tentacle undersides) is lighter
+    # than them: part of the drawing, not an outline. The same stripe in dark gray is an outline.
+    def svg(stripe):
+        return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="10" y="10" width="108" height="108" '
+                f'fill="{stripe}"/><rect x="10" y="10" width="53" height="108" fill="#c62828"/>'
+                '<rect x="65" y="10" width="53" height="108" fill="#e3373b"/></svg>')
+    for stripe, cut in (("#f389a4", False), ("#3a4d54", True)):
+        res = client.post("/api/recolor?mode=solid&color=000000&outlines=gap&format=json", content=svg(stripe), headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        assert ({p["from"]: p["to"] for p in res.json()["palette"]}[stripe] == "cut") is cut, stripe
