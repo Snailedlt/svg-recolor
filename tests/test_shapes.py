@@ -242,3 +242,9 @@ def test_color_auto_takes_the_most_prominent_color(client):
             '<rect width="10" height="10" fill="url(#g)"/></svg>')
     res = client.post("/api/recolor?mode=solid&color=auto&format=json", content=grad, headers=SVG_CT)
     assert res.status_code == 200 and res.json()["color"].lower() == "#800080", res.text
+
+
+def test_pale_tints_count_as_light_but_pastels_do_not():
+    assert shapes.is_light("ffffff") and shapes.is_light("ebebeb") and shapes.is_light("d4eef1")  # Docker's eye
+    assert not shapes.is_light("bfdbe0")  # Docker's belly shine stays
+    assert not shapes.is_light("ffc0cb") and not shapes.is_light("ffd43b")  # pink, Python's yellow

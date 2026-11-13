@@ -120,9 +120,13 @@ def _flag(value) -> bool:
 
 
 def is_light(color: str) -> bool:
-    """Near white (every channel at least 224): what `holes=light` cuts out. As in app.js."""
+    """Near white: what `holes=light` cuts out. Every channel at least 224, or a pale tint close to
+    gray (every channel at least 200, within 48 of each other: Docker's #d4eef1). As in app.js."""
     c = color.lstrip("#")
-    return len(c) == 6 and all(int(c[i:i + 2], 16) >= 0xE0 for i in (0, 2, 4))
+    if len(c) != 6:
+        return False
+    x = [int(c[i:i + 2], 16) for i in (0, 2, 4)]
+    return min(x) >= 0xE0 or (min(x) >= 0xC8 and max(x) - min(x) <= 48)
 
 
 def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None, unit=None,

@@ -172,7 +172,7 @@ def extra_query(
     keep: Annotated[Optional[str], Query(
         description="With `line`: colors that stay filled, comma-separated.", examples=["ffffff"])] = None,
     holes: Annotated[Optional[str], Query(
-        description="`light`: near-white colors (every channel 224 or more) become holes, like `cut`, unless "
+        description="`light`: near-white colors (every channel 224 or more, or a pale tint close to gray) become holes, like `cut`, unless "
                     "edited otherwise. For one-color icons whose white parts should stay see-through.",
         pattern="^(light|none)$")] = None,
     unit: Annotated[Optional[str], Query(

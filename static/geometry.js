@@ -688,7 +688,8 @@
                     }
                 }
             }
-            const light = (c) => [0, 2, 4].every((i) => parseInt(c.slice(i, i + 2), 16) >= 0xe0);
+            // Near white, as "Light colors become holes" (app.js, server/shapes.py).
+            const light = (c) => ((x) => Math.min(...x) >= 0xe0 || (Math.min(...x) >= 0xc8 && Math.max(...x) - Math.min(...x) <= 48))([0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16)));
             const rgb = (c) => [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16));
             let pool = [...seen].filter(([c]) => !light(c));
             if (!pool.length) pool = [...seen];

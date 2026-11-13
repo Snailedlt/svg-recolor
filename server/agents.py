@@ -72,7 +72,7 @@ Base URL: {base}
 - Shapes, canvas and optimizing (the same code as the editor; in JSON and MCP, lists and numbers):
   - `cut=dce0df,...`: those colors become real gaps (cut through what's below). One path per color, so
     `mode=solid&cut=...` is one path. For logos with outlines between their parts. Palette `to`: `"cut"`.
-  - `holes=light`: near-white colors (every channel >= 224) become holes too, unless edited. With `mode=solid`
+  - `holes=light`: near-white colors (every channel >= 224, or pale tints close to gray, like #d4eef1) become holes too, unless edited. With `mode=solid`
     this makes a one-color icon whose white parts stay see-through (like devicon's plain icons).
   - `gap=2`: a gap of that width wherever two original colors meet. For logos whose parts just touch.
   - `line=3`: a line version (like devicon's line icons), only a band of that width along the edges.

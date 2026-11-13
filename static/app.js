@@ -592,8 +592,9 @@
     // Cut-out colors are left in `edited` for the geometry step (cutOutSvg); `svg` treats
     // them as invisible, which is what the quick style thumbnails show.
     // The color edits in effect: yours, plus with "Light colors become holes" the near-white
-    // colors (every channel 224 or more) you haven't edited, cut out. As server/shapes.py.
-    const isLight = (c) => c.length === 6 && [0, 2, 4].every((i) => parseInt(c.slice(i, i + 2), 16) >= 0xe0);
+    // colors you haven't edited, cut out: every channel 224 or more, or a pale tint close to
+    // gray (every channel 200 or more, within 48 of each other). As server/shapes.py.
+    const isLight = (c) => c.length === 6 && ((x) => Math.min(...x) >= 0xe0 || (Math.min(...x) >= 0xc8 && Math.max(...x) - Math.min(...x) <= 48))([0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16)));
     function editsOf(doc) {
         if (!state.holes || !doc) return state.edits;
         const out = Object.assign({}, state.edits);
@@ -1592,9 +1593,8 @@
         let hex = null;
         try { hex = (await loadGeometry()).prominentColor(doc.norm); } catch (err) { /* text, masks: count instead */ }
         if (!hex) {
-            const light = (c) => [0, 2, 4].every((i) => parseInt(c.slice(i, i + 2), 16) >= 0xe0);
             const ranked = [...doc.palette].sort((a, b) => b[1] - a[1]);
-            hex = (ranked.find(([c]) => !light(c)) || ranked[0] || ['000000'])[0];
+            hex = (ranked.find(([c]) => !isLight(c)) || ranked[0] || ['000000'])[0];
         }
         doc.auto = '#' + hex.toUpperCase();
         return doc.auto;
