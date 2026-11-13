@@ -163,6 +163,10 @@ def extra_query(
     gap: Annotated[Optional[float], Query(
         description="Cut a gap of this width wherever two original colors meet (in `unit`s). With `mode=solid` "
                     "the color areas stay apart. For logos whose parts just touch.", ge=0, examples=[2])] = None,
+    gaps: Annotated[Optional[str], Query(
+        description="With `gap`: `auto` leaves the gaps out when the one-color drawing already shows its parts "
+                    "through its holes (a mesh, line art, a grid), where gaps would only cut it up; `always` (default).",
+        pattern="^(auto|always)$")] = None,
     line: Annotated[Optional[float], Query(
         description="Make a line version (like devicon's line icons): only a band of this width along the edges "
                     "is kept (in `unit`s).", ge=0, examples=[3])] = None,
@@ -209,7 +213,7 @@ def extra_query(
         description="With `optimize`: decimals kept in numbers (default 3).", ge=0, le=8)] = None,
 ) -> dict:
     """Cut out, gaps, lines, canvas and SVGO: the same code as the editor (see server/shapes.py)."""
-    return {"cut": cut, "holes": holes, "outlines": outlines, "merge": merge, "detail": detail, "gap": gap, "line": line, "lines": lines, "linealign": linealign, "keep": keep, "unit": unit, "canvas": canvas,
+    return {"cut": cut, "holes": holes, "outlines": outlines, "merge": merge, "detail": detail, "gap": gap, "gaps": gaps, "line": line, "lines": lines, "linealign": linealign, "keep": keep, "unit": unit, "canvas": canvas,
             "place": place, "fit": fit, "optimize": optimize, "precision": precision}
 
 
@@ -495,6 +499,7 @@ JSON_BODY_SCHEMA = {
         "line": {"type": "number", "minimum": 0, "description": "Line version: band width along the edges."},
         "lines": {"type": "string", "enum": ["all", "outer", "plain"]},
         "linealign": {"type": "string", "enum": ["inside", "center"], "description": "Lines inside the edges (default) or centered on them."},
+        "gaps": {"type": "string", "enum": ["auto", "always"], "description": "auto: no gaps when the parts already show through holes."},
         "keep": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
                  "description": "With line: colors that stay filled."},
         "unit": {"type": "string", "enum": ["px", "pct"]},

@@ -43,8 +43,10 @@ def test_gaps_between_touching_colors(client):
     assert res.status_code == 200, res.text
     (color, d), = paths(res.text)
     assert color == "0169c9"
-    # Each 64-unit square gives up 2 on each side that touches another: 0..62 and 66..128.
-    assert d == "M0,0h62l0,62l-62,0zM128,0v62l-62,0v-62zM0,128v-62h62l0,62zM128,128h-62v-62h62z"
+    # Of two touching parts the smaller (here: the later) gives up the whole gap, so one keeps its
+    # exact shape: the first square stays 0..64, the others start 4 further on.
+    assert d.startswith("M0,0h64v64h-64z") and d.count("M") == 4, d
+    assert abs(_area(d) - (64 * 64 + 2 * 60 * 64 + 60 * 60)) < 1
 
 
 def test_line_version_keep_and_outline_only(client):
@@ -399,3 +401,21 @@ def test_centered_lines_straddle_the_edge(client):
     assert "M34,34" in d_in.replace(" ", "") and abs(a_in - (60 * 60 - 52 * 52)) < 1
     assert "32" in d_c and abs(a_c - (64 * 64 - 56 * 56)) < 5, (d_c, a_c)  # round outer corners
     assert client.post("/api/recolor?line=4&linealign=middle", content=svg, headers=SVG_CT).status_code in (400, 422)
+
+
+def test_auto_gaps_leave_a_mesh_alone(client):
+    # Slots cut into one colour and a second colour over half of it: the holes already
+    # show the parts, so gaps=auto adds none; a plain shape with no holes still gets them.
+    holes = "".join(f"M{x} 14h2v100h-2z" for x in range(10, 62, 5))
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill="#1867c0" fill-rule="evenodd" d="M4 4h120v120H4z{holes}"/>'
+           '<rect x="64" y="4" width="60" height="120" fill="#e33333" fill-opacity="0.999"/></svg>')
+    def area(q, s=svg):
+        res = client.post(f"/api/recolor?mode=solid&color=000000&gap=4{q}", content=s, headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        return sum(_area(d) for _, d in paths(res.text))
+    full = area("&gaps=auto")
+    assert area("") < full - 100, "with gaps always, a strip goes"
+    plain = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="4" y="4" width="60" height="120" fill="#1867c0"/>'
+             '<rect x="64" y="4" width="60" height="120" fill="#e33333"/></svg>')
+    assert area("&gaps=auto", plain) < 120 * 120 - 100, "no holes: the gap stays"
+    assert client.post("/api/recolor?gap=4&gaps=sometimes", content=plain, headers=SVG_CT).status_code in (400, 422)

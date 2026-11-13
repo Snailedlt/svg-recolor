@@ -58,6 +58,7 @@
         // | { op: 'hide' } (older links; shown as Invisible)
         edits: {},
         gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
+        gapsAuto: false, // gaps only where the holes don't already show the parts
         lineCenter: false, // lines centered on the edges (half outside) instead of inside them
         merge: 0, // simplify: colors this close (RGB distance) are one part; 0 = off
         detail: 0, // simplify: pieces and holes smaller than this size go; 0 = off
@@ -286,6 +287,7 @@
         if (state.merge) q.set('merge', String(state.merge));
         if (state.detail) q.set('detail', String(state.detail));
         if (state.gap) q.set('gap', String(state.gap));
+        if (state.gap && state.gapsAuto) q.set('gaps', 'auto');
         if ((state.gap || state.line || state.detail) && state.unit === '%') q.set('unit', 'pct');
         if (state.holes) q.set('holes', 'light');
         if (state.outlines) q.set('outlines', 'gap');
@@ -588,6 +590,7 @@
     $('svgo-toggle').addEventListener('change', (e) => { state.svgo = e.target.checked; updateOptimizeFold(); editsChanged(); });
     $('holes-toggle').addEventListener('change', (e) => { state.holes = e.target.checked; editsChanged(); });
     $('outlines-toggle').addEventListener('change', (e) => { state.outlines = e.target.checked; editsChanged(); });
+    $('gaps-auto-toggle').addEventListener('change', (e) => { state.gapsAuto = e.target.checked; if (state.gap) editsChanged(); else syncPageUrl(); });
     $('line-center-toggle').addEventListener('change', (e) => { state.lineCenter = e.target.checked; if (state.line) editsChanged(); else syncPageUrl(); });
     renderSvgoSettings();
 
@@ -789,7 +792,7 @@
         const out = await Geo.cutOut(edited, {
             flat: doc ? flatColor(doc, merged) : null,
             cut, holes, outlines: state.outlines, map: merged, gap: state.gap, unit: state.unit, onProgress,
-            merge: state.merge, detail: state.detail, lineAlign: state.lineCenter ? 'center' : null,
+            merge: state.merge, detail: state.detail, lineAlign: state.lineCenter ? 'center' : null, gaps: state.gapsAuto ? 'auto' : null,
             line: state.line, lineInner: state.lineInner, linePlain: state.linePlain, keep: [...state.keep],
         });
         const m = /<!--holes:([^>]*)-->/.exec(out);
@@ -827,6 +830,7 @@
     function syncGap(read = true) {
         if (read) state.gap = Math.max(0, Math.min(parseFloat(gapInput.max), parseFloat(gapInput.value) || 0));
         $('adj-gap-out').textContent = unitText(state.gap);
+        $('gaps-auto-row').hidden = !state.gap;
         updateFolds();
     }
     function setUnit(unit, user) {
@@ -1109,6 +1113,8 @@
         state.linePlain = false;
         state.lineCenter = false;
         $('line-center-toggle').checked = false;
+        state.gapsAuto = false;
+        $('gaps-auto-toggle').checked = false;
         state.keep.clear();
         syncLine();
         syncAdjust(false);
@@ -2881,6 +2887,8 @@
         state.lineInner = q.get('lines') !== 'outer';
         state.linePlain = q.get('lines') === 'plain';
         state.lineCenter = q.get('linealign') === 'center';
+        state.gapsAuto = q.get('gaps') === 'auto';
+        $('gaps-auto-toggle').checked = state.gapsAuto;
         $('line-center-toggle').checked = state.lineCenter;
         state.keep.clear();
         for (const v of (q.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }

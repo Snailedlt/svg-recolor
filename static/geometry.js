@@ -733,24 +733,59 @@
                 }
             }
 
-            const gap = Number(opts.gap) || 0;
+            let gap = Number(opts.gap) || 0;
+            // opts.gaps 'auto': no gaps when the one-colour drawing already shows its parts through
+            // its holes (a mesh like SQL Server's, line art like GCC's bull, HAProxy's grid): the
+            // holes' outlines, against the drawing's size, past 14. Gaps there only cut it up.
+            if (gap > 0 && opts.gaps === 'auto' && byColor.length > 1) {
+                const all = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
+                const kids = all.children ? all.children : [all];
+                const depthOf = (k) => { const at = k.firstSegment && k.firstSegment.point; return at ? kids.filter((c) => c !== k && c.bounds.contains(k.bounds) && c.contains(at)).length : 0; };
+                const holeLen = kids.filter((k) => depthOf(k) % 2 === 1).reduce((t, k) => t + k.length, 0);
+                if (holeLen / Math.sqrt(Math.abs(all.area) || 1) > 14) gap = 0;
+            }
             if (gap > 0 && byColor.length > 1) {
                 if (!PaperOffset) throw new GeometryError('Gaps need the offset library, which did not load.');
                 const half = (gap * scale) / 2;
-                // A band of half the gap on each side of a color's edge; other colors lose what it
-                // covers. Only colors that come within the band of each other need the work.
+                // Only colors that come within a gap of each other need the work.
                 const near = (a, b) => a.bounds.expand(half * 2 + 1e-6).intersects(b.bounds);
-                const bands = [];
+                // The smaller of two parts gives up the whole gap, along the larger one's edge: the
+                // larger keeps its exact shape (so the silhouette stays whole where they meet the
+                // edge), and every cut runs straight through. A thin part (under three gaps thick: a
+                // line of the drawing, Grunt's features) would vanish that way: it and its neighbour
+                // share the gap, half each, as before.
+                const sizes = byColor.map(([, p]) => Math.abs(p.area));
+                const thickOf = (p) => {
+                    const kids = p.children ? p.children : [p];
+                    const per = kids.reduce((t, k) => t + k.length, 0), area = Math.abs(p.area);
+                    const disc = per * per - 16 * area;
+                    return disc > 0 ? (per - Math.sqrt(disc)) / 4 : (2 * area) / (per || 1);
+                };
+                const thick = byColor.map(([, p]) => opts.gapSplit !== 'half' && thickOf(p) >= 3 * gap * scale);
+                const bigger = (j, i) => sizes[j] > sizes[i] || (sizes[j] === sizes[i] && j < i);
+                // How i and j share: i loses a whole gap ('full'), half ('half') or nothing.
+                const share = (i, j) => (bigger(j, i) ? (thick[i] ? 'full' : 'half') : (thick[j] ? null : 'half'));
+                const full = [], halfB = [];
                 for (const [i, [, p]] of byColor.entries()) {
-                    bands.push(byColor.some(([, q], j) => j !== i && near(p, q))
-                        ? stroke(p, half) : null);
+                    let needFull = false, needHalf = false;
+                    byColor.forEach(([, q], j) => {
+                        if (j === i || !near(p, q)) return;
+                        const how = share(j, i); // what j loses to i
+                        if (how === 'full') needFull = true; else if (how === 'half') needHalf = true;
+                    });
+                    full.push(needFull ? stroke(p, 2 * half) : null);
+                    halfB.push(needHalf ? stroke(p, half) : null);
                     report((lines ? 0.4 : 0.2) + (lines ? 0.5 : 0.7) * (i + 1) / byColor.length);
                     await tick();
                 }
                 const before = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
                 byColor = byColor.map(([c, p], i) => {
                     let out = p;
-                    bands.forEach((band, j) => { if (j !== i && band && band.bounds.intersects(out.bounds)) out = out.subtract(band, { insert: false }); });
+                    byColor.forEach((e, j) => {
+                        if (j === i) return;
+                        const how = share(i, j), band = how === 'full' ? full[j] : how === 'half' ? halfB[j] : null;
+                        if (band && band.bounds.intersects(out.bounds)) out = out.subtract(band, { insert: false });
+                    });
                     return [c, out];
                 }).filter(([, p]) => !p.isEmpty());
                 // Where a gap leaves the drawing at a shallow angle it would take a long wedge out of
@@ -764,7 +799,7 @@
                     if (p.children) p.children.slice().forEach((k) => { if (k.length > 0 && (2 * Math.abs(k.area)) / k.length < half && k.area * (p.area || 1) > 0) k.remove(); });
                     return [c, p];
                 }).filter(([, p]) => p && !p.isEmpty());
-                if (opts.gapEdges !== false && byColor.length) {
+                if (opts.gapEdges === true && byColor.length) {
                     try {
                         const rim = 2 * half;
                         const core = PaperOffset.offset(before, -rim, { join: 'round', insert: false });
@@ -960,7 +995,7 @@
                 worker = null;
                 compute(input, opts, opts.onProgress).then(resolve, reject); // a worker that can't start: do it here
             };
-            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain, merge: Number(opts.merge) || 0, detail: Number(opts.detail) || 0, lineAlign: opts.lineAlign || null } });
+            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain, merge: Number(opts.merge) || 0, detail: Number(opts.detail) || 0, lineAlign: opts.lineAlign || null, gaps: opts.gaps || null } });
         });
     }
 

@@ -76,6 +76,7 @@ class Extras:
     line_inner: bool = True  # lines also between colors
     line_plain: bool = False  # lines of the one-colour version (after holes, outline gaps, gaps)
     keep: tuple = ()  # colors that stay filled in the line version
+    gaps: str = ""  # "auto": no gaps when the one-colour drawing already shows its parts through holes
     line_align: str = "inside"  # lines inside the edge, or "center": straddling it (a stroke turned to a shape)
     merge: float = 0  # simplify: colors within this RGB distance count as one part
     detail: float = 0  # simplify: pieces and holes smaller than detail x detail go
@@ -136,7 +137,7 @@ def is_light(color: str) -> bool:
 
 def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None, unit=None,
                  canvas=None, place=None, fit=None, optimize=None, precision=None, holes=None, outlines=None,
-                 merge=None, detail=None, linealign=None) -> Extras:
+                 merge=None, detail=None, linealign=None, gaps=None) -> Extras:
     """Extras from request values (strings from query strings and forms, or JSON values)."""
     ex = Extras()
     ex.cut = tuple(engine._edit_key(c) for c in edit_list(cut))
@@ -161,6 +162,11 @@ def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None
         ex.gap = _number("gap", gap, 0, hi)
     if line not in (None, ""):
         ex.line = _number("line", line, 0, hi)
+    if gaps not in (None, ""):
+        v = str(gaps).strip().lower()
+        if v not in ("auto", "always"):
+            raise engine.RecolorError("'gaps' must be 'auto' (only where the parts don't already show) or 'always'.")
+        ex.gaps = "auto" if v == "auto" else ""
     if linealign not in (None, ""):
         v = str(linealign).strip().lower()
         if v not in ("inside", "center"):
@@ -543,7 +549,7 @@ def recolor(svg: str, opts: engine.Options) -> engine.Result:
     if cut or holes or ex.outlines or ex.gap or ex.line or ex.merge or ex.detail:
         geo = {"cut": list(cut), "holes": list(holes), "outlines": ex.outlines, "map": mapping, "gap": ex.gap, "line": ex.line,
                "lineInner": ex.line_inner, "linePlain": ex.line_plain, "keep": list(ex.keep), "unit": ex.unit, "flat": None,
-               "merge": ex.merge, "detail": ex.detail, "lineAlign": ex.line_align}
+               "merge": ex.merge, "detail": ex.detail, "lineAlign": ex.line_align, "gaps": ex.gaps or None}
         # Everything one color (like Solid)? Then gradients and transparency don't matter.
         gone = set(opts.hide) | set(opts.remove) | set(cut) | set(holes)
         outs = {mapping.get(c, c) for c in counts if c not in gone}
