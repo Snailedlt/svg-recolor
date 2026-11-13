@@ -476,14 +476,16 @@
                         .sort((a, b) => was.indexOf(a[0]) - was.indexOf(b[0]));
                 }
             }
-            // Simplify (opts.detail, a size): a piece or a hole smaller than detail x detail goes
-            // (a piece drops, a hole fills in), so small specks get no gaps or lines of their own.
+            // Simplify (opts.detail, a size): a piece or a hole smaller than detail in every direction
+            // goes (a piece drops, a hole fills in), so small specks get no gaps or lines of their own.
+            // A thin line is long, so it stays (HAProxy's connectors).
             const detail = (Number(opts.detail) || 0) * scale;
             if (detail > 0) {
                 const least = detail * detail;
                 byColor = byColor.map(([c, q]) => {
-                    if (q.children) q.children.slice().forEach((k) => { if (Math.abs(k.area) < least) k.remove(); });
-                    else if (Math.abs(q.area) < least) return [c, null];
+                    const speck = (k) => Math.max(k.bounds.width, k.bounds.height) < detail && Math.abs(k.area) < least;
+                    if (q.children) q.children.slice().forEach((k) => { if (speck(k)) k.remove(); });
+                    else if (speck(q)) return [c, null];
                     return [c, q];
                 }).filter(([, q]) => q && !q.isEmpty() && Math.abs(q.area) > 0);
             }
@@ -624,7 +626,9 @@
             }
             // A band of `half` on both sides of every outline of `p`. An outline narrower than the
             // band is covered whole (its inward offset would turn inside out): filled, then grown.
-            const stroke = (p, half) => {
+            // forLines: the band is a line of a line version (a part narrower than it stays filled
+            // only when its hole couldn't show); otherwise (gaps, outline gaps) the older, plainer rule.
+            const stroke = (p, half, forLines = false) => {
                 let acc = null;
                 for (const c of (p.children ? p.children : [p])) {
                     const path = c.clone({ insert: false });
@@ -677,9 +681,27 @@
                     // can still show (over 3/4 of a band).
                     const pa = Math.abs(path.area), pd = len * len - 16 * pa;
                     const thickness = pd > 0 ? (len - Math.sqrt(pd)) / 4 : len / 4;
-                    if (thickness < 2.75 * half) {
+                    if (forLines ? thickness < 2.75 * half : (2 * pa) / Math.max(len, 1e-9) < 2 * half) {
                         if (path.area < 0) path.reverse();
-                        acc = acc ? acc.unite(path, { insert: false }) : path;
+                        let keep = path;
+                        // Thin on average, but maybe not everywhere: a box with long thin connectors
+                        // (HAProxy) measures as thin. Its thick parts (those that survive shrinking
+                        // by 1.375 bands) still get their line inside: what's left of them shrunk by
+                        // one band more is cut out; the thin bits stay filled.
+                        if (forLines && PaperOffset) {
+                            try {
+                                const r = 1.375 * half;
+                                const sh = PaperOffset.offset(path, -r, { join: 'round', insert: false });
+                                if (sh && !sh.isEmpty() && Math.abs(sh.area) > 0) {
+                                    const core = PaperOffset.offset(sh, r - half, { join: 'round', insert: false });
+                                    if (core && !core.isEmpty() && Math.abs(core.area) < Math.abs(path.area)) {
+                                        const cut = path.subtract(core, { insert: false });
+                                        if (cut && !cut.isEmpty() && Math.abs(cut.area) >= Math.abs(path.area) - Math.abs(core.area) - 1e-6 && Math.abs(cut.area) < Math.abs(path.area)) keep = cut;
+                                    }
+                                }
+                            } catch (err) { keep = path; }
+                        }
+                        acc = acc ? acc.unite(keep, { insert: false }) : keep;
                         continue;
                     }
                     if (Math.min(b.width, b.height) > 2 * half) {
@@ -725,12 +747,12 @@
                 // opts.lineAlign 'center': the line straddles the edge, half outside, as a stroke drawn
                 // on the outline and turned into a shape (Inkscape's Stroke to Path, the way devicon's
                 // guide makes line icons). Default: inside the edge, so the drawing keeps its size.
-                lines = centered ? stroke(whole, w / 2) : whole.intersect(stroke(whole, w), { insert: false });
+                lines = centered ? stroke(whole, w / 2, true) : whole.intersect(stroke(whole, w, true), { insert: false });
                 report(opts.gap > 0 ? 0.15 : 0.3);
                 await tick();
                 if (opts.lineInner !== false && byColor.length > 1) {
                     for (const [i, [, p]] of byColor.entries()) {
-                        const inner = centered ? stroke(p, w / 2) : safeIntersect(whole, stroke(p, w / 2));
+                        const inner = centered ? stroke(p, w / 2, true) : safeIntersect(whole, stroke(p, w / 2, true));
                         if (inner) lines = safeUnite(lines, inner);
                         report((opts.gap > 0 ? 0.15 : 0.3) + (opts.gap > 0 ? 0.25 : 0.6) * (i + 1) / byColor.length);
                         await tick();
@@ -751,7 +773,7 @@
                         if (blobs && !blobs.isEmpty() && Math.abs(blobs.area) > 4 * w * w) {
                             const inside = safeIntersect(blobs, drawn);
                             if (inside && !inside.isEmpty()) {
-                                const ring = safeIntersect(inside, stroke(inside, w));
+                                const ring = safeIntersect(inside, stroke(inside, w, true));
                                 const rest = drawn.subtract(inside, { insert: false });
                                 const next = ring ? safeUnite(rest, ring) : null;
                                 if (next && Math.abs(next.area) < Math.abs(drawn.area) + 1e-6) asDrawn = next;
@@ -864,7 +886,7 @@
             if (line > 0 && byColor.length && opts.linePlain) {
                 if (!PaperOffset) throw new GeometryError('Lines need the offset library, which did not load.');
                 const whole = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
-                lines = centered ? stroke(whole, (line * scale) / 2) : whole.intersect(stroke(whole, line * scale), { insert: false });
+                lines = centered ? stroke(whole, (line * scale) / 2, true) : whole.intersect(stroke(whole, line * scale, true), { insert: false });
                 report(0.9);
                 await tick();
             }
