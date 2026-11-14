@@ -50,8 +50,12 @@ On top of any mode, single colors (the original ones, as listed by `/api/palette
 | Hide | `hide=ffffff,...` | The color becomes `none` (fill/stroke) or `transparent` (gradient stops); the shapes stay in the file. |
 | Remove | `remove=ffffff,...` | Shapes painted with the color are deleted, including ones that inherit it from a group or a CSS class. A shape keeps its fill or stroke when only the other is removed. Shapes inside `<defs>`, `<clipPath>`, `<mask>` and similar are only hidden, never deleted. |
 
-A one-color icon, like a devicon `plain` version, is `mode=solid&color=000000&remove=ffffff` (Solid, then remove the
-background).
+A one-color icon, like a devicon `plain` version, is `mode=solid&color=auto&holes=light` (Solid, and white or
+near-white parts become holes where they're drawn against other colors; in the editor, **Light colors become holes**
+under Color). A light part standing on its own, like CMake's gray triangle, stays. Add `outlines=gap` (**Outline colors
+become gaps**) for logos drawn with an outline color, like Docker: a color whose visible part is thin and runs between
+other parts becomes a gap, so the parts stay apart; in a line version it is the line drawing itself. `remove=ffffff`
+instead just drops a white background.
 
 Three more edits need path geometry. The editor runs them in the browser, and the API and MCP server run the very
 same code (paper.js and SVGO in QuickJS, with picosvg reading the shapes), so the results match:
@@ -65,18 +69,23 @@ same code (paper.js and SVGO in QuickJS, with picosvg reading the shapes), so th
 
 - **Line** (API `line=3`, `lines=outer`, `keep=ffffff`; slider under Adjust, same units): a line version, like devicon's `line` icons. Only a band of that width
   along the edges is kept: inside the outer edge, and centered on the boundaries between colors (switch off **Lines
-  between colors** for just the outline). In the color panel, **Keep filled** keeps a color solid, for small details.
+  between colors** for just the outline). In the color panel, **Keep filled** keeps a color solid, for small details. Devicon's line icons mostly use
+  lines about 1 unit wide on their 128 canvas (`line=1` with `canvas=128x128`).
 
 **Canvas** (the viewBox size is on the picture; the rest is under **Placement**; API: `canvas=128x128`, `place=x,y,scale`, `fit=1`): set the canvas size, the drawing's size and position, or
 **Fit to canvas** with a padding: the visible drawing (strokes included, invisible colors not) is scaled and centered
-so it ends exactly that far from every edge. For devicon: canvas 128 × 128, padding 1, Fit. The drawing is wrapped in
-one `<g transform>`, so every other feature works on top.
+so it ends exactly that far from every edge. Fit stays on: the next SVG, or a new canvas size, is fitted too (moving or
+resizing by hand turns it off). For devicon: canvas 128 × 128, padding 0, Fit (the icon fills the viewBox). The drawing is wrapped in one
+`<g transform>`, so every other feature works on top.
 
 On the API these get 20 seconds per request: most icons take well under a second, but very complex drawings
 (thousands of curves) may need the editor, which runs them in your browser without a limit.
 
-All three handle flat colors and plain shapes; text, embedded images, gradients, transparency and `<use>` get a clear
-message instead of a guess.
+All three work on flat colors and shapes. When everything ends up one color (like Solid), gradients and transparency
+don't matter: such paints take that color, while each gradient still counts as its own part for gaps and lines, and
+mostly see-through shapes (shadows, glows) are left out. In the editor, text is turned into shapes (with a font file you choose under
+**Shapes**, or Inter when none is chosen); the API asks for text as paths. Embedded images, masks, `<use>` and, with
+several colors, gradients and transparency get a clear message instead of a guess.
 
 In the editor, click a color in the **Colors** strip under the preview, or click the shape itself in the picture, to edit it.
 Each chip shows a small badge for what its color does (own color, invisible, cut out, kept filled), and **Reset colors**
@@ -87,6 +96,10 @@ Before recoloring, colors are normalized so the tools can handle them: CSS color
 (or `currentColor`) get an explicit black so they recolor too. `url(#id)` and `href="#id"` references are left alone.
 
 Colors can be given as `ff0066`, `#ff0066`, `f06`, `255,0,102`, `rgb(255 0 102)`, `hsl(330 100% 50%)` or a CSS name like `tomato`.
+`color=auto` (the **Auto** button next to the color) takes each SVG's most prominent color: the one seen most, with
+shades of one color counted together (a gradient counts as its middle color, near-white only when there's nothing
+else). Recipes and batches with Auto give every SVG its own. For devicon icons, it's what their wiki asks for: "the
+most prominent color found in the original logo".
 
 ### API
 
@@ -187,7 +200,20 @@ How:
 - **Optimize** (API `optimize=true`, `precision=3`) runs SVGO 3.3.2, with devicon's settings by default (precision 3, multipass,
   every preset plugin but removeViewBox, devicon's extra plugins, a newline at the end): the same bytes as devicon's
   svg-icons `optimize.js`. Every plugin can be switched; the settings are saved in your browser.
-- **With code** (next to Side by side and Slider) shows the result's SVG code beside the picture.
+- **With code** (next to Side by side and Slider) shows the result's SVG code beside the picture; **Small sizes** shows
+  the result at 16, 32 and 64 px on light and dark.
+- **Batch**: choose, drop or paste several SVGs. The first opens to tune the settings, a bar lists them all, and
+  **Download all** recolors each one the same way (Fit per file) into a ZIP. Files that fail are named; the rest go in.
+- **Recipes** (by Reset settings): save the current settings under a name and apply them to other SVGs later, or copy
+  a recipe's link. They keep style, color, adjustments, shapes, canvas, Fit and Optimize, not the edits of single colors.
+  A recipe's link carries its name (`recipe=`), shown at the top of the settings with a button to save it; add
+  `url=` to open an SVG with it.
+  Several recipes in one link: repeat `run=<a recipe's parameters, URL-encoded>` (each with its `recipe=` name and an
+  optional `suffix=`). The editor shows them as buttons to switch between, and **Download all** puts every SVG you add
+  through every recipe into one ZIP. Files are named by suffix: `docker-original.svg` in a recipe with `suffix=plain`
+  becomes `docker-plain.svg`. In **Recipes**, **Copy a link to all of them** makes one from your saved recipes.
+- **Undo / redo** settings changes with the buttons by Reset settings, or <kbd>Ctrl</kbd>+<kbd>Z</kbd> /
+  <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>.
 - **Share** copies a link with your SVG and settings. A linked SVG is shared by its address; a pasted or uploaded one travels in the link itself, compressed, after the `#` (never sent to the server). Very large SVGs don't fit in a link: share them from a public URL instead.
 - Everything fits on one screen: settings on the left, and Preview, Code and API tabs on the right, with Share, Copy and Download always visible.
 - Settings follow the order the engine applies them: **1 Style** (each tile shows your SVG in that style), **2 Color** (only for
@@ -349,6 +375,7 @@ CI runs all of these on every push and pull request (`.github/workflows/ci.yml`)
 | `SVG_RECOLOR_DEV` | off | `1` re-reads `main.html` on every request (handy while editing) |
 | `RATE_LIMIT_WORK` | `60` | Requests per minute per IP for uploads, link fetches and MCP (`0` disables) |
 | `RATE_LIMIT_MAP` | `600` | Requests per minute per IP for `/api/map-colors` (`0` disables) |
+| `SVG_GEOMETRY_WORKERS` | `3` | Threads (each with its own JavaScript engine) for cut out, gaps, lines, Fit and SVGO in the API |
 
 ### Monitoring and updates
 

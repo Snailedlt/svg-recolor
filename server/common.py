@@ -1,5 +1,6 @@
 """Shared helpers for the HTTP API: options, responses, cache policy."""
 
+import dataclasses
 import logging
 import re
 import subprocess
@@ -56,7 +57,7 @@ def _edit_list(value) -> tuple:
     return engine.parse_edit_list(str(value))
 
 
-EXTRA_FIELDS = ("cut", "gap", "line", "lines", "keep", "unit", "canvas", "place", "fit", "optimize", "precision")
+EXTRA_FIELDS = ("cut", "holes", "outlines", "merge", "detail", "gap", "gaps", "gapsplit", "knockout", "line", "lines", "linealign", "keep", "unit", "canvas", "place", "fit", "optimize", "precision")
 
 
 def options(mode, color, hue, saturation, lightness, replace=None, hide=None, remove=None, **extra) -> engine.Options:
@@ -82,18 +83,27 @@ def safe_stem(name: Optional[str]) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", stem)[:80] or "image"
 
 
-def output_name(stem: str, opts: engine.Options) -> str:
+def output_name(stem: str, opts: engine.Options, result: Optional[engine.Result] = None) -> str:
     suffix = opts.mode
     if engine.MODES[opts.mode]["uses_color"]:
-        suffix += "_" + engine.rgb_to_hex(engine.parse_color(opts.color))[1:]
+        color = result.color if result is not None and result.color else opts.color
+        suffix += "_" + (engine.rgb_to_hex(engine.parse_color(color))[1:] if color != "auto" else "auto")
     return f"{stem}_recolored_{suffix}.svg"
 
 
 async def run(svg_text: str, opts: engine.Options) -> engine.Result:
     try:
+        chosen = None
+        if opts.color == "auto" and engine.MODES[opts.mode]["uses_color"]:
+            # The most prominent color of this SVG (each file of a batch its own).
+            chosen = await run_in_threadpool(shapes.prominent_color, svg_text)
+            opts = dataclasses.replace(opts, color="#" + chosen)
         if opts.extras is not None:  # cut out, gaps, lines, canvas or SVGO: the editor's code
-            return await run_in_threadpool(shapes.recolor, svg_text, opts)
-        return await run_in_threadpool(engine.recolor, svg_text, opts)
+            result = await run_in_threadpool(shapes.recolor, svg_text, opts)
+        else:
+            result = await run_in_threadpool(engine.recolor, svg_text, opts)
+        result.color = chosen
+        return result
     except engine.RecolorError as e:
         bad_request(e)
     except (RuntimeError, OSError, subprocess.SubprocessError) as e:  # svgray/svgshift failed
@@ -107,7 +117,7 @@ def respond(result: engine.Result, opts, filename: str, fmt: str, download: bool
             {
                 "filename": filename,
                 "mode": opts.mode,
-                "color": engine.rgb_to_hex(engine.parse_color(opts.color))
+                "color": engine.rgb_to_hex(engine.parse_color("#" + result.color if result.color else opts.color))
                 if engine.MODES[opts.mode]["uses_color"]
                 else None,
                 "adjustments": {"hue": opts.hue, "saturation": opts.saturation, "lightness": opts.lightness},

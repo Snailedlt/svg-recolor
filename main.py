@@ -129,7 +129,8 @@ ModeParam = Annotated[
 ColorParam = Annotated[
     str,
     Query(
-        description="Target color: hex (ff0066, #ff0066, f06), RGB (255,0,102), rgb()/hsl() or a CSS name.",
+        description="Target color: hex (ff0066, #ff0066, f06), RGB (255,0,102), rgb()/hsl() or a CSS name. `auto`: the SVG's "
+                    "most prominent color (the one seen most; shades of one color count together).",
         examples=["ff0066"],
     ),
 ]
@@ -162,14 +163,45 @@ def extra_query(
     gap: Annotated[Optional[float], Query(
         description="Cut a gap of this width wherever two original colors meet (in `unit`s). With `mode=solid` "
                     "the color areas stay apart. For logos whose parts just touch.", ge=0, examples=[2])] = None,
+    gaps: Annotated[Optional[str], Query(
+        description="With `gap`: `auto` leaves the gaps out when the one-color drawing already shows its parts "
+                    "through its holes (a mesh, line art, a grid), where gaps would only cut it up; `always` (default).",
+        pattern="^(auto|always)$")] = None,
+    knockout: Annotated[Optional[str], Query(
+        description="Colors cut out like `cut`, except along the drawing's outer edge, where they stay as its "
+                    "outline (a dark outline around a light logo stays a ring; its dark text and details are cut "
+                    "out), comma-separated.", examples=["000000"])] = None,
+    gapsplit: Annotated[Optional[str], Query(
+        description="With `gap`: `smaller` (default) cuts each gap out of the smaller of the two parts; `top` keeps "
+                    "the shape drawn on top whole and cuts the gap out of what's under it (stacked shapes).",
+        pattern="^(top|smaller)$")] = None,
     line: Annotated[Optional[float], Query(
         description="Make a line version (like devicon's line icons): only a band of this width along the edges "
                     "is kept (in `unit`s).", ge=0, examples=[3])] = None,
     lines: Annotated[Optional[str], Query(
-        description="With `line`: `all` (default) also draws lines between colors, `outer` only the outline.",
-        pattern="^(all|outer)$")] = None,
+        description="With `line`: `all` (default) also draws lines between colors, `outer` only the outline, "
+                    "`plain` the outlines of the one-colour version (made first, with its holes and gaps).",
+        pattern="^(all|outer|plain)$")] = None,
+    linealign: Annotated[Optional[str], Query(
+        description="With `line`: `inside` (default) draws the lines inside the edges, so the drawing keeps its size; "
+                    "`center` on the edges, half outside, like a stroke turned into a shape (devicon's guide: Inkscape's "
+                    "Stroke to Path). Leave room with `fit` (half a line).", pattern="^(inside|center)$")] = None,
     keep: Annotated[Optional[str], Query(
         description="With `line`: colors that stay filled, comma-separated.", examples=["ffffff"])] = None,
+    holes: Annotated[Optional[str], Query(
+        description="`light`: near-white colors (every channel 224 or more, or a pale tint close to gray) become holes, like `cut`, unless "
+                    "edited otherwise. For one-color icons whose white parts should stay see-through.",
+        pattern="^(light|none)$")] = None,
+    outlines: Annotated[Optional[str], Query(
+        description="`gap`: an outline color (its visible part thin, between thicker parts of other colors) "
+                    "becomes a gap, so a one-color version keeps the parts it outlined apart (like Docker's).",
+        pattern="^(gap|none)$")] = None,
+    merge: Annotated[Optional[float], Query(
+        description="Simplify: original colors this close (RGB distance, 0-442) count as one part, so shading "
+                    "and highlights get no gaps or lines of their own. Try 40-80.", ge=0, le=442, examples=[60])] = None,
+    detail: Annotated[Optional[float], Query(
+        description="Simplify: pieces and holes smaller than this size squared (in `unit`s) are dropped (a hole "
+                    "fills in), so specks get no gaps or lines.", ge=0, examples=[2])] = None,
     unit: Annotated[Optional[str], Query(
         description="Unit of `gap` and `line`: `px` (default; the SVG's own units) or `pct` (percent of the "
                     "icon's larger side).", pattern="^(px|pct)$")] = None,
@@ -181,7 +213,7 @@ def extra_query(
                     "top-left corner lands.", examples=["0,0,0.5"])] = None,
     fit: Annotated[Optional[float], Query(
         description="Scale and center the visible drawing (strokes included) to fill the canvas, leaving this "
-                    "padding on every side. Devicon: `canvas=128x128&fit=1`.", ge=0, examples=[1])] = None,
+                    "padding on every side. Devicon (no padding): `canvas=128x128&fit=0`.", ge=0, examples=[0])] = None,
     optimize: Annotated[Optional[bool], Query(
         description="Optimize the result with SVGO 3.3.2, with the editor's default settings (multipass, "
                     "every preset plugin but removeViewBox, ...; the same as devicon's).")] = None,
@@ -189,7 +221,7 @@ def extra_query(
         description="With `optimize`: decimals kept in numbers (default 3).", ge=0, le=8)] = None,
 ) -> dict:
     """Cut out, gaps, lines, canvas and SVGO: the same code as the editor (see server/shapes.py)."""
-    return {"cut": cut, "gap": gap, "line": line, "lines": lines, "keep": keep, "unit": unit, "canvas": canvas,
+    return {"cut": cut, "holes": holes, "outlines": outlines, "merge": merge, "detail": detail, "gap": gap, "gaps": gaps, "gapsplit": gapsplit, "knockout": knockout, "line": line, "lines": lines, "linealign": linealign, "keep": keep, "unit": unit, "canvas": canvas,
             "place": place, "fit": fit, "optimize": optimize, "precision": precision}
 
 
@@ -473,10 +505,19 @@ JSON_BODY_SCHEMA = {
                 "description": "Colors that become real gaps (one path per color)."},
         "gap": {"type": "number", "minimum": 0, "description": "Gap width where two original colors meet."},
         "line": {"type": "number", "minimum": 0, "description": "Line version: band width along the edges."},
-        "lines": {"type": "string", "enum": ["all", "outer"]},
+        "lines": {"type": "string", "enum": ["all", "outer", "plain"]},
+        "linealign": {"type": "string", "enum": ["inside", "center"], "description": "Lines inside the edges (default) or centered on them."},
+        "gaps": {"type": "string", "enum": ["auto", "always"], "description": "auto: no gaps when the parts already show through holes."},
+        "knockout": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
+                     "description": "Colors cut out except along the outer edge, where they stay the outline."},
+        "gapsplit": {"type": "string", "enum": ["top", "smaller"], "description": "top: the shape on top stays whole; smaller (default): the smaller part gives up the gap."},
         "keep": {"oneOf": [{"type": "array", "items": {"type": "string"}}, {"type": "string"}],
                  "description": "With line: colors that stay filled."},
         "unit": {"type": "string", "enum": ["px", "pct"]},
+        "holes": {"type": "string", "enum": ["light", "none"], "description": "light: near-white colors become holes."},
+        "outlines": {"type": "string", "enum": ["gap", "none"], "description": "gap: outline colors become gaps."},
+        "merge": {"type": "number", "minimum": 0, "maximum": 442, "description": "Simplify: colors this close (RGB distance) are one part."},
+        "detail": {"type": "number", "minimum": 0, "description": "Simplify: pieces and holes smaller than this size squared go."},
         "canvas": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "number"}}],
                    "description": "New canvas (viewBox) size: \"128x128\" or [128, 128]."},
         "place": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "number"}}],
@@ -540,7 +581,7 @@ async def recolor_from_url(
     opts = options(mode, color, hue, saturation, lightness, replace, hide, remove, **extra)
     svg_text, name = await fetch_svg(url)
     result = await run(svg_text, opts)
-    return respond(result, opts, output_name(safe_stem(name), opts), format, download, cache=True)
+    return respond(result, opts, output_name(safe_stem(name), opts, result), format, download, cache=True)
 
 
 @app.post(
@@ -583,7 +624,7 @@ async def recolor_upload(
                    params["replace"], params["hide"], params["remove"], **{k: params.get(k) for k in EXTRA_FIELDS})
     result = await run(svg_text, opts)
     download_flag = str(params["download"]).lower() in ("1", "true", "yes")
-    return respond(result, opts, output_name(safe_stem(name), opts), params["format"], download_flag)
+    return respond(result, opts, output_name(safe_stem(name), opts, result), params["format"], download_flag)
 
 
 def _parse_colors(raw) -> list[str]:
@@ -694,7 +735,7 @@ async def recolor_batch(
             except engine.RecolorError as e:
                 raise HTTPException(400, f"{f.filename}: {e}")
             result = await run(svg_text, opts)
-            out = output_name(safe_stem(f.filename), opts)
+            out = output_name(safe_stem(f.filename), opts, result)
             base, n = out, 2
             while out in used:
                 out = base.replace(".svg", f"_{n}.svg")
@@ -778,7 +819,7 @@ async def colorize(
     opts = options(mode, color, 0, 0, 0)
     svg_text = decode(await icon.read())
     result = await run(svg_text, opts)
-    return respond(result, opts, output_name(safe_stem(icon.filename), opts), "svg", True)
+    return respond(result, opts, output_name(safe_stem(icon.filename), opts, result), "svg", True)
 
 
 if __name__ == "__main__":

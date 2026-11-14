@@ -132,6 +132,27 @@
                     <!-- Controls -->
                     <form id="controls" class="panel" novalidate aria-label="Recolor settings">
                         <div class="controls-body">
+                            <div class="recipe-banner" id="recipe-banner" role="status" hidden>
+                                <svg class="recipe-banner-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+                                <div class="recipe-banner-text">
+                                    <span class="recipe-banner-label">Recipe <span id="recipe-banner-edited" hidden>· edited</span></span>
+                                    <b id="recipe-banner-name"></b>
+                                    <small id="recipe-banner-desc"></small>
+                                    <div class="recipe-banner-actions">
+                                        <button type="button" class="btn btn-ghost btn-sm" id="recipe-banner-back" hidden title="The recipe's settings again, without your changes or color edits">Back to recipe</button>
+                                        <button type="button" class="btn btn-ghost btn-sm" id="recipe-banner-save">Save to my recipes</button>
+                                    </div>
+                                    <div class="recipe-set" id="recipe-set" hidden>
+                                        <span class="recipe-banner-label" id="recipe-set-label">Recipes in this link</span>
+                                        <div class="recipe-set-list" id="recipe-set-list" role="group" aria-labelledby="recipe-set-label"></div>
+                                        <div class="recipe-set-actions">
+                                            <button type="button" class="btn btn-primary btn-sm" id="recipe-set-zip" title="Every SVG you add, in every recipe of this link, in one ZIP"><span class="spinner" aria-hidden="true"></span>Download all (ZIP)</button>
+                                            <button type="button" class="link-btn" id="recipe-set-save">Save all to my recipes</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button type="button" class="icon-btn" id="recipe-banner-close" aria-label="Hide the recipe name">✕</button>
+                            </div>
                             <section aria-labelledby="src-title">
                                 <h2 class="section-title" id="src-title">SVG <span class="aside kbd-hint" id="paste-hint">or paste with <kbd>Ctrl</kbd>+<kbd>V</kbd></span><button type="button" class="link-btn aside" id="source-cancel" hidden>Keep current SVG</button></h2>
                                 <div class="segmented full" role="group" aria-label="SVG source" id="source-tabs">
@@ -141,7 +162,7 @@
                                 </div>
                                 <div id="source-file">
                                     <label class="dropzone" id="dropzone">
-                                        <input id="files" type="file" accept=".svg,image/svg+xml">
+                                        <input id="files" type="file" accept=".svg,image/svg+xml" multiple>
                                         <span class="dz-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></span>
                                         <span class="dz-text"><strong>Drop an SVG or browse</strong><span>Max 2 MB · drop anywhere on the page</span></span>
                                     </label>
@@ -208,6 +229,7 @@
                                             <span class="sr-only">Hex color</span>
                                             <input id="hex-input" type="text" value="FF0066" maxlength="7" spellcheck="false" autocomplete="off" aria-describedby="error-message">
                                         </label>
+                                        <button type="button" class="auto-color" id="auto-color" aria-pressed="false" title="Use each SVG's most prominent color (like devicon's plain and line icons)">Auto</button>
                                         <button type="button" class="eyedropper" id="eyedropper" title="Pick a color from your screen" aria-label="Pick a color from your screen" hidden>
                                             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>
                                         </button>
@@ -218,6 +240,14 @@
                                         <label class="btn btn-ghost btn-sm more-colors">More colors…<input id="color-input" type="color" value="#ff0066" aria-label="Full color picker"></label>
                                     </div>
                                     <div class="recent logo-colors" id="logo-colors" role="group" aria-label="Colors in this SVG" hidden><span>In this SVG</span></div>
+                                </div>
+                                <div class="toggle-row holes-row">
+                                    <label for="holes-toggle">Light colors become holes <span class="field-hint">white parts stay see-through, like a one-color icon</span></label>
+                                    <span class="switch"><input type="checkbox" id="holes-toggle"><span class="track"></span></span>
+                                </div>
+                                <div class="toggle-row holes-row">
+                                    <label for="outlines-toggle">Outline colors become gaps <span class="field-hint">a thin color between the parts keeps them apart</span></label>
+                                    <span class="switch"><input type="checkbox" id="outlines-toggle"><span class="track"></span></span>
                                 </div>
                                 <p class="step-skip" id="color-skip" hidden></p>
                             </section>
@@ -235,14 +265,37 @@
                             <details class="step fold" id="shape-step" data-fold="shape">
                                 <summary class="fold-head"><h2 class="step-head" id="shape-title"><span class="step-n">4</span>Shapes<span class="step-sub" id="shape-sub">gaps and line versions</span></h2></summary>
                                 <div class="fold-body sliders">
+                                    <label class="slider-row" for="adj-merge" title="Simplify: original colors this close count as one part, so shading and highlights get no gaps or lines of their own."><span>Merge shades</span><input id="adj-merge" type="range" min="0" max="160" step="10" value="0" aria-describedby="simplify-hint"><output id="adj-merge-out" for="adj-merge">Off</output></label>
+                                    <label class="slider-row" for="adj-detail" title="Simplify: pieces and holes smaller than this size go (a hole fills in)."><span>Smallest detail</span><input id="adj-detail" type="range" min="0" max="6" step="0.5" value="0" aria-describedby="simplify-hint"><output id="adj-detail-out" for="adj-detail">Off</output></label>
+                                    <p class="field-hint gap-hint" id="simplify-hint">Simplify first: fewer parts, fewer gaps and lines.</p>
                                     <label class="slider-row" for="adj-gap" title="Cut a gap of this width wherever two original colors meet. With Solid, the color areas stay apart. Makes one path per color."><span>Gaps</span><input id="adj-gap" type="range" min="0" max="6" step="0.5" value="0" aria-describedby="gap-hint"><output id="adj-gap-out" for="adj-gap">Off</output></label>
                                     <p class="field-hint gap-hint" id="gap-hint">Where two colors meet. With Solid, the parts stay apart.</p>
+                                    <div class="toggle-row" id="gap-top-row" hidden>
+                                        <label for="gap-top-toggle">Shapes on top stay whole <span class="field-hint">the gap comes out of what's under them, as with stacked shapes</span></label>
+                                        <span class="switch"><input type="checkbox" id="gap-top-toggle"><span class="track"></span></span>
+                                    </div>
+                                    <div class="toggle-row" id="gaps-auto-row" hidden>
+                                        <label for="gaps-auto-toggle">Only where needed <span class="field-hint">no gaps when holes already show the parts (a mesh, line art)</span></label>
+                                        <span class="switch"><input type="checkbox" id="gaps-auto-toggle"><span class="track"></span></span>
+                                    </div>
                                     <label class="slider-row" for="adj-line" title="Make a line version, like devicon's line icons: only a band of this width along the edges is kept. Makes one path per color."><span>Line</span><input id="adj-line" type="range" min="0" max="8" step="0.5" value="0" aria-describedby="line-hint"><output id="adj-line-out" for="adj-line">Off</output></label>
-                                    <div class="toggle-row line-inner-row" id="line-inner-row" hidden>
-                                        <label for="line-inner">Lines between colors</label>
-                                        <span class="switch"><input type="checkbox" id="line-inner" checked><span class="track"></span></span>
+                                    <div class="line-mode-row" id="line-inner-row" hidden>
+                                        <span class="line-mode-label" id="line-mode-label">Lines along</span>
+                                        <div class="segmented full" role="group" aria-labelledby="line-mode-label" id="line-mode">
+                                            <button type="button" data-lines="all" aria-pressed="true" title="Every edge between colors, and the outline">All color edges</button>
+                                            <button type="button" data-lines="outer" aria-pressed="false" title="Just the outline of the whole drawing">Outline only</button>
+                                            <button type="button" data-lines="plain" aria-pressed="false" title="The one-color version first (holes, outline gaps, gaps), then its outlines">One-color version</button>
+                                        </div>
+                                    </div>
+                                    <div class="toggle-row" id="line-align-row" hidden>
+                                        <label for="line-center-toggle">Lines on the edge <span class="field-hint">centered, half outside, like a stroke turned into a shape</span></label>
+                                        <span class="switch"><input type="checkbox" id="line-center-toggle"><span class="track"></span></span>
                                     </div>
                                     <p class="field-hint gap-hint" id="line-hint">Only the edges are kept. Click a color to keep it filled.</p>
+                                    <div class="text-font-row" id="text-font-row" hidden>
+                                        <span>Text becomes shapes with <b id="text-font-name">Inter</b></span>
+                                        <label class="link-btn" title="Use the font the SVG's text is set in (TTF, OTF or WOFF)">Choose font file…<input type="file" id="text-font-file" accept=".ttf,.otf,.woff,font/ttf,font/otf,font/woff" class="sr-only"></label>
+                                    </div>
                                     <div class="toggle-row unit-row">
                                         <span id="unit-label">Sizes in</span>
                                         <div class="segmented" role="group" aria-labelledby="unit-label" id="unit-tabs">
@@ -301,9 +354,27 @@
                                 <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
                                 Recolor
                             </button>
+                            <div class="recipes-pop" id="recipes-pop" role="dialog" aria-labelledby="recipes-title" hidden>
+                                <div class="recipes-head"><b id="recipes-title">Recipes</b><button type="button" class="icon-btn" id="recipes-close" aria-label="Close">✕</button></div>
+                                <p class="field-hint">Your settings, saved under a name to use again on other SVGs: style, color, adjustments, shapes, canvas, Fit and Optimize. Not the edits of single colors. Saved in this browser; a recipe's link works anywhere.</p>
+                                <ul class="recipes-list" id="recipes-list"></ul>
+                                <div class="recipes-save" id="recipes-save">
+                                    <label class="sr-only" for="recipe-name">Recipe name</label>
+                                    <input id="recipe-name" type="text" maxlength="60" placeholder="Name, e.g. One-color icon" autocomplete="off">
+                                    <button type="button" class="btn btn-ghost btn-sm" id="recipe-save-btn">Save current</button>
+                                </div>
+                                <div class="recipes-all" id="recipes-all" hidden>
+                                    <button type="button" class="link-btn" id="recipes-copy-all" title="One link that runs all your recipes: every SVG in each of them, in one ZIP">Copy a link to all of them</button>
+                                </div>
+                            </div>
                             <div class="foot-meta">
-                                <button type="button" class="link-btn" id="reset-all">Reset settings</button>
-                                <span class="kbd-hint">Press <kbd>?</kbd> for shortcuts</span>
+                                <span class="history-btns">
+                                    <button type="button" class="icon-btn" id="undo-btn" disabled title="Undo (Ctrl+Z)" aria-label="Undo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+                                    <button type="button" class="icon-btn" id="redo-btn" disabled title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+                                    <button type="button" class="link-btn" id="reset-all">Reset settings</button>
+                                </span>
+                                <button type="button" class="link-btn" id="recipes-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="recipes-pop">Recipes</button>
+                                <span class="kbd-hint" title="Press ? for keyboard shortcuts"><kbd>?</kbd> Shortcuts</span>
                             </div>
                         </div>
                     </form>
@@ -318,6 +389,9 @@
                                 <button type="button" class="tab" role="tab" id="tab-btn-code" aria-controls="tab-code" aria-selected="false" data-tab="code" title="Code (E)">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>Code
                                 </button>
+                                <button type="button" class="tab" role="tab" id="tab-btn-variants" aria-controls="tab-variants" aria-selected="false" data-tab="variants" title="One-color variants to choose from (O)">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Variants
+                                </button>
                                 <button type="button" class="tab" role="tab" id="tab-btn-api" aria-controls="tab-api" aria-selected="false" data-tab="api" title="API (A)">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>API
                                 </button>
@@ -328,6 +402,9 @@
                                     <button type="button" data-view="code" aria-pressed="false" title="The result next to its SVG code">With code</button>
                                     <button type="button" data-view="slider" aria-pressed="false" title="Before/after slider (V)">Slider</button>
                                 </div>
+                                <div class="segmented">
+                                    <button type="button" id="sizes-btn" aria-pressed="false" title="Show the result at 16, 32 and 64 px, on light and dark">Small sizes</button>
+                                </div>
                                 <div class="segmented" role="group" aria-label="Preview background" id="bg-tabs">
                                     <button type="button" data-bg="checker" aria-pressed="true" title="Transparent (B)"><span class="sw sw-checker"></span><span class="label">Clear</span></button>
                                     <button type="button" data-bg="light" aria-pressed="false" title="Light (B)"><span class="sw sw-light"></span><span class="label">Light</span></button>
@@ -337,6 +414,12 @@
                         </div>
 
                         <div class="ws-body">
+                            <div class="batch-bar" id="batch-bar" hidden>
+                                <span class="batch-count"><b id="batch-count">0</b> SVGs</span>
+                                <div class="batch-files" id="batch-files" role="group" aria-label="SVGs in this batch: click one to see it here"></div>
+                                <button type="button" class="btn btn-primary btn-sm" id="batch-zip" title="Recolor every SVG with these settings and download them as a ZIP"><span class="spinner" aria-hidden="true"></span><span>Download all (ZIP)</span></button>
+                                <button type="button" class="icon-btn" id="batch-close" aria-label="Close the batch" title="Close the batch">✕</button>
+                            </div>
                             <div class="tab-panel" role="tabpanel" id="tab-preview" aria-labelledby="tab-btn-preview">
                                 <div class="stage" id="stage" data-bg="checker" data-view="side">
                                     <div class="pane">
@@ -356,6 +439,11 @@
                                             <span aria-hidden="true">×</span>
                                             <label><span class="sr-only">Canvas height</span><input id="canvas-h" type="number" min="0.01" step="any" inputmode="decimal"></label>
                                         </div>
+                                        <div class="sizes-panel" id="sizes-panel" hidden aria-label="The result at small sizes">
+                                            <div class="sizes-row light"><img alt="" width="16" height="16"><img alt="" width="32" height="32"><img alt="" width="64" height="64"></div>
+                                            <div class="sizes-row dark"><img alt="" width="16" height="16"><img alt="" width="32" height="32"><img alt="" width="64" height="64"></div>
+                                            <span class="sizes-label">16 · 32 · 64 px</span>
+                                        </div>
                                         <div class="work-overlay" id="work-overlay" role="status" aria-live="polite" hidden>
                                             <span class="work-spinner" aria-hidden="true"></span>
                                             <span id="work-text">Working…</span>
@@ -367,6 +455,7 @@
                                                 The result appears here and updates as you change settings.
                                             </div>
                                         </div>
+                                        <div class="result-spinner" id="result-spinner" hidden aria-hidden="true"><span></span></div>
                                     </div>
                                     <div class="pane code-pane">
                                         <span class="pane-label">SVG code</span>
@@ -404,6 +493,12 @@
                                 </div>
                             </div>
 
+                            <div class="tab-panel" role="tabpanel" id="tab-variants" aria-labelledby="tab-btn-variants" hidden>
+                                <div class="variants">
+                                    <p class="field-hint variants-hint" id="variants-hint">One-color versions made different ways: plain and line, with and without gaps, with shades merged. No one way suits every logo, so pick the best one and fine-tune it. Your canvas, Fit, Optimize and color edits apply to all of them.</p>
+                                    <div class="variants-grid" id="variants-grid" role="group" aria-label="Variants"></div>
+                                </div>
+                            </div>
                             <div class="tab-panel" role="tabpanel" id="tab-api" aria-labelledby="tab-btn-api" hidden>
                                 <div class="lang-layout">
                                     <nav class="lang-nav" aria-label="Languages">
@@ -582,6 +677,7 @@
                 <dt><kbd>O</kbd> / <kbd>L</kbd></dt><dd>Open a file / load from a link</dd>
                 <dt><kbd>Ctrl</kbd> <kbd>V</kbd></dt><dd>Paste an SVG file or SVG code</dd>
                 <dt><kbd>C</kbd></dt><dd>Edit the color</dd>
+                <dt><kbd>Ctrl</kbd> <kbd>Z</kbd> / <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></dt><dd>Undo / redo a settings change</dd>
                 <dt><kbd>P</kbd> <kbd>E</kbd> <kbd>A</kbd></dt><dd>Preview, Code or API tab</dd>
                 <dt><kbd>F</kbd></dt><dd>Search formats or languages</dd>
                 <dt><kbd>V</kbd> / <kbd>B</kbd></dt><dd>Side by side, slider or with code / cycle the background</dd>

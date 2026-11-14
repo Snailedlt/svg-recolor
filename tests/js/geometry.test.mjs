@@ -12,3 +12,7 @@ const same = (vendored, pkg) => assert.ok(
 test('vendored paper.js matches the pinned version', () => same('paper-core.min.js', 'paper/dist/paper-core.min.js'));
 test('vendored paperjs-offset matches the pinned version', () => same('paperjs-offset.min.js', 'paperjs-offset/dist/paperjs-offset.min.js'));
 test('vendored SVGO matches the pinned version', () => same('svgo.browser.js', 'svgo/dist/svgo.browser.js'));
+test('vendored opentype.js and the fallback font match the pinned versions', () => {
+    same('opentype.min.js', 'opentype.js/dist/opentype.min.js');
+    same('inter-latin-400.woff', '@fontsource/inter/files/inter-latin-400-normal.woff');
+});

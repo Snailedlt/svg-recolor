@@ -9,14 +9,17 @@ in QuickJS, a small JavaScript engine, so both give the same result:
 - geometry.js's compute() cuts, gaps and draws lines; boundsOfShapes() measures for Fit.
 - SVGO optimizes, with the same default settings as the editor (devicon's).
 
-One QuickJS context lives on its own thread (QuickJS isn't thread-safe), with a time and
+A small pool of threads, each with its own QuickJS context (QuickJS isn't thread-safe), so
+one heavy request doesn't hold up the others. Each call has a time and
 memory limit per call.
 """
 
 from __future__ import annotations
 
+import contextlib
 import html
 import json
+import os
 import re
 import threading
 import time
@@ -66,10 +69,19 @@ def svgo_config(precision: int = SVGO_PRECISION) -> dict:
 @dataclass
 class Extras:
     cut: tuple = ()  # colors that become gaps
+    holes: bool = False  # light colors (near white) become gaps too, unless edited
+    outlines: bool = False  # outline colors (thin, between thicker parts) become gaps, or the lines
     gap: float = 0  # gap width between colors
     line: float = 0  # line version: band width along the edges
     line_inner: bool = True  # lines also between colors
+    line_plain: bool = False  # lines of the one-colour version (after holes, outline gaps, gaps)
     keep: tuple = ()  # colors that stay filled in the line version
+    knockout: tuple = ()  # colors cut out except along the drawing's outer edge (they stay its outline)
+    gap_split: str = ""  # "top": the shape on top keeps its shape, the gap comes out of what's under it
+    gaps: str = ""  # "auto": no gaps when the one-colour drawing already shows its parts through holes
+    line_align: str = "inside"  # lines inside the edge, or "center": straddling it (a stroke turned to a shape)
+    merge: float = 0  # simplify: colors within this RGB distance count as one part
+    detail: float = 0  # simplify: pieces and holes smaller than detail x detail go
     unit: str = "px"  # gap and line sizes: px (the SVG's units) or % of the icon
     canvas: Optional[tuple] = None  # (w, h) of a new viewBox
     place: Optional[tuple] = None  # (x, y, scale) of the drawing on the canvas
@@ -80,11 +92,11 @@ class Extras:
 
     @property
     def geometry(self) -> bool:
-        return bool(self.cut or self.gap or self.line)
+        return bool(self.cut or self.gap or self.line or self.merge or self.detail or self.knockout)
 
     @property
     def active(self) -> bool:
-        return self.geometry or self.canvas is not None or self.place is not None or self.fit is not None or self.optimize
+        return self.geometry or self.holes or self.outlines or self.canvas is not None or self.place is not None or self.fit is not None or self.optimize
 
 
 def _number(name: str, value, lo: float, hi: float) -> float:
@@ -115,11 +127,33 @@ def _flag(value) -> bool:
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
+def is_light(color: str) -> bool:
+    """Near white: what `holes=light` cuts out. Every channel at least 224, or a pale tint close to
+    gray (every channel at least 200, within 48 of each other: Docker's #d4eef1). As in app.js."""
+    c = color.lstrip("#")
+    if len(c) != 6:
+        return False
+    x = [int(c[i:i + 2], 16) for i in (0, 2, 4)]
+    return min(x) >= 0xE0 or (min(x) >= 0xC8 and max(x) - min(x) <= 48)
+
+
 def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None, unit=None,
-                 canvas=None, place=None, fit=None, optimize=None, precision=None) -> Extras:
+                 canvas=None, place=None, fit=None, optimize=None, precision=None, holes=None, outlines=None,
+                 merge=None, detail=None, linealign=None, gaps=None, gapsplit=None, knockout=None) -> Extras:
     """Extras from request values (strings from query strings and forms, or JSON values)."""
     ex = Extras()
     ex.cut = tuple(engine._edit_key(c) for c in edit_list(cut))
+    ex.knockout = tuple(engine._edit_key(c) for c in edit_list(knockout))
+    if holes not in (None, "", False):
+        v = str(holes).strip().lower()
+        if holes is not True and v not in ("light", "none"):
+            raise engine.RecolorError("'holes' must be 'light' (near-white colors become holes) or 'none'.")
+        ex.holes = holes is True or v == 'light'
+    if outlines not in (None, "", False):
+        v = str(outlines).strip().lower()
+        if outlines is not True and v not in ("gap", "none"):
+            raise engine.RecolorError("'outlines' must be 'gap' (outline colors become gaps) or 'none'.")
+        ex.outlines = outlines is True or v == "gap"
     ex.keep = tuple(engine._edit_key(c) for c in edit_list(keep))
     if unit not in (None, ""):
         u = str(unit).strip().lower()
@@ -131,11 +165,32 @@ def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None
         ex.gap = _number("gap", gap, 0, hi)
     if line not in (None, ""):
         ex.line = _number("line", line, 0, hi)
+    if gapsplit not in (None, ""):
+        v = str(gapsplit).strip().lower()
+        if v not in ("top", "smaller"):
+            raise engine.RecolorError("'gapsplit' must be 'top' (the shape on top stays whole) or 'smaller' (the smaller part gives up the gap).")
+        ex.gap_split = "top" if v == "top" else ""
+    if gaps not in (None, ""):
+        v = str(gaps).strip().lower()
+        if v not in ("auto", "always"):
+            raise engine.RecolorError("'gaps' must be 'auto' (only where the parts don't already show) or 'always'.")
+        ex.gaps = "auto" if v == "auto" else ""
+    if linealign not in (None, ""):
+        v = str(linealign).strip().lower()
+        if v not in ("inside", "center"):
+            raise engine.RecolorError("'linealign' must be 'inside' (lines inside the edge) or 'center' (on the edge).")
+        ex.line_align = v
+    if merge not in (None, ""):
+        ex.merge = _number("merge", merge, 0, 442)
+    if detail not in (None, ""):
+        ex.detail = _number("detail", detail, 0, hi)
     if lines not in (None, ""):
         v = str(lines).strip().lower()
-        if v not in ("all", "outer"):
-            raise engine.RecolorError("'lines' must be 'all' (also between colors) or 'outer' (just the outline).")
-        ex.line_inner = v == "all"
+        if v not in ("all", "outer", "plain"):
+            raise engine.RecolorError("'lines' must be 'all' (also between colors), 'outer' (just the outline) "
+                                      "or 'plain' (the outlines of the one-colour version).")
+        ex.line_inner = v != "outer"
+        ex.line_plain = v == "plain"
     if canvas not in (None, ""):
         w, h = _numbers("canvas", canvas, 2, "128x128", "x")
         if w <= 0 or h <= 0:
@@ -168,9 +223,9 @@ def check_conflicts(opts: engine.Options, ex: Extras) -> None:
 # --------------------------------------------------------------------------
 # JavaScript (QuickJS) on one thread
 # --------------------------------------------------------------------------
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="svg-geometry")
-_ctx = None
-_lock = threading.Lock()
+POOL = int(os.environ.get("SVG_GEOMETRY_WORKERS", "3"))
+_executor = ThreadPoolExecutor(max_workers=POOL, thread_name_prefix="svg-geometry")
+_local = threading.local()  # .ctx: this thread's QuickJS context
 
 
 def _load():
@@ -192,12 +247,11 @@ def _load():
 
 def _run_js(expr: str, args: list, deadline: Optional[float] = None):
     """Evaluate `expr` (an async function of `args`) and return its JSON result."""
-    global _ctx
     import quickjs
 
-    if _ctx is None:
-        _ctx = _load()
-    c = _ctx
+    if getattr(_local, "ctx", None) is None:
+        _local.ctx = _load()
+    c = _local.ctx
     # QuickJS's limit counts per call, and async work runs as many calls (jobs): keep one
     # deadline for the whole thing, and give each job only the time that's left.
     deadline = deadline or time.monotonic() + TIME_LIMIT
@@ -210,14 +264,14 @@ def _run_js(expr: str, args: list, deadline: Optional[float] = None):
         while True:
             left = deadline - time.monotonic()
             if left <= 0:
-                _ctx = None
+                _local.ctx = None
                 raise engine.RecolorError(f"This SVG took too long (over {TIME_LIMIT} s). Try a simpler one, or the editor.")
             c.set_time_limit(max(1, int(left + 0.999)))
             if not c.execute_pending_job():
                 break
         err, out = c.eval("__err"), c.eval("__out")
     except quickjs.JSException as e:
-        _ctx = None  # start clean next time
+        _local.ctx = None  # start clean next time
         if "interrupted" in str(e).lower():
             raise engine.RecolorError(f"This SVG took too long (over {TIME_LIMIT} s). Try a simpler one, or the editor.")
         if "out of memory" in str(e).lower():
@@ -227,7 +281,7 @@ def _run_js(expr: str, args: list, deadline: Optional[float] = None):
         c.set_time_limit(-1)
     if err:
         if "interrupted" in err.lower():  # the time limit, hit inside an async step
-            _ctx = None
+            _local.ctx = None
             raise engine.RecolorError(f"This SVG took too long (over {TIME_LIMIT} s). Try a simpler one, or the editor.")
         raise engine.RecolorError(err)
     return json.loads(out) if out else None
@@ -235,8 +289,7 @@ def _run_js(expr: str, args: list, deadline: Optional[float] = None):
 
 def js(expr: str, *args, deadline: Optional[float] = None):
     """Run `expr` in QuickJS. `deadline` (time.monotonic()) shares one time budget between calls."""
-    with _lock:
-        return _executor.submit(_run_js, expr, list(args), deadline).result()
+    return _executor.submit(_run_js, expr, list(args), deadline).result()
 
 
 # --------------------------------------------------------------------------
@@ -253,9 +306,56 @@ def _root_attrs(svg: str) -> dict:
     return attrs
 
 
-def read_shapes(svg: str, lenient: bool = False) -> dict:
+def _alpha(v) -> float:
+    return 1.0 if v is None or v == "" else float(v)
+
+
+def _middles(root) -> dict:
+    """Each gradient's color at its middle, by id (following href to the stops), as geometry.js."""
+    by_id = {el.get("id"): el for el in root.iter() if isinstance(el.tag, str) and el.get("id")}
+
+    def stops_of(el, hops=0):
+        stops = [k for k in el if isinstance(k.tag, str) and k.tag.split("}")[-1] == "stop"]
+        if stops or hops > 8:
+            return stops
+        ref = el.get("href") or el.get("{http://www.w3.org/1999/xlink}href") or ""
+        nxt = by_id.get(ref.lstrip("#")) if ref.startswith("#") else None
+        return stops_of(nxt, hops + 1) if nxt is not None else []
+
+    out = {}
+    for gid, el in by_id.items():
+        if not el.tag.split("}")[-1].endswith("Gradient"):
+            continue
+        stops = []
+        for s in stops_of(el):
+            style = dict(kv.split(":", 1) for kv in (s.get("style") or "").split(";") if ":" in kv)
+            color = (style.get("stop-color") or s.get("stop-color") or "#000").strip()
+            off = str(s.get("offset") or "0").strip()
+            try:
+                at = float(off[:-1]) / 100 if off.endswith("%") else float(off)
+                stops.append([min(1.0, max(0.0, at)), engine.rgb_to_hex(engine.parse_color(color))[1:].lower()])
+            except (ValueError, engine.RecolorError):
+                continue
+        if not stops:
+            continue
+        for i in range(1, len(stops)):
+            stops[i][0] = max(stops[i][0], stops[i - 1][0])
+        i = next((k for k, s in enumerate(stops) if s[0] >= 0.5), -1)
+        if i <= 0:
+            out[gid] = stops[0 if i == 0 else -1][1]
+            continue
+        (a_at, a), (b_at, b) = stops[i - 1], stops[i]
+        f = 0 if b_at == a_at else (0.5 - a_at) / (b_at - a_at)
+        out[gid] = "".join(f"{round(int(a[k:k + 2], 16) + (int(b[k:k + 2], 16) - int(a[k:k + 2], 16)) * f):02x}"
+                           for k in (0, 2, 4))
+    return out
+
+
+def read_shapes(svg: str, lenient: bool = False, flat: Optional[str] = None, mids: bool = False) -> dict:
     """Plain filled paths in paint order, as geometry.js's compute() takes them.
-    lenient: for measuring (Fit), where gradients, transparency, masks and text don't matter."""
+    lenient: for measuring (Fit), where gradients, transparency, masks and text don't matter.
+    flat: when everything ends up this one color (like Solid), gradients and transparency
+    don't matter either: such paints become it, partial transparency counts as solid."""
     from picosvg.svg import SVG
 
     if not lenient and re.search(r"<text\b", svg, re.IGNORECASE):
@@ -267,12 +367,43 @@ def read_shapes(svg: str, lenient: bool = False) -> dict:
         raise engine.RecolorError("Cut out, gaps and lines don't support masks yet.")
     if lenient:  # picosvg can't apply masks; for measuring, the unmasked drawing is close enough
         svg = re.sub(r"\smask\s*=\s*(\"[^\"]*\"|'[^']*')", "", svg)
+    # Lengths with a unit picosvg can't read ("0.497px" in CachyOS): px is the user unit anyway.
+    svg = re.sub(r"(\d|\.)px\b", r"\1", svg)
     try:
         pico = SVG.fromstring(svg).topicosvg()
     except Exception as e:  # noqa: BLE001 - picosvg raises many kinds; all mean "can't read this"
         msg = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
         raise engine.RecolorError(f"This SVG could not be read for cut out, gaps or lines: {msg[:200]}")
     shapes = []
+    middles = _middles(pico.svg_root) if mids or flat else {}
+    # flat: each gradient a color of its own: its middle color, nudged until unused (outlines are told
+    # by how dark they are), else any unused color. As in geometry.js.
+    stand: dict = {}
+    used = set()
+    if flat:
+        for s in pico.shapes():
+            with contextlib.suppress(Exception):  # url(), none, currentColor: not a color in use
+                used.add(engine.rgb_to_hex(engine.parse_color((s.fill or "").strip()))[1:].lower())
+    nxt = [0x0A0B0C]
+
+    def stand_in(paint: str) -> str:
+        if paint not in stand:
+            m = re.match(r"url\(\s*[\"']?#([^\"')]+)", paint)
+            c = middles.get(m.group(1)) if m else None
+            for _ in range(256):
+                if not c or c not in used:
+                    break
+                c = c[:4] + f"{(int(c[4:], 16) + 1) % 256:02x}"
+            if not c or c in used:
+                while True:
+                    nxt[0] = (nxt[0] + 0x050301) % 0x1000000
+                    c = f"{nxt[0]:06x}"
+                    if c not in used:
+                        break
+            used.add(c)
+            stand[paint] = "#" + c
+        return stand[paint]
+
     for s in pico.shapes():
         fill = (s.fill or "").strip()
         if not fill or fill == "none":
@@ -281,9 +412,19 @@ def read_shapes(svg: str, lenient: bool = False) -> dict:
             if s.d:
                 shapes.append({"d": s.d, "rule": s.fill_rule or "nonzero", "color": "000000"})
             continue
+        if fill.startswith("url(") and mids:
+            m = re.match(r"url\(\s*[\"']?#([^\"')]+)", fill)
+            if not m or m.group(1) not in middles:
+                continue
+            fill = "#" + middles[m.group(1)]
+        if fill.startswith("url(") and flat:
+            fill = stand_in(re.sub(r"\s+", "", fill))
         if fill.startswith("url("):
             raise engine.RecolorError("Cut out, gaps and lines work with flat colors, and this SVG uses gradients or patterns.")
-        if min(float(getattr(s, "opacity", 1) or 1), float(getattr(s, "fill_opacity", 1) or 1)) < 1:
+        alpha = min(_alpha(getattr(s, "opacity", None)), _alpha(getattr(s, "fill_opacity", None)))
+        if (flat or mids) and alpha < 0.5:
+            continue  # one color: mostly see-through (shadows, glows) goes, the rest counts as solid
+        if not flat and not mids and alpha < 1:
             raise engine.RecolorError("Cut out, gaps and lines don't support semi-transparent colors yet.")
         if fill.lower() == "currentcolor":
             fill = "#000000"  # what a browser shows for it (the default text color)
@@ -300,7 +441,8 @@ def read_shapes(svg: str, lenient: bool = False) -> dict:
     # As the browser's DOM would give them (compute() escapes them again for the output).
     raw = {k: html.unescape(v) for k, v in attrs.items()}
     return {"shapes": shapes, "viewBox": raw.get("viewBox"), "width": raw.get("width"),
-            "height": raw.get("height"), "bounds": [box[2], box[3]]}
+            "height": raw.get("height"), "bounds": [box[2], box[3]],
+            "standIns": [c.lstrip("#").lower() for c in stand.values()]}
 
 
 # --------------------------------------------------------------------------
@@ -377,6 +519,19 @@ def fit_place(svg_edited: str, canvas, pad: float, deadline: Optional[float] = N
     return ((W - s * bw) / 2 - s * (bx - x0), (H - s * bh) / 2 - s * (by - y0), s)
 
 
+def prominent_color(svg: str) -> str:
+    """The most prominent color (hex, no #): the one seen most, as the editor's color "Auto"."""
+    norm = engine.normalize_svg(svg)
+    try:
+        found = js("SvgGeometry.prominent(args[0])", read_shapes(norm, mids=True), deadline=time.monotonic() + TIME_LIMIT)
+    except engine.RecolorError:
+        found = None
+    if not found:  # nothing to measure: the most used color
+        counts = engine.extract_palette(norm)
+        found = max(counts, key=counts.get) if counts else "000000"
+    return found
+
+
 # --------------------------------------------------------------------------
 # The whole recolor, like the editor
 # --------------------------------------------------------------------------
@@ -388,18 +543,35 @@ def recolor(svg: str, opts: engine.Options) -> engine.Result:
     counts = engine.extract_palette(norm)
     mapping = {**engine.map_colors(list(counts), opts), **{c: v for c, v in opts.replace.items() if c in counts}}
     canvas, place = ex.canvas, ex.place
+    # holes=light: near-white colors not edited otherwise become holes where they're drawn against
+    # other colors, and stay parts of the logo where they stand on their own (geometry.js decides).
+    edited_colors = set(opts.replace) | set(opts.hide) | set(opts.remove) | set(ex.cut)
+    holes = tuple(c for c in counts if ex.holes and is_light(c) and c not in edited_colors)
+    cut = tuple(ex.cut)
+    holed: set = set()
     if ex.fit is not None:
         canvas = canvas or orig_box(norm)[2:]
-        hidden = tuple(opts.hide) + tuple(opts.remove) + tuple(ex.cut)
+        hidden = tuple(opts.hide) + tuple(opts.remove) + cut + holes
         place = fit_place(engine.apply_edits(norm, remove=hidden), canvas, ex.fit, deadline)
     edited = engine.apply_edits(placed(norm, canvas, place), hide=opts.hide, remove=opts.remove)
-    if ex.geometry:
-        geo = {"cut": list(ex.cut), "map": mapping, "gap": ex.gap, "line": ex.line, "lineInner": ex.line_inner,
-               "keep": list(ex.keep), "unit": ex.unit}
-        out = js("SvgGeometry.compute(args[0], args[1])", read_shapes(edited), geo, deadline=deadline)
+    if cut or holes or ex.outlines or ex.gap or ex.line or ex.merge or ex.detail or ex.knockout:
+        geo = {"cut": list(cut), "holes": list(holes), "outlines": ex.outlines, "map": mapping, "gap": ex.gap, "line": ex.line,
+               "lineInner": ex.line_inner, "linePlain": ex.line_plain, "keep": list(ex.keep), "unit": ex.unit, "flat": None,
+               "merge": ex.merge, "detail": ex.detail, "lineAlign": ex.line_align, "gaps": ex.gaps or None,
+               "lightHoles": bool(ex.holes), "gapSplit": ex.gap_split or None,
+               "knockout": list(ex.knockout)}
+        # Everything one color (like Solid)? Then gradients and transparency don't matter.
+        gone = set(opts.hide) | set(opts.remove) | set(cut) | set(holes)
+        outs = {mapping.get(c, c) for c in counts if c not in gone}
+        flat = next(iter(outs)) if len(outs) == 1 else None
+        geo["flat"] = flat
+        out = js("SvgGeometry.compute(args[0], args[1])", read_shapes(edited, flat=flat), geo, deadline=deadline)
+        m = re.search(r"<!--holes:([^>]*)-->", out)
+        holed = set(filter(None, m.group(1).split(","))) if m else set()
+        out = re.sub(r"<!--holes:[^>]*-->", "", out)
     else:
         out = engine.apply_mapping(edited, mapping)
     if ex.optimize:
         out = js("SVGO.optimize(args[0], args[1]).data", out, svgo_config(ex.precision), deadline=deadline).rstrip() + "\n"
     return engine.Result(svg=out, mapping=mapping, counts=counts, hidden=set(opts.hide) & set(counts),
-                         removed=set(opts.remove) & set(counts), cut=set(ex.cut) & set(counts))
+                         removed=set(opts.remove) & set(counts), cut=(set(cut) | holed) & set(counts))

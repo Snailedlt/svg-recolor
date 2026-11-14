@@ -639,8 +639,10 @@ class Options:
             if not lo <= v <= hi:
                 raise RecolorError(f"'{name}' must be between {lo} and {hi}.")
             setattr(self, name, v)
-        if MODES[self.mode]["uses_color"]:
+        if MODES[self.mode]["uses_color"] and str(self.color).strip().lower() != "auto":
             parse_color(self.color)
+        if str(self.color).strip().lower() == "auto":
+            self.color = "auto"  # the most prominent color, resolved per SVG (server/common.py)
         edits = {}
         try:
             self.replace = {_edit_key(k): rgb_to_hex(parse_color(v))[1:] for k, v in dict(self.replace or {}).items()}
@@ -666,6 +668,7 @@ class Result:
     hidden: set = field(default_factory=set)
     removed: set = field(default_factory=set)
     cut: set = field(default_factory=set)
+    color: Optional[str] = None  # with color "auto": the color it chose (hex, no #)
 
     def palette(self) -> list[dict]:
         """Each original color and what it became: a hex color, "none" (hidden), "removed" or "cut"."""

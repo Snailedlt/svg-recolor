@@ -16,7 +16,16 @@ Copyright (c) 2016-2019 luz-alphacode. MIT License: https://github.com/luz-alpha
 
 Copyright (c) Kir Belevich. MIT License: https://github.com/svg/svgo/blob/main/LICENSE
 
-All three under the MIT License:
+## opentype.min.js — opentype.js 1.3.4
+
+Copyright (c) 2020 Frederik De Bleser. MIT License: https://github.com/opentypejs/opentype.js/blob/master/LICENSE
+
+## inter-latin-400.woff — Inter (from @fontsource/inter 5.3.0)
+
+Copyright (c) 2016 The Inter Project Authors. SIL Open Font License 1.1: https://openfontlicense.org.
+The fallback font for turning text into shapes when no other font is chosen.
+
+The JavaScript libraries are under the MIT License:
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 > documentation files (the "Software"), to deal in the Software without restriction, including without limitation the

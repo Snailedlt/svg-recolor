@@ -43,8 +43,10 @@ def test_gaps_between_touching_colors(client):
     assert res.status_code == 200, res.text
     (color, d), = paths(res.text)
     assert color == "0169c9"
-    # Each 64-unit square gives up 2 on each side that touches another: 0..62 and 66..128.
-    assert d == "M0,0h62l0,62l-62,0zM128,0v62l-62,0v-62zM0,128v-62h62l0,62zM128,128h-62v-62h62z"
+    # Of two touching parts the smaller (here: the later) gives up the whole gap, so one keeps its
+    # exact shape: the first square stays 0..64, the others start 4 further on.
+    assert d.startswith("M0,0h64v64h-64z") and d.count("M") == 4, d
+    assert abs(_area(d) - (64 * 64 + 2 * 60 * 64 + 60 * 60)) < 1
 
 
 def test_line_version_keep_and_outline_only(client):
@@ -162,3 +164,302 @@ def test_fit_measures_gradients_and_bad_values_are_refused(client):
     assert '<g transform="matrix(6.4 0 0 6.4 -64 -64)">' in res.text  # 20 x 20 at 10,10 fills 128 x 128
     assert client.post("/api/recolor?cut=notacolor", content=CUT_SVG, headers=SVG_CT).status_code == 400
     assert client.post("/api/recolor", json={"svg": CUT_SVG, "optimize": "maybe"}).status_code == 400
+
+
+def test_one_color_results_ignore_gradients_and_transparency(client):
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><defs><linearGradient id="g"><stop stop-color="#f00"/>'
+           '<stop offset="1" stop-color="#00f"/></linearGradient></defs><rect width="20" height="20" fill="url(#g)"/>'
+           '<rect x="20" width="20" height="20" fill="#9c27b0" fill-opacity=".5"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&gap=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    assert len(paths(res.text)) == 1 and "url(" not in res.text
+    # Several colors in the result: a gradient still can't be one flat color.
+    res = client.post("/api/recolor?mode=colorize&gap=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 400 and "gradients" in res.json()["detail"]
+
+
+def test_holes_light_cuts_near_white_colors(client):
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#e44d26"/>'
+           '<rect x="10" y="10" width="20" height="20" fill="#ebebeb"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&holes=light", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    ps = paths(res.text)
+    assert len(ps) == 1 and "ebebeb" not in res.text.lower()
+    assert ps[0][1].count("M") + ps[0][1].count("m") >= 2, "the light square is a hole"
+    # An edited light color is left alone.
+    res = client.post("/api/recolor?mode=solid&color=000000&holes=light&replace=ebebeb:ff0000", content=svg, headers=SVG_CT)
+    assert res.status_code == 200 and "ff0000" in res.text.lower()
+    assert client.post("/api/recolor?holes=dark", content=svg, headers=SVG_CT).status_code in (400, 422)
+
+
+def test_one_color_keeps_the_parts_of_gradients_apart(client):
+    # Two touching gradient halves: in one color, a gap still runs between them.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><defs>'
+           '<linearGradient id="a"><stop stop-color="#f00"/><stop offset="1" stop-color="#0f0"/></linearGradient>'
+           '<linearGradient id="b"><stop stop-color="#00f"/><stop offset="1" stop-color="#ff0"/></linearGradient></defs>'
+           '<rect width="20" height="20" fill="url(#a)"/><rect x="20" width="20" height="20" fill="url(#b)"/>'
+           '<ellipse cx="20" cy="19" rx="18" ry="1" fill="#000" opacity=".3"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&gap=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    ps = paths(res.text)
+    assert len(ps) == 1
+    assert ps[0][1].count("M") + ps[0][1].count("m") == 2, "two parts, the faint shadow dropped"
+
+
+def test_a_sliver_joins_its_neighbor_instead_of_notching_it(client):
+    # B covers A all but a 0.05 strip along the top: that strip can't be a part of its own, so no
+    # gap runs under it (Node's notch). Two parts: top (B and the strip) and bottom (C).
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#ff0000"/>'
+           '<rect y="0.05" width="40" height="19.95" fill="#00ff00"/><rect y="20" width="40" height="20" fill="#0000ff"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&gap=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    assert d.count("M") + d.count("m") == 2, d
+    from picosvg.svg_types import SVGPath
+    assert SVGPath(d=d).bounding_box().y < 0.01, "the top edge stays at y=0: " + d
+
+
+def test_outlines_without_z_get_their_last_edge(client):
+    # A fill closes an outline without `z`; the line version must too (Android's arm lost its top-left).
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><path fill="#a4c439" d="M10 10H30V30H10"/></svg>'
+    res = client.post("/api/recolor?mode=solid&color=000000&line=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    assert d.count("M") + d.count("m") == 2, "a closed ring (outline and hole), not a U: " + d
+
+
+def test_color_auto_takes_the_most_prominent_color(client):
+    # Three shades of blue (each smaller than the gray) count together; white doesn't count.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="#ffffff"/>'
+           '<rect width="18" height="40" fill="#3a4d54"/><rect x="18" width="8" height="40" fill="#00acd3"/>'
+           '<rect x="26" width="7" height="40" fill="#019bc6"/><rect x="33" width="7" height="40" fill="#23c2ee"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=auto&format=json", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["color"].lower() in ("#00acd3", "#019bc6", "#23c2ee"), data["color"]
+    assert data["filename"].endswith(data["color"][1:].lower() + ".svg")
+    # A gradient counts as its middle color.
+    grad = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><defs><linearGradient id="g">'
+            '<stop stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/></linearGradient></defs>'
+            '<rect width="10" height="10" fill="url(#g)"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=auto&format=json", content=grad, headers=SVG_CT)
+    assert res.status_code == 200 and res.json()["color"].lower() == "#800080", res.text
+
+
+def test_pale_tints_count_as_light_but_pastels_do_not():
+    assert shapes.is_light("ffffff") and shapes.is_light("ebebeb") and shapes.is_light("d4eef1")  # Docker's eye
+    assert not shapes.is_light("bfdbe0")  # Docker's belly shine stays
+    assert not shapes.is_light("ffc0cb") and not shapes.is_light("ffd43b")  # pink, Python's yellow
+
+
+def test_light_colors_are_holes_only_where_drawn_against_other_colors(client):
+    # The white square sits on the red: a hole. The gray square stands apart (CMake's middle): a part.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><rect width="20" height="20" fill="#e44d26"/>'
+           '<rect x="5" y="5" width="10" height="10" fill="#ffffff"/><rect x="25" y="5" width="10" height="10" fill="#cccccc"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&holes=light&format=json", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    data = res.json()
+    to = {p["from"]: p["to"] for p in data["palette"]}
+    assert to["#ffffff"] == "cut" and to["#cccccc"] == "#000000", to
+    (_, d), = paths(data["svg"])
+    assert d.count("M") + d.count("m") == 3, "red with a hole, and the gray part: " + d
+    assert "holes:" not in data["svg"]
+
+
+def test_outline_colors_become_gaps(client):
+    # Two blue boxes in a dark frame, a dark stripe between them: the dark is an outline.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="10" y="10" width="108" height="108" fill="#3a4d54"/>'
+           '<rect x="12" y="12" width="51" height="104" fill="#019bc6"/><rect x="65" y="12" width="51" height="104" fill="#00acd3"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&outlines=gap&format=json", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert {p["from"]: p["to"] for p in data["palette"]}["#3a4d54"] == "cut"
+    (_, d), = paths(data["svg"])
+    # The stripe between the boxes is a gap; the frame along the edge stays ink (the silhouette
+    # keeps its size), so the frame is one path with the two boxes' areas inside.
+    from picosvg.svg_types import SVGPath
+    box = SVGPath(d=d).bounding_box()
+    assert abs(box.x - 10) < 0.1 and abs(box.w - 108) < 0.1, box
+    from picosvg.svg_pathops import skia_path
+    area = abs(skia_path(SVGPath(d=d).as_cmd_seq(), "nonzero").area)
+    assert 108 * 108 - 2 * 104 - 60 < area < 108 * 108 - 150, area  # the frame, less the stripe
+    # Line art (thin lines that are the drawing, by a thick part) isn't an outline.
+    art = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="100" cy="64" r="20" fill="#019bc6"/>'
+           '<path d="M10 20H80M10 64H80M10 108H80" stroke="#00bd9f" stroke-width="2" fill="none"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&outlines=gap&format=json", content=art, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    assert {p["from"]: p["to"] for p in res.json()["palette"]}["#00bd9f"] != "cut"
+
+
+def test_lighter_thin_parts_are_not_outlines(client):
+    # A thin pink stripe between two red parts (like an octopus's tentacle undersides) is lighter
+    # than them: part of the drawing, not an outline. The same stripe in dark gray is an outline.
+    def svg(stripe):
+        return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="10" y="10" width="108" height="108" '
+                f'fill="{stripe}"/><rect x="10" y="10" width="53" height="108" fill="#c62828"/>'
+                '<rect x="65" y="10" width="53" height="108" fill="#e3373b"/></svg>')
+    for stripe, cut in (("#f389a4", False), ("#3a4d54", True)):
+        res = client.post("/api/recolor?mode=solid&color=000000&outlines=gap&format=json", content=svg(stripe), headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        assert ({p["from"]: p["to"] for p in res.json()["palette"]}[stripe] == "cut") is cut, stripe
+
+
+def test_lines_of_the_one_colour_version(client):
+    # Two touching squares of different colours, a gap between them: lines=plain outlines each part
+    # (two rings), where lines=outer draws one ring around both.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="4" y="34" width="60" height="60" fill="#e44d26"/>'
+           '<rect x="64" y="34" width="60" height="60" fill="#f16529"/></svg>')
+    def rings(q):
+        res = client.post(f"/api/recolor?mode=solid&color=000000&line=2&{q}", content=svg, headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        (_, d), = paths(res.text)
+        return d.count("M") + d.count("m")
+    assert rings("lines=outer") == 2  # one ring: its outside and its hole
+    assert rings("lines=plain&gap=4") == 4  # two rings
+    assert client.post("/api/recolor?line=2&lines=nope", content=svg, headers=SVG_CT).status_code in (400, 422)
+
+
+def test_a_spike_in_an_outline_does_not_fill_a_line_version(client):
+    # An outline that runs along a curve and straight back (left where two shapes shared an edge).
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill="#1867c0" d="M128.063 8.565 96.054 '
+           '64.031l-32.022 55.468S91.796 48.396 79.692 8.566c12.104 39.831-15.66 110.933-15.66 110.933L39.853 77.596l39.839-69.03z"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&line=1", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    from picosvg.svg_pathops import skia_path
+    from picosvg.svg_types import SVGPath
+    (_, d), = paths(res.text)
+    assert abs(skia_path(SVGPath(d=d).as_cmd_seq(), "nonzero").area) < 1500, "lines, not the filled shape (about 4350)"
+
+
+def _area(d):
+    from picosvg.svg_pathops import skia_path
+    from picosvg.svg_types import SVGPath
+    return abs(skia_path(SVGPath(d=d).as_cmd_seq(), "nonzero").area)
+
+
+def test_simplify_merges_shades_and_drops_specks(client):
+    # A square in two close blues (a highlight), a far red one, and a 6x6 speck.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="4" y="4" width="60" height="60" fill="#1867c0"/>'
+           '<rect x="64" y="4" width="60" height="60" fill="#2a78d0"/><rect x="4" y="70" width="60" height="50" fill="#e33333"/>'
+           '<rect x="100" y="100" width="6" height="6" fill="#e33333"/></svg>')
+    def parts(q):
+        res = client.post(f"/api/recolor?mode=solid&color=000000&gap=4&{q}", content=svg, headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        (_, d), = paths(res.text)
+        return d.count("M") + d.count("m")
+    assert parts("") == 4  # two blues apart, red, speck
+    assert parts("merge=40") == 3  # the blues are one part: no gap between them
+    assert parts("merge=40&detail=7") == 2  # and the speck is gone
+    for bad in ("merge=-1", "merge=x", "detail=-2"):
+        assert client.post(f"/api/recolor?gap=4&{bad}", content=svg, headers=SVG_CT).status_code in (400, 422), bad
+
+
+def test_a_thin_ring_gets_one_line_down_its_middle(client):
+    # A ring 6 wide: with line=3 its two edge lines would sit 0 apart (a filled ring);
+    # it becomes one line 3 wide down its middle instead.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill="#1867c0" fill-rule="evenodd" '
+           'd="M64 14a50 50 0 1 0 0.001 0zM64 20a44 44 0 1 0 0.001 0z"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&line=3", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    ring = 3.14159 * (50 ** 2 - 44 ** 2)  # about 1772
+    center = 3.14159 * (48.5 ** 2 - 45.5 ** 2)  # about 886
+    assert abs(_area(d) - center) < 0.15 * center, (_area(d), ring)
+
+
+def test_gaps_keep_parts_thinner_than_the_gap(client):
+    # Two squares joined by a bar 3 wide in another colour: a gap of 4 would cut the bar away.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="4" y="34" width="50" height="60" fill="#1867c0"/>'
+           '<rect x="74" y="34" width="50" height="60" fill="#1867c0"/><rect x="54" y="62" width="20" height="3" fill="#e33333"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&gap=4", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    assert _area(d) > 2 * 50 * 60 + 40, "the bar stays (joined to the squares)"
+
+
+def test_a_hairline_along_the_edge_joins_the_part_beside_it(client):
+    # A square with a second colour drawn over its lower half, 0.4 short of the edge (like
+    # Bitbucket's facet): the gaps must not leave the 0.4 strip as a stray line.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="4" y="4" width="120" height="120" fill="#2684ff"/>'
+           '<rect x="4.4" y="64" width="119.2" height="59.6" fill="#0052cc"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&gap=4", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    assert d.count("M") + d.count("m") == 2, d  # two parts, no hairlines
+
+
+def test_centered_lines_straddle_the_edge(client):
+    # A 60x60 square, line 4: inside the edge the outline spans 34..94; centered, 32..96.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="34" y="34" width="60" height="60" fill="#1867c0"/></svg>')
+    def box(q):
+        res = client.post(f"/api/recolor?mode=solid&color=000000&line=4{q}", content=svg, headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        (_, d), = paths(res.text)
+        return d, _area(d)
+    d_in, a_in = box("")
+    d_c, a_c = box("&linealign=center")
+    assert "M34,34" in d_in.replace(" ", "") and abs(a_in - (60 * 60 - 52 * 52)) < 1
+    assert "32" in d_c and abs(a_c - (64 * 64 - 56 * 56)) < 5, (d_c, a_c)  # round outer corners
+    assert client.post("/api/recolor?line=4&linealign=middle", content=svg, headers=SVG_CT).status_code in (400, 422)
+
+
+def test_auto_gaps_leave_a_mesh_alone(client):
+    # Slots cut into one colour and a second colour over half of it: the holes already
+    # show the parts, so gaps=auto adds none; a plain shape with no holes still gets them.
+    holes = "".join(f"M{x} 14h2v100h-2z" for x in range(10, 62, 5))
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill="#1867c0" fill-rule="evenodd" d="M4 4h120v120H4z{holes}"/>'
+           '<rect x="64" y="4" width="60" height="120" fill="#e33333" fill-opacity="0.999"/></svg>')
+    def area(q, s=svg):
+        res = client.post(f"/api/recolor?mode=solid&color=000000&gap=4{q}", content=s, headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        return sum(_area(d) for _, d in paths(res.text))
+    full = area("&gaps=auto")
+    assert area("") < full - 100, "with gaps always, a strip goes"
+    plain = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect x="4" y="4" width="60" height="120" fill="#1867c0"/>'
+             '<rect x="64" y="4" width="60" height="120" fill="#e33333"/></svg>')
+    assert area("&gaps=auto", plain) < 120 * 120 - 100, "no holes: the gap stays"
+    assert client.post("/api/recolor?gap=4&gaps=sometimes", content=plain, headers=SVG_CT).status_code in (400, 422)
+
+
+def test_a_light_gradient_becomes_a_hole_with_light_holes(client):
+    # Pale gradient "letters" (a bar) on a blue square, like Azure SQL's: with holes=light they're
+    # cut out like a white fill would be.
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="g">'
+           '<stop offset="0" stop-color="#f2f2f2"/><stop offset="1" stop-color="#e6e6e6"/></linearGradient></defs>'
+           '<rect x="4" y="4" width="120" height="120" fill="#0078d4"/><rect x="34" y="54" width="60" height="20" fill="url(#g)"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&holes=light&gap=2", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    assert abs(_area(d) - (120 * 120 - 60 * 20)) < 40, _area(d)
+
+
+def test_knockout_keeps_the_outer_edge_as_an_outline(client):
+    # A pale disc with a black outline ring and a black bar across the middle (like GCC's egg and
+    # text): knocked out, the bar becomes a hole and the ring stays (the drawing keeps its edge).
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="60" fill="#000000"/>'
+           '<circle cx="64" cy="64" r="58" fill="#ffcfab"/><rect x="34" y="58" width="60" height="12" fill="#000000"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&knockout=000000", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    disc, bar = 3.14159 * 60 * 60, 60 * 12
+    # A thin gap inside the ring (2 wide, the gap 1.2: about 440 square units) sets it apart.
+    gap = 2 * 3.14159 * 58 * 1.2
+    assert disc - bar - 2 * gap < _area(d) < disc - bar - gap / 2, (_area(d), disc - bar - gap)
+    res = client.post("/api/recolor?mode=solid&color=000000&cut=000000", content=svg, headers=SVG_CT)
+    (_, d2), = paths(res.text)
+    assert _area(d2) < _area(d) - 100, "cut takes the ring too"
+
+
+def test_knockout_keeps_pupils_inside_cut_out_eyes(client):
+    # Bun's eyes: a white eye cut out of the fill, a black pupil in it. The pupil touches no fill:
+    # it is drawing on the hole, not a line on the fill, so knocking black out keeps it.
+    eye = '<circle cx="64" cy="40" r="10" fill="#ffffff"/><circle cx="64" cy="40" r="4" fill="#000000"/>'
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="60" fill="#000000"/>'
+           '<circle cx="64" cy="64" r="58" fill="#ffcfab"/>{}</svg>')
+    areas = []
+    for e in (eye, eye.split('<circle cx="64" cy="40" r="4"')[0]):
+        res = client.post("/api/recolor?mode=solid&color=000000&knockout=000000&cut=ffffff", content=svg.format(e), headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        (_, d), = paths(res.text)
+        areas.append(_area(d))
+    assert areas[0] - areas[1] > 0.6 * 3.14159 * 16, areas  # the pupil (50 square units) is there

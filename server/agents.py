@@ -57,7 +57,9 @@ Base URL: {base}
 ## Parameters
 
 - `color`: `ff0066`, `#ff0066` (encode `#` as `%23` in URLs), `f06`, `255,0,102`,
-  `rgb(255 0 102)`, `hsl(330 100% 50%)`, or a CSS name like `tomato`. Default `ff0066`.
+  `rgb(255 0 102)`, `hsl(330 100% 50%)`, or a CSS name like `tomato`. Default `ff0066`. `auto` takes the SVG's
+  most prominent color (the one seen most; shades of one color count together), each file of a batch its own.
+  The result's `color` (with `format=json`) says which. For devicon icons: what their wiki asks for.
 - `mode`: one of {", ".join(f"`{k}`" for k in engine.MODES)}. Default `{engine.DEFAULT_MODE}`.
 - `hue`: rotate hue, -360..360 degrees. `saturation`, `lightness`: -100..100 points. Applied after the mode.
 - `format`: `svg` (default) or `json`. `download`: `true` to get an attachment.
@@ -70,16 +72,24 @@ Base URL: {base}
 - Shapes, canvas and optimizing (the same code as the editor; in JSON and MCP, lists and numbers):
   - `cut=dce0df,...`: those colors become real gaps (cut through what's below). One path per color, so
     `mode=solid&cut=...` is one path. For logos with outlines between their parts. Palette `to`: `"cut"`.
+  - `holes=light`: near-white colors (every channel >= 224, or pale tints close to gray, like #d4eef1) become holes too, unless edited. With `mode=solid`
+    this makes a one-color icon whose white parts stay see-through (like devicon's plain icons).
+  - `outlines=gap`: an outline color (its visible part thin, between thicker parts of other colors) becomes a gap
+    too, so a one-color version keeps the parts apart (Docker's dark outline).
   - `gap=2`: a gap of that width wherever two original colors meet. For logos whose parts just touch.
   - `line=3`: a line version (like devicon's line icons), only a band of that width along the edges.
-    `lines=outer` draws just the outline (default `all`: also between colors); `keep=ffffff,...` stays filled.
+    Devicon's line icons mostly use about 1 unit on the 128 canvas: `line=1` with `canvas=128x128`.
+    `lines=outer` draws just the outline (default `all`: also between colors); `lines=plain` outlines the
+    one-colour version instead (made first, with its holes and gaps); `keep=ffffff,...` stays filled.
   - `unit`: `px` (default; the SVG's own units) or `pct` (percent of the icon) for `gap` and `line`.
   - `canvas=128x128`: a new viewBox size, drawing centered. `place=x,y,scale` moves and scales it;
     `fit=1` scales and centers the visible drawing (strokes included) with that padding.
   - `optimize=true`: SVGO 3.3.2 with devicon's settings (precision 3, multipass); `precision=0..8`.
-  - Cut, gaps and lines need flat colors and shapes (no text, images, gradients, masks or transparency).
+  - Cut, gaps and lines need shapes (no text, images or masks) and flat colors; when everything ends up one color
+    (like `mode=solid`), gradients and transparency are fine.
     The server gives them 20 s; very complex drawings may need the editor, which has no limit.
-  - Devicon plain version: `mode=solid&color=...&remove=<background>&cut=<outlines>&canvas=128x128&fit=1&optimize=true`.
+  - Devicon plain version: `mode=solid&color=...&holes=light&canvas=128x128&fit=0&optimize=true` (add `gap=1.5&unit=pct`
+    when the parts just touch, `cut=<outlines>` for dark outlines). Line version: the same with `line=1`.
 
 ## Modes
 
@@ -106,7 +116,7 @@ async def llms_txt(request: Request):
 
 
 MCP_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
-_COLOR_SCHEMA = {"type": "string", "description": "Target color: hex (ff0066, #f06), '255,0,102', rgb()/hsl() or a CSS name. Ignored by grayscale/adjust.", "default": "ff0066"}
+_COLOR_SCHEMA = {"type": "string", "description": "Target color: hex (ff0066, #f06), '255,0,102', rgb()/hsl() or a CSS name; 'auto' = the SVG's most prominent color. Ignored by grayscale/adjust.", "default": "ff0066"}
 _SOURCE_PROPS = {
     "svg": {"type": "string", "description": "SVG markup. Give this or `url`."},
     "url": {"type": "string", "description": "Public http(s) link to an SVG. Give this or `svg`."},
@@ -138,15 +148,31 @@ MCP_TOOLS = [
                         "description": "Cut a gap of this width wherever two original colors meet (in `unit`s). With solid, the parts stay apart."},
                 "line": {"type": "number", "minimum": 0,
                          "description": "Make a line version (like devicon's line icons): only a band of this width along the edges is kept."},
-                "lines": {"type": "string", "enum": ["all", "outer"],
-                          "description": "With line: 'all' (default) also between colors, 'outer' only the outline."},
+                "lines": {"type": "string", "enum": ["all", "outer", "plain"],
+                          "description": "With line: 'all' (default) also between colors, 'outer' only the outline, 'plain' the outlines of the one-colour version (made first, with its holes and gaps)."},
+                "knockout": {"type": "array", "items": {"type": "string"},
+                             "description": "Original colors cut out like cut, except along the drawing's outer edge where they stay its outline (a light logo's dark outline stays a ring; its dark text and details become holes)."},
+                "gapsplit": {"type": "string", "enum": ["top", "smaller"],
+                             "description": "With gap: 'top' keeps the shape drawn on top whole and cuts the gap out of what's under it (stacked shapes); 'smaller' (default) cuts it out of the smaller part."},
+                "gaps": {"type": "string", "enum": ["auto", "always"],
+                         "description": "With gap: 'auto' leaves gaps out when the one-color drawing already shows its parts through holes (mesh, line art, grid)."},
+                "linealign": {"type": "string", "enum": ["inside", "center"],
+                              "description": "With line: 'inside' (default) keeps the drawing's size; 'center' draws the lines on the edges, half outside, like devicon's Stroke to Path (leave half a line with fit)."},
                 "keep": {"type": "array", "items": {"type": "string"}, "description": "With line: original colors that stay filled."},
+                "holes": {"type": "string", "enum": ["light", "none"],
+                          "description": "'light': near-white colors become holes (cut out), unless edited. With mode solid: a one-color icon whose white parts stay see-through."},
+                "outlines": {"type": "string", "enum": ["gap", "none"],
+                             "description": "'gap': outline colors (thin, between thicker parts) become gaps, so a one-color version keeps the parts apart."},
+                "merge": {"type": "number", "minimum": 0, "maximum": 442,
+                          "description": "Simplify: original colors this close (RGB distance) count as one part, so shading gets no gaps or lines. Try 40-80."},
+                "detail": {"type": "number", "minimum": 0,
+                           "description": "Simplify: pieces and holes smaller than this size squared (in units) are dropped, a hole fills in."},
                 "unit": {"type": "string", "enum": ["px", "pct"],
                          "description": "Unit of gap and line: px (default, the SVG's own units) or pct (percent of the icon)."},
                 "canvas": {"type": "string", "description": "A new canvas (viewBox) size, 'WxH', e.g. '128x128'. The drawing stays centered."},
                 "place": {"type": "string", "description": "Where the drawing goes on the canvas: 'x,y,scale' (x,y = where its original top-left lands)."},
                 "fit": {"type": "number", "minimum": 0,
-                        "description": "Scale and center the visible drawing to fill the canvas with this padding. Devicon: canvas '128x128', fit 1."},
+                        "description": "Scale and center the visible drawing to fill the canvas with this padding. Devicon (no padding): canvas '128x128', fit 0."},
                 "optimize": {"type": "boolean", "description": "Optimize the result with SVGO (the editor's default settings, the same as devicon's)."},
                 "precision": {"type": "integer", "minimum": 0, "maximum": 8, "description": "With optimize: decimals kept (default 3)."},
             },
@@ -194,7 +220,7 @@ async def _mcp_call(name: str, args: dict) -> dict:
                            **{k: args.get(k) for k in EXTRA_FIELDS})
             svg_text, src_name = await _mcp_source(args)
             result = await run(svg_text, opts)
-            data = {"filename": output_name(safe_stem(src_name), opts), "palette": result.palette(), "svg": result.svg}
+            data = {"filename": output_name(safe_stem(src_name), opts, result), "palette": result.palette(), "svg": result.svg}
             summary = ", ".join(f"{p['from']}→{p['to']}" for p in data["palette"][:20])
             return {
                 "content": [

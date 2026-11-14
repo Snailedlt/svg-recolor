@@ -58,12 +58,26 @@
         // | { op: 'hide' } (older links; shown as Invisible)
         edits: {},
         gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
+        knockout: [], // colors cut out except along the outer edge (from a variant or a link)
+        gapTop: false, // the shape on top keeps its shape; the gap comes out of what's under it
+        gapsAuto: false, // gaps only where the holes don't already show the parts
+        lineCenter: false, // lines centered on the edges (half outside) instead of inside them
+        merge: 0, // simplify: colors this close (RGB distance) are one part; 0 = off
+        detail: 0, // simplify: pieces and holes smaller than this size go; 0 = off
         line: 0, // line version: band width along the edges (same units); 0 = off
         unit: 'px', // gap and line sizes: 'px' (the SVG's own units) or '%' of the icon
         svgo: false, // optimize the result with SVGO
+        recipe: null, // { name, params }: the recipe in use, shown at the top
+        holes: false, // light (near-white) colors become holes, unless edited
+        outlines: false, // outline colors become gaps (the geometry finds them)
+        colorAuto: false, // the color is each SVG's most prominent one (state.color holds it)
+        recipeSet: null, // [{ name, suffix, params }]: the recipes of a link with several
         canvas: null, // [w, h] of a new viewBox (null = the SVG's own)
+        batch: null, // [{ name, text, size, failed }]: several SVGs with the same settings
+        fit: null, // auto Fit: padding (each SVG is fitted to the canvas), or null
         place: null, // [x, y, scale]: where the original viewBox's top-left lands, and its scale (null = centered, 100 %)
         lineInner: true, // lines also between colors, not just around the whole shape
+        linePlain: false, // lines of the one-colour version (made first) instead
         keep: new Set(), // colors that stay filled in the line version
     };
     const mapCache = new Map();
@@ -142,9 +156,10 @@
     // right); small blocks get Copy in the button row under them. Never on the code.
     function setupCodeBlock(pre) {
         const fill = pre.classList.contains('fill');
+        const pane = pre.classList.contains('side-code'); // the code next to the picture
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = fill ? 'copy-chip' : 'btn btn-ghost btn-sm copy-btn-row';
+        btn.className = pane ? 'copy-chip side-copy' : fill ? 'copy-chip' : 'btn btn-ghost btn-sm copy-btn-row';
         btn.title = 'Copy all (or focus the code and press Ctrl+C)';
         btn.setAttribute('aria-label', 'Copy ' + (pre.getAttribute('aria-label') || 'code').toLowerCase());
         const label = document.createElement('span');
@@ -163,14 +178,29 @@
             }
         };
         btn.addEventListener('click', copy);
-        // Ctrl/Cmd+C with nothing selected copies the whole block.
+        // Ctrl/Cmd+A selects just this code (not the page); Ctrl/Cmd+C with nothing or all of it
+        // selected copies the whole of it (also what a long view leaves out).
         pre.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'c' && !String(window.getSelection())) {
+            if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+            const key = e.key.toLowerCase();
+            if (key === 'a') {
                 e.preventDefault();
-                copy();
+                const range = document.createRange();
+                range.selectNodeContents(pre);
+                const sel = window.getSelection();
+                sel.empty();
+                sel.addRange(range);
+            } else if (key === 'c') {
+                const sel = String(window.getSelection());
+                if (!sel || sel.replace(/\s+/g, '') === pre.textContent.replace(/\s+/g, '')) {
+                    e.preventDefault();
+                    copy();
+                }
             }
         });
-        if (fill) {
+        if (pane) {
+            pre.parentElement.appendChild(btn);
+        } else if (fill) {
             const box = document.createElement('div');
             box.className = 'code-box';
             const head = document.createElement('div');
@@ -193,7 +223,8 @@
         if (pre.dataset.lang) showCode(pre, pre.textContent, pre.dataset.lang);
     }
     function setCodeLang(id, text) { const el = $(id + '-lang'); if (el) el.textContent = text; }
-    $$('pre.code').forEach(setupCodeBlock);
+    $$('pre.code, pre.side-code').forEach(setupCodeBlock);
+    copySources.set('side-code', () => (state.result ? [state.result.svg, 'SVG'] : ['', '']));
 
     async function errorDetail(res) {
         const body = await res.text();
@@ -240,10 +271,10 @@
     // ------------------------------------------------------------------
     // Settings: mode, color, fine-tune
     // ------------------------------------------------------------------
-    function settingsParams(mode) {
+    function settingsParams(mode, color = state.color) {
         mode = mode || state.mode;
         const q = new URLSearchParams();
-        if (MODES[mode].color) q.set('color', state.color.slice(1).toLowerCase());
+        if (MODES[mode].color) q.set('color', color.slice(1).toLowerCase());
         q.set('mode', mode);
         for (const k of ['hue', 'saturation', 'lightness']) if (state.adj[k]) q.set(k, state.adj[k]);
         return q;
@@ -255,14 +286,24 @@
         const by = { replace: [], hide: [], remove: [], cut: [] };
         for (const [c, e] of Object.entries(state.edits)) by[e.op].push(e.op === 'replace' ? c + ':' + e.to.slice(1).toLowerCase() : c);
         for (const k of ['replace', 'hide', 'remove', 'cut']) if (by[k].length) q.set(k, by[k].join(','));
+        if (state.merge) q.set('merge', String(state.merge));
+        if (state.detail) q.set('detail', String(state.detail));
         if (state.gap) q.set('gap', String(state.gap));
-        if ((state.gap || state.line) && state.unit === '%') q.set('unit', 'pct');
+        if (state.gap && state.gapsAuto) q.set('gaps', 'auto');
+        if (state.gap && state.gapTop) q.set('gapsplit', 'top');
+        if (state.knockout.length) q.set('knockout', state.knockout.join(','));
+        if ((state.gap || state.line || state.detail) && state.unit === '%') q.set('unit', 'pct');
+        if (state.holes) q.set('holes', 'light');
+        if (state.outlines) q.set('outlines', 'gap');
         if (state.svgo) q.set('optimize', '1');
         if (state.canvas) q.set('canvas', state.canvas.map(fmt).join('x'));
-        if (state.place) q.set('place', state.place.map(fmt).join(','));
+        if (state.fit !== null) q.set('fit', fmt(state.fit));
+        else if (state.place) q.set('place', state.place.map(fmt).join(','));
         if (state.line) {
             q.set('line', String(state.line));
-            if (!state.lineInner) q.set('lines', 'outer');
+            if (state.linePlain) q.set('lines', 'plain');
+            else if (!state.lineInner) q.set('lines', 'outer');
+            if (state.lineCenter) q.set('linealign', 'center');
             if (state.keep.size) q.set('keep', [...state.keep].join(','));
         }
         return q;
@@ -293,22 +334,22 @@
         return w > 0 && h > 0 ? [0, 0, w, h] : [0, 0, 128, 128];
     }
     function canvasSize(doc) { return state.canvas || origBox(doc).slice(2); }
-    function placement(doc) {
-        if (state.place) return state.place;
+    function placement(doc, place = state.place) {
+        if (place) return place;
         const [, , w0, h0] = origBox(doc);
         const [W, H] = canvasSize(doc);
         return [(W - w0) / 2, (H - h0) / 2, 1];
     }
-    function placed(doc, norm) {
+    function placed(doc, norm, place = state.place) {
         norm = norm || doc.norm;
-        if (!state.canvas && !state.place) return norm;
+        if (!state.canvas && !place) return norm;
         const tag = rootTag(norm);
         const at = norm.indexOf(tag);
         const end = norm.lastIndexOf('</svg');
         if (!tag || end < at) return norm;
         const [x0, y0, w0, h0] = origBox(doc);
         const [W, H] = canvasSize(doc);
-        const [tx, ty, s] = placement(doc);
+        const [tx, ty, s] = placement(doc, place);
         let open = tag.replace(/\sviewBox\s*=\s*("[^"]*"|'[^']*')/i, '');
         // A width/height on the root keeps its scale: it grows with the canvas.
         open = open.replace(/(\s(width|height)\s*=\s*["']?\s*)([\d.]+)/gi, (all, pre, name, v) => pre + fmt(+v * (/^w/i.test(name) ? W / w0 : H / h0)));
@@ -342,6 +383,7 @@
         if (state.place) state.place = [state.place[0] + (W - W0) / 2, state.place[1] + (H - H0) / 2, state.place[2]];
         const [, , w0, h0] = origBox(state.doc);
         state.canvas = W === w0 && H === h0 && !state.place ? null : [W, H];
+        if (state.fit !== null) { state.canvas = [W, H]; fitToCanvas(false); return; } // auto Fit: fit the new canvas
         canvasChanged();
     }
     function setScale(s) {
@@ -350,12 +392,14 @@
         const [tx, ty, s0] = placement(state.doc);
         // Scale around the middle of the drawing.
         const cx = tx + (s0 * w0) / 2, cy = ty + (s0 * h0) / 2;
+        state.fit = null; // placed by hand now
         state.place = [cx - (s * w0) / 2, cy - (s * h0) / 2, s];
         if (!state.canvas) state.canvas = canvasSize(state.doc);
         canvasChanged();
     }
     function setPosition(x, y) {
         if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        state.fit = null;
         state.place = [x, y, placement(state.doc)[2]];
         if (!state.canvas) state.canvas = canvasSize(state.doc);
         canvasChanged();
@@ -365,38 +409,45 @@
         const btn = $(center ? 'center-btn' : 'fit-btn');
         btn.classList.add('loading');
         btn.disabled = true;
-        setBusy(true);
+        setBusy(true, 'fit');
         setStatus('work', 'Measuring the drawing…');
         try {
             await fitToCanvasNow(center);
         } finally {
             btn.classList.remove('loading');
             btn.disabled = false;
-            setBusy(false);
+            setBusy(false, 'fit');
         }
+    }
+    // Where `doc` goes to fill the canvas minus `pad` (or, with a scale, just centered):
+    // measured on what's visible after the color edits (invisible and cut-out colors don't count).
+    async function fitPlacement(doc, pad, scale) {
+        const [x0, y0] = origBox(doc);
+        const [W, H] = canvasSize(doc);
+        const hidden = Object.entries(editsOf(doc)).filter(([, e]) => e.op !== 'replace').map(([c]) => c);
+        const Geo = await loadGeometry();
+        const box = Geo.bounds(Engine.edit(doc.norm, [], hidden));
+        if (!box) throw new Error('Nothing visible to fit.');
+        const [bx, by, bw, bh] = box;
+        const s = scale || Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh);
+        if (!(s > 0)) throw new Error('The padding leaves no room on this canvas.');
+        // Map the box's corner so the box is centered: s * (bx - x0) + tx = (W - s * bw) / 2.
+        return [(W - s * bw) / 2 - s * (bx - x0), (H - s * bh) / 2 - s * (by - y0), s];
     }
     async function fitToCanvasNow(center) {
         const doc = state.doc;
-        const [x0, y0] = origBox(doc);
         const [W, H] = canvasSize(doc);
         const pad = Math.max(0, parseFloat($('fit-pad').value) || 0);
-        let box;
+        let place;
         try {
-            // Measure what's visible after the color edits (invisible and cut-out colors don't count).
-            const hidden = Object.entries(state.edits).filter(([, e]) => e.op !== 'replace').map(([c]) => c);
-            const Geo = await loadGeometry();
-            box = Geo.bounds(Engine.edit(doc.norm, [], hidden));
+            place = await fitPlacement(doc, pad, center ? placement(doc)[2] : 0);
         } catch (err) {
             return showError(err.message);
         }
         if (doc !== state.doc) return;
-        if (!box) return showError('Nothing visible to fit.');
-        const [bx, by, bw, bh] = box;
-        const s = center ? placement(doc)[2] : Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh);
-        if (!(s > 0)) return showError('The padding leaves no room on this canvas.');
-        // Map the box's corner so the box is centered: s * (bx - x0) + tx = (W - s * bw) / 2.
-        state.place = [(W - s * bw) / 2 - s * (bx - x0), (H - s * bh) / 2 - s * (by - y0), s];
+        state.place = place;
         if (!state.canvas) state.canvas = [W, H];
+        state.fit = center ? null : pad; // Fit stays on: the next SVG (or canvas size) is fitted too
         canvasChanged();
         toast(center ? 'Centered' : 'Fitted to ' + fmt(W) + ' × ' + fmt(H) + (pad ? ' with ' + fmt(pad) + ' padding' : ''));
     }
@@ -409,7 +460,8 @@
     $$('#canvas-step input').forEach((el) => el.addEventListener('blur', syncCanvasUI));
     $('fit-btn').addEventListener('click', () => fitToCanvas(false));
     $('center-btn').addEventListener('click', () => fitToCanvas(true));
-    $('canvas-reset').addEventListener('click', () => { state.canvas = null; state.place = null; canvasChanged(); });
+    $('canvas-reset').addEventListener('click', () => { state.canvas = null; state.place = null; state.fit = null; canvasChanged(); });
+    $('fit-pad').addEventListener('change', () => { if (state.fit !== null && state.doc) fitToCanvas(false); });
 
     // Collapsible sections: closed by default (less scrolling), the header says what's set,
     // and each remembers being opened.
@@ -420,15 +472,16 @@
     });
     function updateFolds() {
         const shape = [];
+        if (state.merge || state.detail) shape.push('simplified');
         if (state.gap) shape.push('gaps ' + unitText(state.gap));
-        if (state.line) shape.push((state.lineInner ? 'line ' : 'outline ') + unitText(state.line));
+        if (state.line) shape.push((state.linePlain ? 'one-color line ' : state.lineInner ? 'line ' : 'outline ') + unitText(state.line));
         $('shape-sub').textContent = shape.length ? shape.join(' · ') : 'gaps and line versions';
         $('shape-step').classList.toggle('active', shape.length > 0);
         const placedNow = !!(state.canvas || state.place);
         let sub = 'as it is';
         if (placedNow && state.doc) {
             const [W, H] = canvasSize(state.doc);
-            sub = fmt(W) + ' × ' + fmt(H) + ' · ' + fmt(placement(state.doc)[2] * 100) + ' %';
+            sub = fmt(W) + ' × ' + fmt(H) + ' · ' + (state.fit !== null ? 'fit, padding ' + fmt(state.fit) : fmt(placement(state.doc)[2] * 100) + ' %');
         }
         $('canvas-sub').textContent = sub;
         $('canvas-step').classList.toggle('active', placedNow);
@@ -539,6 +592,11 @@
     });
     $('svgo-reset').addEventListener('click', () => { svgoSettings = svgoDefaults(); renderSvgoSettings(); svgoSettingsChanged(); });
     $('svgo-toggle').addEventListener('change', (e) => { state.svgo = e.target.checked; updateOptimizeFold(); editsChanged(); });
+    $('holes-toggle').addEventListener('change', (e) => { state.holes = e.target.checked; editsChanged(); });
+    $('outlines-toggle').addEventListener('change', (e) => { state.outlines = e.target.checked; editsChanged(); });
+    $('gap-top-toggle').addEventListener('change', (e) => { state.gapTop = e.target.checked; if (state.gap) editsChanged(); else syncPageUrl(); });
+    $('gaps-auto-toggle').addEventListener('change', (e) => { state.gapsAuto = e.target.checked; if (state.gap) editsChanged(); else syncPageUrl(); });
+    $('line-center-toggle').addEventListener('change', (e) => { state.lineCenter = e.target.checked; if (state.line) editsChanged(); else syncPageUrl(); });
     renderSvgoSettings();
 
     let svgoWorker = null, svgoJobs = 0;
@@ -572,16 +630,27 @@
     // The mapping with own colors applied, and the SVG with invisible colors applied.
     // Cut-out colors are left in `edited` for the geometry step (cutOutSvg); `svg` treats
     // them as invisible, which is what the quick style thumbnails show.
-    function editedSvg(doc, mapping) {
+    // The color edits in effect: yours, plus with "Light colors become holes" the near-white
+    // colors you haven't edited, cut out: every channel 224 or more, or a pale tint close to
+    // gray (every channel 200 or more, within 48 of each other). As server/shapes.py.
+    const isLight = (c) => c.length === 6 && ((x) => Math.min(...x) >= 0xe0 || (Math.min(...x) >= 0xc8 && Math.max(...x) - Math.min(...x) <= 48))([0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16)));
+    function editsOf(doc) {
+        if (!state.holes || !doc) return state.edits;
+        const out = Object.assign({}, state.edits);
+        for (const [c] of doc.palette) if (!out[c] && isLight(c)) out[c] = { op: 'cut', auto: true };
+        return out;
+    }
+    function editedSvg(doc, mapping, place = state.place) {
         const merged = Object.assign({}, mapping);
-        const hide = [], remove = [], cut = [];
-        for (const [c, e] of Object.entries(state.edits)) {
+        const hide = [], remove = [], cut = [], holes = [];
+        for (const [c, e] of Object.entries(editsOf(doc))) {
             if (e.op === 'replace') merged[c] = e.to.slice(1).toLowerCase();
+            else if (e.auto) holes.push(c); // light: a hole or a part, the geometry decides
             else ({ hide, remove, cut })[e.op].push(c);
         }
-        const edited = Engine.edit(placed(doc), hide, remove);
+        const edited = Engine.edit(placed(doc, null, place), hide, remove);
         const svg = cut.length ? Engine.apply(Engine.edit(edited, [], cut), merged) : Engine.apply(edited, merged);
-        return { svg, merged, edited, cut };
+        return { svg, merged, edited, cut, holes };
     }
     // Cut out: real geometry (paper.js), loaded the first time it's needed.
     let geometryReady = null;
@@ -599,12 +668,141 @@
         }
         return geometryReady;
     }
-    async function cutOutSvg(edited, cut, merged, onProgress) {
+    // ------------------------------------------------------------------
+    // Text into shapes (for cut out, gaps and lines, which work on shapes): drawn with
+    // opentype.js in the font of your choice, or Inter when none is chosen. Loaded on use.
+    // ------------------------------------------------------------------
+    let textFont = null; // { name, font }
+    let opentypeReady = null;
+    function loadOpentype() {
+        if (window.opentype) return Promise.resolve(window.opentype);
+        if (!opentypeReady) {
+            setStatus('work', 'Loading fonts…');
+            opentypeReady = new Promise((resolve, reject) => {
+                const sc = document.createElement('script');
+                sc.src = '/static/vendor/opentype.min.js';
+                sc.onload = () => (window.opentype ? resolve(window.opentype) : reject(new Error('Fonts could not load.')));
+                sc.onerror = () => { opentypeReady = null; reject(new Error('Fonts could not load. Check your connection and try again.')); };
+                document.head.appendChild(sc);
+            });
+        }
+        return opentypeReady;
+    }
+    async function currentFont() {
+        if (textFont) return textFont;
+        const ot = await loadOpentype();
+        const res = await fetch('/static/vendor/inter-latin-400.woff');
+        if (!res.ok) throw new Error('The fallback font could not load.');
+        textFont = { name: 'Inter', font: ot.parse(await res.arrayBuffer()), fallback: true };
+        return textFont;
+    }
+    $('text-font-file').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            const ot = await loadOpentype();
+            textFont = { name: file.name.replace(/\.(ttf|otf|woff)$/i, ''), font: ot.parse(await file.arrayBuffer()) };
+            $('text-font-name').textContent = textFont.name;
+            toast('Text now drawn with ' + textFont.name);
+            if (state.doc) recolor();
+        } catch (err) {
+            showError('That font could not be read: ' + err.message + ' (TTF, OTF and WOFF work; WOFF2 doesn\'t yet).');
+        }
+    });
+    // Replace each <text> with paths of its glyphs, keeping its paint, class and transform.
+    async function textToShapes(svgText) {
+        if (!/<text\b/i.test(svgText)) return svgText;
+        const { font, name, fallback } = await currentFont();
+        const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+        const NS = 'http://www.w3.org/2000/svg';
+        const own = (el, prop) => {
+            const style = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'i').exec(el.getAttribute('style') || '');
+            return style ? style[1].trim() : el.getAttribute(prop);
+        };
+        const inherited = (el, prop, dflt) => {
+            for (let e = el; e && e.nodeType === 1; e = e.parentNode) { const v = own(e, prop); if (v !== null && v !== '') return v; }
+            return dflt;
+        };
+        const num = (v) => parseFloat(String(v || '').split(/[\s,]+/)[0]);
+        for (const text of [...doc.querySelectorAll('text')]) {
+            const size = num(inherited(text, 'font-size', '16')) || 16;
+            const anchor = inherited(text, 'text-anchor', 'start');
+            let x = num(text.getAttribute('x')) || 0, y = num(text.getAttribute('y')) || 0;
+            x += num(text.getAttribute('dx')) || 0;
+            y += num(text.getAttribute('dy')) || 0;
+            // Runs of text: the text's own characters and its <tspan>s (which may move the pen).
+            const runs = [];
+            const walk = (node, el) => {
+                for (const ch of node.childNodes) {
+                    if (ch.nodeType === 3) {
+                        const t = ch.textContent.replace(/\s+/g, ' ');
+                        if (t.trim() || runs.length) runs.push({ el, text: t });
+                    } else if (ch.nodeType === 1 && ch.localName === 'tspan') {
+                        runs.push({ el: ch, move: true });
+                        walk(ch, ch);
+                    }
+                }
+            };
+            walk(text, text);
+            const g = doc.createElementNS(NS, 'g');
+            for (const a of [...text.attributes]) if (!/^(x|y|dx|dy|font-.*|text-anchor|letter-spacing|word-spacing|dominant-baseline|style)$/.test(a.name)) g.setAttribute(a.name, a.value);
+            const style = (text.getAttribute('style') || '').split(';').filter((d) => d.trim() && !/^\s*(font|text-anchor|letter-spacing|word-spacing)/i.test(d)).join(';');
+            if (style) g.setAttribute('style', style);
+            const line = [];
+            let width = 0;
+            for (const run of runs) {
+                if (run.move) {
+                    if (run.el.hasAttribute('x')) { x = num(run.el.getAttribute('x')); }
+                    if (run.el.hasAttribute('y')) { y = num(run.el.getAttribute('y')); }
+                    x += num(run.el.getAttribute('dx')) || 0;
+                    y += num(run.el.getAttribute('dy')) || 0;
+                    continue;
+                }
+                const s = num(inherited(run.el, 'font-size', String(size))) || size;
+                const path = font.getPath(run.text, x, y, s);
+                const p = doc.createElementNS(NS, 'path');
+                p.setAttribute('d', path.toPathData(3));
+                if (run.el !== text) {
+                    for (const prop of ['fill', 'stroke', 'stroke-width', 'opacity', 'class']) { const v = own(run.el, prop); if (v) p.setAttribute(prop, v); }
+                }
+                line.push(p);
+                const adv = font.getAdvanceWidth(run.text, s);
+                x += adv;
+                width += adv;
+            }
+            if (anchor === 'middle' || anchor === 'end') {
+                const shift = 'translate(' + fmt(-(anchor === 'middle' ? width / 2 : width)) + ' 0)';
+                g.setAttribute('transform', ((g.getAttribute('transform') || '') + ' ' + shift).trim());
+            }
+            line.forEach((p) => g.appendChild(p));
+            text.replaceWith(g);
+        }
+        $('text-font-row').hidden = false;
+        $('text-font-name').textContent = name;
+        if (fallback && !textToShapes.told) { textToShapes.told = true; toast('Text turned into shapes with Inter. Choose its own font under Shapes.'); }
+        return new XMLSerializer().serializeToString(doc.documentElement);
+    }
+
+    // Everything one color (like Solid)? Then the geometry can ignore gradients and transparency.
+    function flatColor(doc, merged) {
+        const gone = new Set(Object.entries(editsOf(doc)).filter(([, e]) => e.op !== 'replace').map(([c]) => c));
+        const outs = new Set(doc.palette.map(([c]) => c).filter((c) => !gone.has(c)).map((c) => (merged[c] || c).toLowerCase()));
+        return outs.size === 1 ? [...outs][0] : null;
+    }
+    // `info.holed`: which light colors became holes (the rest stayed parts of the logo).
+    async function cutOutSvg(edited, cut, merged, onProgress, doc = state.doc, holes = [], info = {}) {
         const Geo = await loadGeometry();
-        return Geo.cutOut(edited, {
-            cut, map: merged, gap: state.gap, unit: state.unit, onProgress,
-            line: state.line, lineInner: state.lineInner, keep: [...state.keep],
+        edited = await textToShapes(edited);
+        const out = await Geo.cutOut(edited, {
+            flat: doc ? flatColor(doc, merged) : null,
+            cut, holes, outlines: state.outlines, map: merged, gap: state.gap, unit: state.unit, onProgress,
+            merge: state.merge, detail: state.detail, lineAlign: state.lineCenter ? 'center' : null, gaps: state.gapsAuto ? 'auto' : null, gapSplit: state.gapTop ? 'top' : null, knockout: state.knockout, lightHoles: !!state.holes,
+            line: state.line, lineInner: state.lineInner, linePlain: state.linePlain, keep: [...state.keep],
         });
+        const m = /<!--holes:([^>]*)-->/.exec(out);
+        info.holed = m ? m[1].split(',').filter(Boolean) : [];
+        return out.replace(/<!--holes:[^>]*-->/, '');
     }
     const gapInput = $('adj-gap');
     // Gap and line sizes: px (the SVG's own units) or % of the icon. In px the slider
@@ -625,7 +823,7 @@
     function syncRanges() {
         const size = state.unit === '%' ? 100 : docSize(state.doc);
         // Up to 6/128 (gaps) and 8/128 (lines) of the icon: 6 and 8 px in a devicon icon.
-        for (const [input, max, now] of [[gapInput, 6, state.gap], [lineInput, 8, state.line]]) {
+        for (const [input, max, now] of [[gapInput, 6, state.gap], [lineInput, 8, state.line], [detailInput, 6, state.detail]]) {
             const step = state.unit === '%' ? 0.1 : niceStep(size / 256);
             input.step = String(step);
             // Never below the current value (say, from a shared link).
@@ -637,6 +835,8 @@
     function syncGap(read = true) {
         if (read) state.gap = Math.max(0, Math.min(parseFloat(gapInput.max), parseFloat(gapInput.value) || 0));
         $('adj-gap-out').textContent = unitText(state.gap);
+        $('gaps-auto-row').hidden = !state.gap;
+        $('gap-top-row').hidden = !state.gap;
         updateFolds();
     }
     function setUnit(unit, user) {
@@ -644,19 +844,35 @@
         // Keep the same look: convert the current values to the new unit.
         const size = docSize(state.doc);
         const conv = (v) => (unit === '%' ? (v * 100) / size : (v * size) / 100);
-        const [gap, line] = [state.gap, state.line].map((v) => (v ? +conv(v).toFixed(2) : 0));
+        const [gap, line, detail] = [state.gap, state.line, state.detail].map((v) => (v ? +conv(v).toFixed(2) : 0));
         state.unit = unit;
         state.gap = gap;
         state.line = line;
+        state.detail = detail;
+        detailInput.value = String(detail);
+        syncSimplify(false);
         $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === unit)));
         syncRanges();
         gapInput.value = String(gap);
         lineInput.value = String(line);
         syncGap(false);
         syncLine(false);
-        if (user && (gap || line)) editsChanged(); else if (user) syncPageUrl();
+        if (user && (gap || line || detail)) editsChanged(); else if (user) syncPageUrl();
     }
     $$('#unit-tabs button').forEach((b) => b.addEventListener('click', () => setUnit(b.dataset.unit, true)));
+    // Simplify: merge similar shades, drop small details. Recut when the slider rests.
+    const mergeInput = $('adj-merge'), detailInput = $('adj-detail');
+    function syncSimplify(read = true) {
+        if (read) {
+            state.merge = Math.max(0, parseFloat(mergeInput.value) || 0);
+            state.detail = Math.max(0, Math.min(parseFloat(detailInput.max), parseFloat(detailInput.value) || 0));
+        }
+        $('adj-merge-out').textContent = state.merge ? String(state.merge) : 'Off';
+        $('adj-detail-out').textContent = unitText(state.detail);
+        updateFolds();
+    }
+    let simplifyTimer = 0;
+    for (const el of [mergeInput, detailInput]) el.addEventListener('input', () => { syncSimplify(); clearTimeout(simplifyTimer); simplifyTimer = setTimeout(editsChanged, 250); });
     // Gaps are heavy on big drawings: show the value at once, recut when the slider rests.
     let gapTimer = 0;
     gapInput.addEventListener('input', () => { syncGap(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
@@ -664,14 +880,20 @@
     const lineInput = $('adj-line');
     function syncLine(read = true) {
         if (read) state.line = Math.max(0, Math.min(parseFloat(lineInput.max), parseFloat(lineInput.value) || 0));
-        state.lineInner = $('line-inner').checked;
+        $$('#line-mode button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lines === (state.linePlain ? 'plain' : state.lineInner ? 'all' : 'outer'))));
         $('adj-line-out').textContent = unitText(state.line);
         $('line-inner-row').hidden = !state.line;
+        $('line-align-row').hidden = !state.line;
         updateFolds();
         if (!editPanel.hidden) $('color-edit-keep-row').hidden = !state.line;
     }
     lineInput.addEventListener('input', () => { syncLine(); clearTimeout(gapTimer); gapTimer = setTimeout(editsChanged, 250); });
-    $('line-inner').addEventListener('change', () => { syncLine(false); editsChanged(); });
+    $$('#line-mode button').forEach((b) => b.addEventListener('click', () => {
+        state.lineInner = b.dataset.lines !== 'outer';
+        state.linePlain = b.dataset.lines === 'plain';
+        syncLine(false);
+        editsChanged();
+    }));
     function settingsChanged() {
         scheduleThumbs();
         updateSnippet();
@@ -716,6 +938,7 @@
         $('presets').appendChild(b);
     });
     function setColor(hex, user) {
+        if (user) { state.colorAuto = false; syncAutoColor(); }
         state.color = hex;
         $('color-input').value = hex.toLowerCase();
         if (document.activeElement !== hexInput) hexInput.value = hex.slice(1);
@@ -725,6 +948,13 @@
         if (user) settingsChanged();
     }
     $('color-input').addEventListener('input', (e) => setColor(e.target.value.toUpperCase(), true));
+    function syncAutoColor() { $('auto-color').setAttribute('aria-pressed', String(state.colorAuto)); }
+    $('auto-color').addEventListener('click', () => {
+        state.colorAuto = !state.colorAuto;
+        syncAutoColor();
+        if (state.colorAuto && !MODES[state.mode].color) setMode('solid', false);
+        settingsChanged();
+    });
     // The big swatch opens a popover: presets, recent colors and the full picker.
     const colorPop = $('color-pop');
     function setColorPop(open) {
@@ -869,13 +1099,31 @@
         ADJ.forEach(([k]) => { $('adj-' + k).value = 0; });
         $('adj-gap').value = 0;
         syncGap();
+        mergeInput.value = 0;
+        detailInput.value = 0;
+        syncSimplify();
         state.canvas = null;
         state.place = null;
+        state.fit = null;
         syncCanvasUI();
         state.svgo = false;
         $('svgo-toggle').checked = false;
+        state.holes = false;
+        $('holes-toggle').checked = false;
+        state.outlines = false;
+        $('outlines-toggle').checked = false;
+        state.colorAuto = false;
+        syncAutoColor();
         lineInput.value = 0;
-        $('line-inner').checked = true;
+        state.lineInner = true;
+        state.linePlain = false;
+        state.lineCenter = false;
+        $('line-center-toggle').checked = false;
+        state.gapsAuto = false;
+        $('gaps-auto-toggle').checked = false;
+        state.gapTop = false;
+        $('gap-top-toggle').checked = false;
+        state.knockout = [];
         state.keep.clear();
         syncLine();
         syncAdjust(false);
@@ -1041,14 +1289,18 @@
         if (state.doc && !keepPlacement) state.place = null; // a new SVG starts centered on the same canvas
         keepPlacement = false;
         state.doc = { name, size, text, norm, palette: Engine.palette(norm), fromUrl: fromUrl || null, source };
+        if (state.tab === 'variants') setTimeout(renderVariants, 0);
+        $('text-font-row').hidden = !/<text\b/i.test(norm);
         syncCanvasUI();
         renderLogoColors();
         // The slider ranges follow the SVG's size; keep the chosen values.
         syncRanges();
         gapInput.value = String(state.gap);
         lineInput.value = String(state.line);
+        detailInput.value = String(state.detail);
         syncGap(false);
         syncLine(false);
+        syncSimplify(false);
         state.result = null;
         // Edits belong to colors: keep the ones this SVG still has (live code edits, shared links).
         const present = new Set(state.doc.palette.map((p) => p[0]));
@@ -1068,7 +1320,145 @@
         syncPageUrl();
         recolor();
         scheduleThumbs(250);
+        if (state.fit !== null) fitToCanvas(false); // auto Fit: this SVG too
     }
+    // ------------------------------------------------------------------
+    // Batch: several SVGs with the same settings. The first opens here to tune the
+    // settings; Download all recolors each one the way the preview does, into a ZIP.
+    // ------------------------------------------------------------------
+    const MAX_BATCH = 200;
+    let batchAt = 0;
+    async function startBatch(files) {
+        const svgs = files.filter((f) => /\.svg$/i.test(f.name) || /svg/i.test(f.type));
+        const items = [];
+        for (const f of svgs.slice(0, MAX_BATCH)) if (f.size <= MAX_BYTES) items.push({ name: f.name || 'image.svg', text: await f.text(), size: f.size });
+        const left = files.length - items.length;
+        if (!items.length) return showError('None of these are SVG files (up to 2 MB each).');
+        if (items.length === 1) return loadText(items[0].text, items[0].name, items[0].size, null);
+        state.batch = items;
+        openBatchItem(0);
+        if (left) toast(left + ' file' + (left === 1 ? ' was' : 's were') + ' left out (not an SVG, over 2 MB, or past ' + MAX_BATCH + ')');
+    }
+    function openBatchItem(i) {
+        batchAt = i;
+        const it = state.batch[i];
+        loadText(it.text, it.name, it.size, null);
+        renderBatch();
+    }
+    function renderBatch() {
+        const on = !!(state.batch && state.batch.length > 1);
+        $('batch-bar').hidden = !on;
+        if (!on) return;
+        $('batch-count').textContent = String(state.batch.length);
+        const box = $('batch-files');
+        box.replaceChildren();
+        state.batch.forEach((it, i) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = it.name;
+            b.title = it.failed ? 'Not in the last ZIP: ' + it.failed : 'Show ' + it.name + ' here';
+            if (it.failed) b.classList.add('failed');
+            b.setAttribute('aria-current', String(i === batchAt));
+            b.addEventListener('click', () => openBatchItem(i));
+            box.appendChild(b);
+        });
+    }
+    function makeDoc(text, name) {
+        if (!/<svg[\s>]/i.test(text)) throw new Error('no <svg> element');
+        const norm = Engine.normalize(text);
+        return { name, text, norm, palette: Engine.palette(norm), fromUrl: null, source: 'file' };
+    }
+    // One SVG through the same steps as the preview, with the current settings.
+    async function renderDoc(doc) {
+        const colors = doc.palette.map((p) => p[0]);
+        const color = state.colorAuto && MODES[state.mode].color ? await autoColorOf(doc) : state.color;
+        const mapping = colors.length ? await mappingFor(state.mode, colors, color) : {};
+        let place = null; // a placement set by hand belongs to the SVG it was made on
+        if (state.fit !== null) place = await fitPlacement(doc, state.fit, 0);
+        else if (doc === state.doc) place = state.place;
+        const parts = editedSvg(doc, mapping, place);
+        let svg = parts.svg;
+        if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line || state.merge || state.detail || state.knockout.length) svg = await cutOutSvg(parts.edited, parts.cut, parts.merged, null, doc, parts.holes);
+        if (state.svgo) svg = await optimizeSvg(svg);
+        return svg;
+    }
+    // A ZIP without compression (SVGs are small; this keeps it simple and fast).
+    function makeZip(files) {
+        const crcTable = makeZip.table || (makeZip.table = Array.from({ length: 256 }, (_, n) => {
+            let c = n;
+            for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+            return c >>> 0;
+        }));
+        const crc32 = (bytes) => { let c = 0xffffffff; for (const b of bytes) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+        const enc = new TextEncoder();
+        const parts = [], central = [];
+        let offset = 0;
+        for (const [name, text] of files) {
+            const nameBytes = enc.encode(name), data = enc.encode(text), crc = crc32(data);
+            const local = new DataView(new ArrayBuffer(30));
+            local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true);
+            local.setUint32(14, crc, true); local.setUint32(18, data.length, true); local.setUint32(22, data.length, true);
+            local.setUint16(26, nameBytes.length, true);
+            parts.push(local, nameBytes, data);
+            const cd = new DataView(new ArrayBuffer(46));
+            cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true); cd.setUint16(8, 0x0800, true);
+            cd.setUint32(16, crc, true); cd.setUint32(20, data.length, true); cd.setUint32(24, data.length, true);
+            cd.setUint16(28, nameBytes.length, true); cd.setUint32(42, offset, true);
+            central.push(cd, nameBytes);
+            offset += 30 + nameBytes.length + data.length;
+        }
+        const size = central.reduce((n, p) => n + p.byteLength, 0);
+        const end = new DataView(new ArrayBuffer(22));
+        end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+        end.setUint32(12, size, true); end.setUint32(16, offset, true);
+        return new Blob([...parts, ...central, end], { type: 'application/zip' });
+    }
+    async function downloadBatch() {
+        if (!state.batch) return;
+        const btn = $('batch-zip');
+        btn.classList.add('loading');
+        btn.disabled = true;
+        setBusy(true, 'zip');
+        const out = [], used = new Set(), failed = [];
+        const n = state.batch.length;
+        try {
+            for (const [i, it] of state.batch.entries()) {
+                setStatus('work', 'Batch: ' + (i + 1) + ' of ' + n + ' · ' + Math.round((100 * i) / n) + '%');
+                it.failed = null;
+                try {
+                    const svg = await renderDoc(makeDoc(it.text, it.name));
+                    let name = outputName({ name: it.name });
+                    for (let k = 2; used.has(name); k++) name = name.replace(/(_\d+)?\.svg$/, '_' + k + '.svg');
+                    used.add(name);
+                    out.push([name, svg]);
+                } catch (err) {
+                    it.failed = err.message === 'superseded' ? 'interrupted by a settings change' : err.message;
+                    failed.push(it.name + ' (' + it.failed + ')');
+                }
+            }
+            if (out.length) {
+                const url = URL.createObjectURL(makeZip(out));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'svg-recolor-' + state.mode + '-' + out.length + '.zip';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            }
+            toast(out.length + ' of ' + n + ' SVGs in the ZIP');
+        } finally {
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            setBusy(false, 'zip');
+            renderBatch();
+            if (state.doc) recolor(); // (clears messages first, so the one below comes after)
+        }
+        if (failed.length) showError('Not in the ZIP: ' + failed.join('; '));
+    }
+    $('batch-zip').addEventListener('click', downloadBatch);
+    $('batch-close').addEventListener('click', () => { state.batch = null; renderBatch(); });
+
     async function loadFile(file) {
         if (!file) return;
         if (!(file.type === 'image/svg+xml' || /\.svg$/i.test(file.name) || file.type === '' || file.type.startsWith('text/'))) {
@@ -1077,7 +1467,11 @@
         if (file.size > MAX_BYTES) return showError('This file is ' + formatBytes(file.size) + '. The limit is 2 MB; try optimizing it with SVGO first.');
         loadText(await file.text(), file.name || 'image.svg', file.size, null);
     }
-    fileInput.addEventListener('change', () => { loadFile(fileInput.files[0]); fileInput.value = ''; });
+    fileInput.addEventListener('change', () => {
+        const files = Array.from(fileInput.files || []);
+        if (files.length > 1) startBatch(files); else loadFile(files[0]);
+        fileInput.value = '';
+    });
 
     let dragDepth = 0;
     document.addEventListener('dragenter', (e) => {
@@ -1091,8 +1485,9 @@
     document.addEventListener('drop', (e) => {
         dragDepth = 0;
         document.body.classList.remove('dragging');
-        const file = e.dataTransfer && e.dataTransfer.files[0];
-        if (file) { e.preventDefault(); loadFile(file); }
+        const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+        if (files.length > 1) { e.preventDefault(); startBatch(files); return; }
+        if (files[0]) { e.preventDefault(); loadFile(files[0]); }
     });
     // Paste: an .svg file copied in the file manager (Explorer, Finder, Files), SVG code,
     // an <svg> copied from a web page, or a link.
@@ -1138,6 +1533,7 @@
         const data = e.clipboardData;
         if (!data) return;
         const files = Array.from(data.files || []);
+        if (files.filter(isSvgFile).length > 1 && t !== $('code-input')) { e.preventDefault(); startBatch(files); return; }
         const file = files.find(isSvgFile) || files[0];
         // In the link and color fields a paste is just text for the field.
         const src = t === hexInput || t === $('url-input') ? null : imageSource(data.getData('text/html'));
@@ -1223,19 +1619,19 @@
     // adjustments, so the preview and all six thumbnails cost a single call (and
     // identical calls are CDN cache hits). Identical in-flight requests are shared.
     const inflight = new Map();
-    function sharedParams() {
-        const q = settingsParams('tint'); // color + adjustments
+    function sharedParams(color) {
+        const q = settingsParams('tint', color); // color + adjustments
         q.delete('mode');
         return q;
     }
-    async function fetchAllModes(colors) {
+    async function fetchAllModes(colors, color) {
         const missing = MODE_KEYS.filter((m) => {
-            const known = mapCache.get(settingsParams(m).toString());
+            const known = mapCache.get(settingsParams(m, color).toString());
             return !known || colors.some((c) => !(c in known));
         });
         if (!missing.length || !colors.length) return;
         const sorted = [...new Set(colors)].sort();
-        const shared = sharedParams();
+        const shared = sharedParams(color);
         const key = shared.toString() + '|' + sorted.join(',');
         if (!inflight.has(key)) {
             inflight.set(key, (async () => {
@@ -1271,9 +1667,28 @@
         }
         while (mapCache.size > 300) mapCache.delete(mapCache.keys().next().value);
     }
-    async function mappingFor(mode, colors) {
-        await fetchAllModes(colors);
-        return mapCache.get(settingsParams(mode).toString()) || {};
+    async function mappingFor(mode, colors, color = state.color) {
+        await fetchAllModes(colors, color);
+        return mapCache.get(settingsParams(mode, color).toString()) || {};
+    }
+    // Color "Auto": each SVG's most prominent color, the one seen most (measured with the
+    // geometry library, as the API's color=auto). Falls back to its most used color.
+    async function autoColorOf(doc) {
+        if (doc.auto) return doc.auto;
+        let hex = null;
+        try { hex = (await loadGeometry()).prominentColor(doc.norm); } catch (err) { /* text, masks: count instead */ }
+        if (!hex) {
+            const ranked = [...doc.palette].sort((a, b) => b[1] - a[1]);
+            hex = (ranked.find(([c]) => !isLight(c)) || ranked[0] || ['000000'])[0];
+        }
+        doc.auto = '#' + hex.toUpperCase();
+        return doc.auto;
+    }
+    // Settings as the page address, a recipe or the API take them: "auto" stays auto.
+    function publicParams() {
+        const q = editParams(settingsParams());
+        if (state.colorAuto && q.has('color')) q.set('color', 'auto');
+        return q;
     }
     // The page ships the sample image's colors for the default settings, so the
     // thumbnails on first load need no request.
@@ -1320,22 +1735,33 @@
         });
     }
 
-    function outputName() {
-        const stem = (state.doc.name || 'image.svg').replace(/\.svg$/i, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'image';
+    function outputName(doc = state.doc) {
+        const stem = (doc.name || 'image.svg').replace(/\.svg$/i, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'image';
         return stem + '_recolored_' + state.mode + (MODES[state.mode].color ? '_' + state.color.slice(1).toLowerCase() : '') + '.svg';
     }
     // Dim the picture only when the work takes a while; quick updates just swap.
     let busyTimer = 0;
-    function setBusy(on) {
+    let spinTimer = 0;
+    // Busy while any work is on (a recolor, a fit, a download): one ending doesn't hide the
+    // spinner while another still runs (a fit used to, mid "Drawing lines…").
+    const busyWith = new Set();
+    function setBusy(on, what = 'recolor') {
+        const was = busyWith.size > 0;
+        if (on) busyWith.add(what); else busyWith.delete(what);
+        on = busyWith.size > 0;
+        if (on === was) return;
         $('submit-btn').classList.toggle('loading', on);
         clearTimeout(busyTimer);
+        clearTimeout(spinTimer);
         const dim = (v) => {
             const img = $('result-container').querySelector('img');
             if (img) img.classList.toggle('busy', v);
-            $('work-overlay').hidden = !v; // spinner, message and progress on the picture
+            $('work-overlay').hidden = !v; // message and progress on the picture
         };
-        if (on) busyTimer = setTimeout(() => dim(true), 300);
-        else dim(false);
+        // A spinner on the result soon (the old result stays to compare); the message for longer work.
+        const spin = (v) => { $('result-spinner').hidden = !(v && $('result-container').querySelector('img')); };
+        if (on) { spinTimer = setTimeout(() => spin(true), 120); busyTimer = setTimeout(() => dim(true), 300); }
+        else { spin(false); dim(false); }
     }
     async function recolor() {
         clearTimeout(debounceTimer);
@@ -1350,17 +1776,23 @@
         setStatus('work', 'Recoloring…');
         try {
             const colors = doc.palette.map((p) => p[0]);
+            if (state.colorAuto && MODES[state.mode].color) {
+                const auto = await autoColorOf(doc);
+                if (id !== reqId || doc !== state.doc) return;
+                if (auto !== state.color) { setColor(auto, false); scheduleThumbs(0); }
+            }
             const mapping = colors.length ? await mappingFor(state.mode, colors) : {};
             if (id !== reqId || doc !== state.doc) return;
             const parts = editedSvg(doc, mapping);
             const { merged } = parts;
             let svg = parts.svg;
             let geometryFailed = false;
-            if (parts.cut.length || state.gap || state.line) {
+            const info = { holed: parts.holes };
+            if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line || state.merge || state.detail || state.knockout.length) {
                 const label = state.line ? 'Drawing lines… ' : state.gap ? 'Cutting gaps… ' : 'Cutting out… ';
                 setStatus('work', label.trim());
                 try {
-                    svg = await cutOutSvg(parts.edited, parts.cut, merged, (f) => { if (id === reqId) setStatus('work', label + Math.round(f * 100) + '%'); });
+                    svg = await cutOutSvg(parts.edited, parts.cut, merged, (f) => { if (id === reqId) setStatus('work', label + Math.round(f * 100) + '%'); }, doc, parts.holes, info);
                 } catch (err) {
                     if (id !== reqId || doc !== state.doc) return;
                     // Show the rest of the edits, with the cut colors left invisible, and say why;
@@ -1380,14 +1812,20 @@
                 }
                 if (id !== reqId || doc !== state.doc) return;
             }
+            // A copy: the colors the geometry decided on are shown, never added to your own edits.
+            const effective = Object.assign({}, editsOf(doc));
+            // Light colors that stayed parts of the logo follow the style, like any color.
+            for (const c of parts.holes) if (!info.holed.includes(c)) delete effective[c];
+            // Outline colors the geometry turned into gaps show as cut out.
+            for (const c of info.holed) if (!effective[c]) effective[c] = { op: 'cut', auto: true };
             const to = (c) => {
-                const e = state.edits[c];
+                const e = effective[c];
                 return e && e.op === 'cut' ? 'cut' : e && (e.op === 'remove' || e.op === 'hide') ? 'removed' : '#' + (merged[c] || c);
             };
             state.result = {
                 svg,
                 filename: outputName(),
-                palette: doc.palette.map(([c, n]) => ({ from: '#' + c, to: to(c), count: n, edit: state.edits[c] || null })),
+                palette: doc.palette.map(([c, n]) => ({ from: '#' + c, to: to(c), count: n, edit: effective[c] || null })),
             };
             renderResult();
             if (MODES[state.mode].color) rememberColor(state.color);
@@ -1408,8 +1846,10 @@
         const r = state.result;
         if (resultUrl) URL.revokeObjectURL(resultUrl);
         resultUrl = URL.createObjectURL(new Blob([r.svg], { type: 'image/svg+xml' }));
+        hoverCanvas.remove(); // a new picture: the outline follows the pointer again
         renderImage($('result-container'), resultUrl, 'Recolored ' + state.doc.name);
         $('code-preview-img').src = resultUrl;
+        document.querySelectorAll('#sizes-panel img').forEach((img) => { img.src = resultUrl; });
         renderPalette(r.palette);
         showCode($('side-code'), r.svg.length > CODE_VIEW_LIMIT ? r.svg.slice(0, CODE_VIEW_LIMIT) + '\n…' : r.svg, 'markup');
         if (!editPanel.hidden && editColor && !(editAnchor && editAnchor.point)) { editAnchor = document.querySelector('.chip[data-color="' + editColor + '"]'); placeEditPanel(); }
@@ -1479,7 +1919,7 @@
     function openColorEdit(color, anchor) {
         editColor = color;
         editAnchor = anchor;
-        const e = state.edits[color];
+        const e = editsOf(state.doc)[color];
         const entry = state.result && state.result.palette.find((p) => p.from === '#' + color);
         $('color-edit-from').style.background = '#' + color;
         $('color-edit-title').textContent = '#' + color.toUpperCase();
@@ -1626,6 +2066,7 @@
             img.classList.toggle('pickable', !!color);
             img.title = color ? '#' + color.toUpperCase() + ': click to edit this color' : '';
         }
+        drawHoverOutline(img, color);
     }
     stage.addEventListener('pointermove', (e) => {
         if (!isPreviewImg(e.target) || e.pointerType === 'touch') return;
@@ -1633,6 +2074,66 @@
         if (c !== undefined) setHover(c, e.target);
     });
     stage.addEventListener('pointerout', (e) => { if (isPreviewImg(e.target)) setHover(null, e.target); });
+
+    // The color under the pointer, outlined in the picture: its visible pixels on the pick
+    // canvas (where it's on top), with a white edge inside and a dark one outside.
+    const hoverCanvas = document.createElement('canvas');
+    hoverCanvas.className = 'hover-outline';
+    hoverCanvas.setAttribute('aria-hidden', 'true');
+    // Square dilation of a 0/1 mask by r pixels (separable, so cheap).
+    function dilate(m, w, h, r) {
+        const a = new Uint8Array(w * h), b = new Uint8Array(w * h);
+        for (let y = 0; y < h; y++) {
+            let run = 0;
+            for (let x = -r; x < w + r; x++) {
+                if (x + r < w && m[y * w + x + r]) run++;
+                if (x - r - 1 >= 0 && m[y * w + x - r - 1]) run--;
+                if (x >= 0 && x < w) a[y * w + x] = run > 0 ? 1 : 0;
+            }
+        }
+        for (let x = 0; x < w; x++) {
+            let run = 0;
+            for (let y = -r; y < h + r; y++) {
+                if (y + r < h && a[(y + r) * w + x]) run++;
+                if (y - r - 1 >= 0 && a[(y - r - 1) * w + x]) run--;
+                if (y >= 0 && y < h) b[y * w + x] = run > 0 ? 1 : 0;
+            }
+        }
+        return b;
+    }
+    function drawHoverOutline(img, color) {
+        const p = pick;
+        const i = color && p && p.ready ? p.colors.indexOf(color) : -1;
+        if (i < 0 || !img || !img.isConnected) { hoverCanvas.remove(); return; }
+        const key = p.text.length + '|' + p.w + 'x' + p.h + '|' + color + '|' + (p.doc && p.doc.name);
+        if (hoverCanvas.dataset.key !== key || hoverCanvas.pick !== p) {
+            const { w, h } = p;
+            const src = p.ctx.getImageData(0, 0, w, h).data;
+            const [ir, ig, ib] = p.ids[i];
+            const inside = new Uint8Array(w * h);
+            for (let k = 0, j = 0; k < w * h; k++, j += 4) {
+                if (src[j + 3] >= 128 && Math.abs(src[j] - ir) < 12 && Math.abs(src[j + 1] - ig) < 12 && Math.abs(src[j + 2] - ib) < 12) inside[k] = 1;
+            }
+            const outside = new Uint8Array(w * h);
+            for (let k = 0; k < w * h; k++) outside[k] = inside[k] ? 0 : 1;
+            const nearOut = dilate(outside, w, h, 3), nearIn = dilate(inside, w, h, 2);
+            const out = new ImageData(w, h);
+            for (let k = 0, j = 0; k < w * h; k++, j += 4) {
+                if (inside[k] && nearOut[k]) { out.data[j] = 255; out.data[j + 1] = 255; out.data[j + 2] = 255; out.data[j + 3] = 255; } // edge, inside
+                else if (!inside[k] && nearIn[k]) { out.data[j] = 17; out.data[j + 1] = 19; out.data[j + 2] = 28; out.data[j + 3] = 235; } // edge, outside
+                else if (inside[k]) { out.data[j] = 124; out.data[j + 1] = 92; out.data[j + 2] = 255; out.data[j + 3] = 46; } // a faint tint
+            }
+            hoverCanvas.width = w;
+            hoverCanvas.height = h;
+            hoverCanvas.getContext('2d').putImageData(out, 0, 0);
+            hoverCanvas.dataset.key = key;
+            hoverCanvas.pick = p;
+        }
+        const box = img.closest('.pane') || img.parentElement; // the positioned box around the picture
+        const r = drawnRect(img), b = box.getBoundingClientRect();
+        Object.assign(hoverCanvas.style, { left: (r.left - b.left) + 'px', top: (r.top - b.top) + 'px', width: r.width + 'px', height: r.height + 'px' });
+        if (hoverCanvas.parentElement !== box) box.appendChild(hoverCanvas);
+    }
     stage.addEventListener('click', async (e) => {
         if (!isPreviewImg(e.target)) return;
         let c = colorAt(e.target, e.clientX, e.clientY);
@@ -1822,14 +2323,14 @@
     // ------------------------------------------------------------------
     function snippetContext() {
         // The API takes the same names as the page address (it runs the same geometry and SVGO).
-        const q = editParams(settingsParams());
+        const q = publicParams();
         if (q.get('optimize')) {
             q.set('optimize', 'true');
             if (svgoSettings.precision !== 3) q.set('precision', String(svgoSettings.precision));
         }
         const params = {};
         // Numbers as numbers; lists stay comma-separated strings, which every snippet and the API take.
-        for (const [k, v] of q) params[k] = /^(hue|saturation|lightness|gap|line|precision)$/.test(k) ? Number(v) : v;
+        for (const [k, v] of q) params[k] = /^(hue|saturation|lightness|gap|line|merge|detail|precision)$/.test(k) ? Number(v) : v;
         const getQ = new URLSearchParams(q);
         getQ.set('url', (state.doc && state.doc.fromUrl) || 'https://example.com/icon.svg');
         const input = state.doc && !state.doc.fromUrl ? state.doc.name : 'icon.svg';
@@ -1873,9 +2374,10 @@
     function setTab(tab) {
         state.tab = tab;
         $$('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.tab === tab)));
-        ['preview', 'code', 'api'].forEach((name) => { $('tab-' + name).hidden = name !== tab; });
+        ['preview', 'code', 'variants', 'api'].forEach((name) => { $('tab-' + name).hidden = name !== tab; });
         $$('.ws-tools').forEach((el) => { el.hidden = el.dataset.for !== tab; });
         if (tab === 'code') renderCode();
+        if (tab === 'variants') renderVariants();
         if (tab === 'api') updateSnippet();
         syncCopyButton();
         syncDownload();
@@ -1938,17 +2440,469 @@
         store.set('view', view);
     }
     $$('#view-tabs button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+    // Small sizes: the result at 16, 32 and 64 px on light and dark, where icons get judged.
+    function setSizes(on) {
+        $('sizes-panel').hidden = !on;
+        $('sizes-btn').setAttribute('aria-pressed', String(on));
+        store.set('sizes', on);
+    }
+    $('sizes-btn').addEventListener('click', () => setSizes($('sizes-panel').hidden));
+    setSizes(store.get('sizes', false));
     $('compare-range').addEventListener('input', (e) => stage.style.setProperty('--split', e.target.value + '%'));
 
+    // After applying a set of settings (undo/redo, a recipe): recolor, or fit first.
+    function settingsApplied() {
+        if (state.fit !== null && state.doc) fitToCanvas(false);
+        else editsChanged();
+    }
+
+    // Recipes: settings saved under a name, to use again on other SVGs. Not the edits of
+    // single colors (they belong to one SVG's colors). Saved in this browser; a recipe's
+    // link (the same parameters as the page address) works anywhere.
+    const PER_SVG = ['replace', 'hide', 'remove', 'cut', 'keep', 'place'];
+    const recipeParams = () => { const q = publicParams(); PER_SVG.forEach((k) => q.delete(k)); return q; };
+    let recipes = store.get('recipes', []);
+    if (!Array.isArray(recipes)) recipes = [];
+    function describeRecipe(params) {
+        const q = new URLSearchParams(params);
+        const parts = [MODES[q.get('mode')] ? MODES[q.get('mode')].label : 'Colorize'];
+        if (q.get('color') && MODES[q.get('mode') || 'colorize'] && MODES[q.get('mode') || 'colorize'].color) parts[0] += q.get('color') === 'auto' ? ' · auto color' : ' #' + q.get('color').toUpperCase();
+        const unit = q.get('unit') === 'pct' ? ' %' : ' px';
+        if (q.get('merge') || q.get('detail')) parts.push('simplified');
+        if (q.get('gap')) parts.push('gaps ' + q.get('gap') + unit);
+        if (q.get('line')) parts.push('line ' + q.get('line') + unit);
+        if (q.get('canvas')) parts.push(q.get('canvas').replace('x', ' × ') + (q.get('fit') !== null ? ', fit ' + q.get('fit') : ''));
+        if (q.get('holes') === 'light') parts.push('light → holes');
+        if (q.get('outlines') === 'gap') parts.push('outlines → gaps');
+        if (q.get('optimize')) parts.push('optimized');
+        return parts.join(' · ');
+    }
+    function renderRecipes() {
+        const list = $('recipes-list');
+        list.replaceChildren();
+        $('recipes-all').hidden = recipes.length < 2;
+        if (!recipes.length) {
+            const li = document.createElement('li');
+            li.className = 'empty';
+            li.textContent = 'No recipes yet. Set things up, name it below and save.';
+            list.appendChild(li);
+        }
+        recipes.forEach((r, i) => {
+            const li = document.createElement('li');
+            const apply = document.createElement('button');
+            apply.type = 'button';
+            apply.className = 'recipe-apply';
+            apply.title = 'Use these settings';
+            const small = document.createElement('small');
+            small.textContent = describeRecipe(r.params);
+            apply.append(r.name, small);
+            apply.addEventListener('click', () => applyRecipe(r));
+            const link = document.createElement('button');
+            link.type = 'button';
+            link.className = 'icon-btn';
+            link.title = 'Copy a link to this recipe';
+            link.setAttribute('aria-label', 'Copy a link to ' + r.name);
+            link.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+            link.addEventListener('click', () => {
+                const q = new URLSearchParams(r.params);
+                q.set('recipe', r.name);
+                copyText(SITE + '/?' + q, 'Link to ' + r.name);
+            });
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'icon-btn';
+            del.title = 'Delete this recipe';
+            del.setAttribute('aria-label', 'Delete ' + r.name);
+            del.textContent = '✕';
+            del.addEventListener('click', () => { recipes.splice(i, 1); store.set('recipes', recipes); renderRecipes(); });
+            li.append(apply, link, del);
+            list.appendChild(li);
+        });
+    }
+    function applyRecipe(r) {
+        const q = new URLSearchParams(r.params);
+        // Keep this SVG's color edits.
+        const mine = editParams(new URLSearchParams());
+        PER_SVG.filter((k) => k !== 'place').forEach((k) => { if (mine.get(k)) q.set(k, mine.get(k)); });
+        applySettings(q);
+        closeColorEdit(false);
+        setRecipes(false);
+        settingsApplied();
+        showRecipe(r.name, r.params);
+    }
+    // ------------------------------------------------------------------
+    // Several recipes in one link (run=<a recipe's parameters>, repeated): switch between them,
+    // and download every SVG you add in every recipe, in one ZIP. A recipe's optional suffix
+    // names its files: docker-original.svg in a recipe with suffix=plain gives docker-plain.svg.
+    // ------------------------------------------------------------------
+    const MAX_RUNS = 12;
+    const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    function parseRun(v, i) {
+        const q = new URLSearchParams(v);
+        const name = (q.get('recipe') || 'Recipe ' + (i + 1)).slice(0, 60);
+        const suffix = slug(q.get('suffix'));
+        ['recipe', 'suffix', 'url', 'run', ...PER_SVG].forEach((k) => q.delete(k));
+        return { name, suffix, params: q.toString() };
+    }
+    function runParam(r) {
+        const q = new URLSearchParams(r.params);
+        q.set('recipe', r.name);
+        if (r.suffix) q.set('suffix', r.suffix);
+        return q.toString();
+    }
+    const setLink = (list) => SITE + '/?' + list.map((r) => 'run=' + encodeURIComponent(runParam(r))).join('&');
+    function renderRecipeSet() {
+        const set = state.recipeSet;
+        $('recipe-set').hidden = !set;
+        if (!set) return;
+        const box = $('recipe-set-list');
+        box.replaceChildren();
+        set.forEach((r) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = r.name;
+            b.title = describeRecipe(r.params) + ' · files: …-' + (r.suffix || slug(r.name)) + '.svg';
+            b.setAttribute('aria-pressed', String(!!state.recipe && state.recipe.name === r.name));
+            b.addEventListener('click', () => applyRecipe(r));
+            box.appendChild(b);
+        });
+        $('recipe-set-label').textContent = set.length + ' recipes in this link';
+    }
+    // docker-original.svg in "plain" → docker-plain.svg; other names get the suffix added.
+    function setFileName(src, r, i) {
+        const stem = (src || 'image.svg').replace(/\.svg$/i, '').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80) || 'image';
+        const suffix = r.suffix || slug(r.name) || 'recipe-' + (i + 1);
+        return (/(^|[-_])original([-_]|$)/.test(stem) ? stem.replace(/(^|[-_])original(?=[-_]|$)/, '$1' + suffix) : stem + '-' + suffix) + '.svg';
+    }
+    async function downloadSet() {
+        const set = state.recipeSet;
+        if (!set) return;
+        const sources = state.batch ? state.batch.map((it) => ({ text: it.text, name: it.name }))
+            : state.doc ? [{ text: state.doc.text, name: state.doc.name }] : [];
+        if (!sources.length) { showError('Add one or more SVGs first: drop them, paste one, or load a link.'); return; }
+        const btn = $('recipe-set-zip');
+        btn.classList.add('loading');
+        btn.disabled = true;
+        setBusy(true, 'zip');
+        // Each recipe's settings in turn (with this SVG's color edits), then back to yours.
+        const back = publicParams(), backRecipe = state.recipe;
+        const mine = editParams(new URLSearchParams());
+        const out = [], used = new Set(), failed = [];
+        const total = set.length * sources.length;
+        restoring = true;
+        try {
+            for (const [ri, r] of set.entries()) {
+                const q = new URLSearchParams(r.params);
+                PER_SVG.filter((k) => k !== 'place').forEach((k) => { if (mine.get(k)) q.set(k, mine.get(k)); });
+                applySettings(q);
+                for (const [si, src] of sources.entries()) {
+                    setStatus('work', r.name + ' · ' + (ri * sources.length + si + 1) + ' of ' + total);
+                    try {
+                        const svg = await renderDoc(makeDoc(src.text, src.name));
+                        let name = setFileName(src.name, r, ri);
+                        for (let k = 2; used.has(name); k++) name = name.replace(/(_\d+)?\.svg$/, '_' + k + '.svg');
+                        used.add(name);
+                        out.push([name, svg]);
+                    } catch (err) {
+                        failed.push(src.name + ' in ' + r.name + ' (' + err.message + ')');
+                    }
+                }
+            }
+            if (out.length) {
+                const url = URL.createObjectURL(makeZip(out));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'svg-recolor-' + set.length + '-recipes-' + out.length + '.zip';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 60000);
+            }
+            toast(out.length + ' of ' + total + ' SVGs in the ZIP');
+        } finally {
+            applySettings(back);
+            restoring = false;
+            if (backRecipe) showRecipe(backRecipe.name, backRecipe.params);
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            setBusy(false, 'zip');
+            settingsApplied();
+            if (failed.length) setTimeout(() => showError('Not in the ZIP: ' + failed.join('; ')), 0);
+        }
+    }
+    $('recipe-set-zip').addEventListener('click', downloadSet);
+    $('recipe-set-save').addEventListener('click', () => {
+        for (const r of state.recipeSet || []) {
+            const at = recipes.findIndex((x) => x.name.toLowerCase() === r.name.toLowerCase());
+            if (at >= 0) recipes[at] = { name: r.name, params: r.params }; else recipes.push({ name: r.name, params: r.params });
+        }
+        store.set('recipes', recipes);
+        syncRecipeBanner();
+        toast('Saved ' + (state.recipeSet || []).length + ' recipes');
+    });
+    $('recipes-copy-all').addEventListener('click', () => copyText(setLink(recipes.map((r) => ({ name: r.name, params: r.params })).slice(0, MAX_RUNS)), 'Link to all your recipes'));
+
+    // ------------------------------------------------------------------
+    // Variants: the current SVG as a one-color icon made several ways, side by side. No one way
+    // suits every logo (gaps help one and cut another up, merging shades simplifies one and
+    // wipes out another's facets), so the person picks; a pick is applied like a recipe.
+    // Each keeps the canvas, Fit, Optimize and this SVG's color edits.
+    // ------------------------------------------------------------------
+    const VARIANT_BASE = 'mode=solid&color=auto&holes=light&outlines=gap';
+    const VARIANTS = [
+        { name: 'Plain', params: '' },
+        { name: 'Plain with gaps', params: 'gap=1.5&unit=pct' },
+        { name: 'Plain with gaps, shapes on top whole, shades merged lightly', params: 'merge=35&gap=1.5&unit=pct&gapsplit=top' },
+        { name: 'Plain, shades merged, gaps', params: 'merge=60&detail=1.5&gap=1.5&unit=pct' },
+        { name: 'Line', params: 'line=1' },
+        { name: 'Line of the one-color shape', params: 'line=1&lines=plain' },
+        { name: 'Line, shades merged', params: 'merge=60&detail=1.5&line=1&unit=pct' },
+        { name: 'Line of the one-color shape, merged, gaps', params: 'merge=60&detail=1.5&gap=1.5&line=1&lines=plain&unit=pct' },
+    ];
+    // What stays from the current settings: the canvas and placement, SVGO and this SVG's edits.
+    const VARIANT_KEEP = ['canvas', 'fit', 'place', 'optimize', 'precision', 'replace', 'hide', 'remove', 'cut'];
+    const LIST_KEYS = ['replace', 'hide', 'remove', 'cut']; // a variant's own list and yours both apply
+    // HSL lightness, 0..1.
+    const lightnessOf = (c) => { const x = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16)); return (Math.max(...x) + Math.min(...x)) / 510; };
+    // Two more, for logos drawn as dark line art (outlines, text, eyes) over lighter fills, as
+    // devicon's own versions of such logos are made (GCC, Bun, Grunt):
+    // - a light logo filled with its darkest color, the dark details cut out of it;
+    // - only the dark line art, in the logo's color.
+    async function variantsFor(doc) {
+        const list = VARIANTS.slice();
+        const colors = doc.palette.map((p) => p[0].replace('#', '').toLowerCase()).filter((c) => /^[0-9a-f]{6}$/.test(c));
+        const dark = colors.filter((c) => lightnessOf(c) < 0.25);
+        if (!dark.length || dark.length === colors.length) return list;
+        let shares = [];
+        try { shares = (await loadGeometry()).colorShares(doc.norm); } catch (err) { shares = []; }
+        const main = shares.length ? shares[0][0] : null;
+        const darkShare = shares.filter(([c]) => dark.includes(c)).reduce((t, [, n]) => t + n, 0);
+        const darkest = dark.slice().sort((a, b) => lightnessOf(a) - lightnessOf(b))[0];
+        if (main && lightnessOf(main) >= 0.6 && !dark.includes(main)) {
+            // Thin line work clearly darker than the light body goes too (Bun's hair); solid
+            // parts stay (GCC's bull).
+            const lines = shares.filter(([c, , w]) => !dark.includes(c) && w < 0.02 && lightnessOf(c) < lightnessOf(main) - 0.12).map(([c]) => c);
+            // The dark colors are knocked out (a dark outline around the logo stays a ring, as in
+            // devicon's GCC), thin darker line work is cut out, and white parts are holes (GCC's horns).
+            // Light colors other than the logo's own are cut out too (GCC's white horns); holes=light
+            // would also take the main color when it is light enough itself (Bun's cream body).
+            const isLight = (c) => { const x = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16)); const lo = Math.min(...x), hi = Math.max(...x); return lo >= 0xe0 || (lo >= 0xc8 && hi - lo <= 48); };
+            const cuts = lines.concat(colors.filter((c) => c !== main && isLight(c) && lightnessOf(c) > lightnessOf(main)));
+            list.push({ name: 'Plain, dark details cut out', base: 'mode=solid', params: 'color=' + darkest + '&knockout=' + dark.join(',') + (cuts.length ? '&cut=' + cuts.join(',') : '') });
+        }
+        if (darkShare > 0 && darkShare < 0.4) {
+            // In the line art's own dark color when the logo is light (devicon's GCC line is black);
+            // else in the logo's color (Grunt's is orange).
+            const lightLogo = main && lightnessOf(main) >= 0.6 && !dark.includes(main);
+            list.push({ name: 'Line art: the dark parts only', base: 'mode=solid&color=' + (lightLogo ? darkest : 'auto'), params: 'remove=' + colors.filter((c) => !dark.includes(c)).join(',') });
+        }
+        return list;
+    }
+    function variantKeep() {
+        const keep = new URLSearchParams(), mine = publicParams();
+        VARIANT_KEEP.forEach((k) => { if (mine.has(k)) keep.set(k, mine.get(k)); });
+        return keep;
+    }
+    function variantParams(v, keep = variantKeep()) {
+        const q = new URLSearchParams((v.base !== undefined ? v.base : VARIANT_BASE) + (v.params ? '&' + v.params : ''));
+        for (const [k, val] of keep) {
+            if (LIST_KEYS.includes(k) && q.get(k)) q.set(k, [...new Set(q.get(k).split(',').concat(val.split(',')))].join(','));
+            else q.set(k, val);
+        }
+        return q;
+    }
+    const variantCache = new Map(); // SVG + kept settings -> [svg text or Error, per variant]
+    let variantRun = 0;
+    function variantTile(v, i) {
+        const t = document.createElement('button');
+        t.type = 'button';
+        t.className = 'variant loading';
+        t.dataset.variant = String(i);
+        t.title = 'Use this: ' + v.name;
+        const pic = document.createElement('span');
+        pic.className = 'variant-pic';
+        const spin = document.createElement('span');
+        spin.className = 'spinner';
+        spin.setAttribute('aria-hidden', 'true');
+        pic.appendChild(spin);
+        const label = document.createElement('span');
+        label.className = 'variant-name';
+        label.textContent = v.name;
+        t.append(pic, label);
+        t.addEventListener('click', () => {
+            if (t.classList.contains('loading') || t.classList.contains('failed')) return;
+            applyRecipe({ name: v.name, params: variantParams(v).toString() });
+            setTab('preview');
+        });
+        return t;
+    }
+    function showVariant(t, v, out) {
+        t.classList.remove('loading');
+        const pic = t.querySelector('.variant-pic');
+        if (out instanceof Error) {
+            t.classList.add('failed');
+            t.title = v.name + ': ' + out.message;
+            pic.textContent = 'Not possible';
+            return;
+        }
+        const img = new Image();
+        img.alt = v.name;
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(out);
+        pic.replaceChildren(img);
+    }
+    async function renderVariants() {
+        const grid = $('variants-grid');
+        if (!state.doc) { grid.replaceChildren(); return; }
+        const keep = variantKeep();
+        const doc = state.doc;
+        const key = doc.name + ':' + doc.text.length + ':' + doc.text.slice(0, 300) + ':' + keep.toString();
+        const run = ++variantRun;
+        const list = await variantsFor(doc);
+        if (run !== variantRun || doc !== state.doc) return;
+        const tiles = list.map(variantTile);
+        grid.replaceChildren(...tiles);
+        const done = variantCache.get(key) || [];
+        list.forEach((v, i) => { if (done[i] !== undefined) showVariant(tiles[i], v, done[i]); });
+        if (list.every((v, i) => done[i] !== undefined)) return;
+        // The rest one after another, each with its settings applied for the moment and then
+        // yours again (as the ZIP of a recipe set does).
+        const back = publicParams(), backRecipe = state.recipe;
+        restoring = true;
+        setBusy(true, 'variants');
+        try {
+            for (const [i, v] of list.entries()) {
+                if (run !== variantRun || doc !== state.doc) return;
+                if (done[i] !== undefined) continue;
+                applySettings(variantParams(v, keep));
+                let out;
+                try { out = await renderDoc(doc); } catch (err) { out = err instanceof Error ? err : new Error(String(err)); }
+                applySettings(back);
+                done[i] = out;
+                variantCache.set(key, done);
+                if (run === variantRun) showVariant(tiles[i], v, out);
+            }
+        } finally {
+            applySettings(back);
+            restoring = false;
+            if (backRecipe) showRecipe(backRecipe.name, backRecipe.params);
+            setBusy(false, 'variants');
+        }
+    }
+
+    // The recipe in use (from a link or the list), named at the top of the settings so
+    // whoever opens a recipe link sees what it is. Marked edited once the settings move.
+    function showRecipe(name, params) {
+        state.recipe = name ? { name: name.slice(0, 60), params: new URLSearchParams(params).toString() } : null;
+        $('recipe-banner').hidden = !state.recipe;
+        if (!state.recipe) return;
+        $('recipe-banner-name').textContent = state.recipe.name;
+        $('recipe-banner-desc').textContent = describeRecipe(state.recipe.params);
+        renderRecipeSet();
+        syncRecipeBanner();
+    }
+    // The same settings, in any order (a link's recipe may list them differently).
+    const sameParams = (a, b) => { const c = (x) => [...new URLSearchParams(x)].map((kv) => kv.join('=')).sort().join('&'); return c(a) === c(b); };
+    function recipeIntact() { return !!state.recipe && sameParams(recipeParams().toString(), state.recipe.params); }
+    function syncRecipeBanner() {
+        if (!state.recipe) return;
+        $('recipe-banner-edited').hidden = recipeIntact();
+        $('recipe-banner-back').hidden = recipeIntact() && !Object.keys(state.edits).length && !state.keep.size;
+        const saved = recipes.some((r) => r.name.toLowerCase() === state.recipe.name.toLowerCase() && sameParams(r.params, state.recipe.params));
+        $('recipe-banner-save').hidden = saved;
+    }
+    $('recipe-banner-close').addEventListener('click', () => { state.recipeSet = null; renderRecipeSet(); showRecipe(null); syncPageUrl(); });
+    // Back to the recipe exactly as it came: its settings, and no color edits (a recipe has none).
+    $('recipe-banner-back').addEventListener('click', () => {
+        if (!state.recipe) return;
+        const r = state.recipe;
+        applySettings(new URLSearchParams(r.params));
+        state.edits = {};
+        state.keep.clear();
+        closeColorEdit(false);
+        settingsApplied();
+        showRecipe(r.name, r.params);
+        toast('Back to ' + r.name + ' (Ctrl+Z undoes)');
+    });
+    $('recipe-banner-save').addEventListener('click', () => {
+        const { name, params } = state.recipe;
+        const at = recipes.findIndex((r) => r.name.toLowerCase() === name.toLowerCase());
+        if (at >= 0) recipes[at] = { name, params }; else recipes.push({ name, params });
+        store.set('recipes', recipes);
+        syncRecipeBanner();
+        toast('Saved recipe: ' + name);
+    });
+    function setRecipes(open) {
+        $('recipes-pop').hidden = !open;
+        $('recipes-btn').setAttribute('aria-expanded', String(open));
+        if (open) { renderRecipes(); $('recipe-name').focus(); }
+    }
+    $('recipes-btn').addEventListener('click', () => setRecipes($('recipes-pop').hidden));
+    $('recipes-close').addEventListener('click', () => { setRecipes(false); $('recipes-btn').focus(); });
+    $('recipes-pop').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); setRecipes(false); $('recipes-btn').focus(); } });
+    // (A <div>, not a <form>: it sits inside the settings form, and forms can't nest.)
+    function saveRecipe() {
+        const name = $('recipe-name').value.trim();
+        if (!name) { $('recipe-name').focus(); return; }
+        const params = recipeParams().toString();
+        const at = recipes.findIndex((r) => r.name.toLowerCase() === name.toLowerCase());
+        if (at >= 0) recipes[at] = { name, params }; else recipes.push({ name, params });
+        store.set('recipes', recipes);
+        $('recipe-name').value = '';
+        renderRecipes();
+        toast('Saved recipe: ' + name);
+        syncRecipeBanner();
+    }
+    $('recipe-save-btn').addEventListener('click', saveRecipe);
+    $('recipe-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveRecipe(); } });
+
+    // Undo / redo: snapshots of the settings (the same parameters as the page address).
+    const undoStack = [];
+    let undoAt = -1, restoring = false;
+    const snapshot = () => publicParams().toString();
+    function recordHistory() {
+        if (restoring) return;
+        const snap = snapshot();
+        if (undoStack[undoAt] === snap) return;
+        undoStack.splice(undoAt + 1);
+        undoStack.push(snap);
+        if (undoStack.length > 100) undoStack.shift();
+        undoAt = undoStack.length - 1;
+        syncHistoryButtons();
+    }
+    function syncHistoryButtons() {
+        $('undo-btn').disabled = undoAt <= 0;
+        $('redo-btn').disabled = undoAt >= undoStack.length - 1;
+    }
+    function stepHistory(by) {
+        const at = undoAt + by;
+        if (at < 0 || at >= undoStack.length) return;
+        undoAt = at;
+        restoring = true;
+        try { applySettings(new URLSearchParams(undoStack[at])); } finally { restoring = false; }
+        syncHistoryButtons();
+        closeColorEdit(false);
+        settingsApplied();
+        toast(by < 0 ? 'Undone' : 'Redone');
+    }
+    $('undo-btn').addEventListener('click', () => stepHistory(-1));
+    $('redo-btn').addEventListener('click', () => stepHistory(1));
+
     function shareParams() {
-        const q = editParams(settingsParams());
+        const q = publicParams();
         if (state.doc && state.doc.fromUrl) q.set('url', state.doc.fromUrl);
+        if (recipeIntact()) q.set('recipe', state.recipe.name);
+        for (const r of state.recipeSet || []) q.append('run', runParam(r));
         return q;
     }
     function syncPageUrl() {
         clearTimeout(urlTimer);
         urlTimer = setTimeout(() => {
+            // Settings swapped in for a moment (variants, a recipe set's ZIP) are not the page's:
+            // wait until they're back, or the address and the undo history would get them.
+            if (restoring) { syncPageUrl(); return; }
             try { history.replaceState(null, '', location.pathname + '?' + shareParams().toString() + location.hash); } catch (e) { /* ignore */ }
+            recordHistory();
+            syncRecipeBanner();
         }, 300);
     }
     // A pasted or uploaded SVG travels in the link itself: compressed, after the #, which
@@ -2021,12 +2975,19 @@
         if (mod && e.shiftKey && key === 'c') { e.preventDefault(); copyCurrent(); return; }
         if (mod && e.key === 'Enter') { e.preventDefault(); recolor(); return; }
         const t = e.target;
+        const typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) && !/^(range|checkbox|radio)$/.test(t.type || '');
+        if (mod && !typing && (key === 'z' || key === 'y')) {
+            e.preventDefault();
+            stepHistory(key === 'y' || e.shiftKey ? 1 : -1);
+            return;
+        }
         if (mod || e.altKey || dialog.open || (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))) return;
         if (/^[1-6]$/.test(key)) setMode(MODE_KEYS[+key - 1], true);
         else if (key === 'o') { showSourcePicker('file'); fileInput.click(); }
         else if (key === 'l') { showSourcePicker('link'); $('url-input').focus(); }
         else if (key === 'c') { hexInput.focus(); hexInput.select(); }
         else if (key === 'p') setTab('preview');
+        else if (key === 'o') setTab('variants');
         else if (key === 'e') setTab('code');
         else if (key === 'a') setTab('api');
         else if (key === 'f') {
@@ -2040,39 +3001,81 @@
         e.preventDefault();
     });
 
+    // Every setting from page-address parameters (start-up, undo/redo, recipes). What the
+    // parameters don't mention goes back to its default.
+    function applySettings(q) {
+        state.colorAuto = q.get('color') === 'auto';
+        if (!state.colorAuto) setColor(normalizeHex(q.get('color')) || '#FF0066', false);
+        else if (state.doc) autoColorOf(state.doc).then((c) => { if (state.colorAuto) setColor(c, false); });
+        syncAutoColor();
+        ADJ.forEach(([k, lim]) => {
+            const v = parseInt(q.get(k), 10);
+            $('adj-' + k).value = Number.isNaN(v) ? 0 : Math.max(-lim, Math.min(lim, v));
+        });
+        syncAdjust(false);
+        setMode(MODES[q.get('mode')] ? q.get('mode') : 'colorize', false);
+        state.edits = editsFromParams(q);
+        state.unit = q.get('unit') === 'pct' ? '%' : 'px';
+        state.svgo = q.get('optimize') === '1';
+        $('svgo-toggle').checked = state.svgo;
+        state.holes = q.get('holes') === 'light';
+        $('holes-toggle').checked = state.holes;
+        state.outlines = q.get('outlines') === 'gap';
+        $('outlines-toggle').checked = state.outlines;
+        updateOptimizeFold();
+        {
+            const c = (q.get('canvas') || '').split('x').map(Number);
+            state.canvas = c.length === 2 && c.every((v) => v > 0) ? c : null;
+            const p = (q.get('place') || '').split(',').map(Number);
+            state.place = null;
+            if (p.length === 3 && p.every(Number.isFinite) && p[2] > 0) { state.place = p; keepPlacement = !state.doc; }
+            const f = parseFloat(q.get('fit'));
+            state.fit = Number.isFinite(f) && f >= 0 ? f : null;
+            if (state.fit !== null) $('fit-pad').value = fmt(state.fit);
+            syncCanvasUI();
+        }
+        $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === state.unit)));
+        state.gap = Math.max(0, parseFloat(q.get('gap')) || 0);
+        state.line = Math.max(0, parseFloat(q.get('line')) || 0);
+        state.merge = Math.max(0, parseFloat(q.get('merge')) || 0);
+        state.detail = Math.max(0, parseFloat(q.get('detail')) || 0);
+        syncRanges();
+        mergeInput.value = String(state.merge);
+        detailInput.value = String(state.detail);
+        syncSimplify(false);
+        gapInput.value = String(state.gap);
+        syncGap(false);
+        lineInput.value = String(state.line);
+        state.lineInner = q.get('lines') !== 'outer';
+        state.linePlain = q.get('lines') === 'plain';
+        state.lineCenter = q.get('linealign') === 'center';
+        state.gapsAuto = q.get('gaps') === 'auto';
+        $('gaps-auto-toggle').checked = state.gapsAuto;
+        state.gapTop = q.get('gapsplit') === 'top';
+        state.knockout = (q.get('knockout') || '').split(',').map((v) => normalizeHex(v)).filter(Boolean).map((h) => h.slice(1).toLowerCase());
+        $('gap-top-toggle').checked = state.gapTop;
+        $('line-center-toggle').checked = state.lineCenter;
+        state.keep.clear();
+        for (const v of (q.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }
+        syncLine(false);
+    }
+
     // ------------------------------------------------------------------
     // Start: settings from the page URL, then remembered preferences
     // ------------------------------------------------------------------
     const start = new URLSearchParams(location.search);
-    setColor(normalizeHex(start.get('color')) || '#FF0066', false);
-    ADJ.forEach(([k, lim]) => {
-        const v = parseInt(start.get(k), 10);
-        if (!Number.isNaN(v)) $('adj-' + k).value = Math.max(-lim, Math.min(lim, v));
-    });
-    syncAdjust(false);
-    setMode(MODES[start.get('mode')] ? start.get('mode') : 'colorize', false);
-    state.edits = editsFromParams(start);
-    state.unit = start.get('unit') === 'pct' ? '%' : 'px';
-    state.svgo = start.get('optimize') === '1';
-    $('svgo-toggle').checked = state.svgo;
-    updateOptimizeFold();
-    {
-        const c = (start.get('canvas') || '').split('x').map(Number);
-        if (c.length === 2 && c.every((v) => v > 0)) state.canvas = c;
-        const p = (start.get('place') || '').split(',').map(Number);
-        if (p.length === 3 && p.every(Number.isFinite) && p[2] > 0) { state.place = p; keepPlacement = true; }
-        syncCanvasUI();
+    applySettings(start);
+    if (start.get('recipe')) {
+        // Named by the link; its settings are the ones just applied (less the per-SVG ones).
+        showRecipe(start.get('recipe'), recipeParams().toString());
     }
-    $$('#unit-tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.unit === state.unit)));
-    state.gap = Math.max(0, parseFloat(start.get('gap')) || 0);
-    state.line = Math.max(0, parseFloat(start.get('line')) || 0);
-    syncRanges();
-    gapInput.value = String(state.gap);
-    syncGap(false);
-    lineInput.value = String(state.line);
-    $('line-inner').checked = start.get('lines') !== 'outer';
-    for (const v of (start.get('keep') || '').split(',')) { const h = normalizeHex(v); if (h) state.keep.add(h.slice(1).toLowerCase()); }
-    syncLine(false);
+    if (start.getAll('run').length) {
+        state.recipeSet = start.getAll('run').slice(0, MAX_RUNS).map(parseRun);
+        // Only recipes in the link: start with the first one's settings.
+        if (!start.has('mode')) applySettings(new URLSearchParams(state.recipeSet[0].params));
+        const first = state.recipe && state.recipeSet.find((r) => r.name === state.recipe.name) || state.recipeSet[0];
+        showRecipe(first.name, first.params);
+    }
     setBg(store.get('bg', 'checker'));
     setView(store.get('view', window.matchMedia('(max-width: 560px)').matches ? 'slider' : 'side'));
     renderRecent();
@@ -2083,6 +3086,7 @@
     updateSnippet();
     scheduleThumbs(0);
     syncCopyButton();
+    recordHistory();
     if (start.get('url')) {
         showSourcePicker('link');
         $('url-input').value = start.get('url');
