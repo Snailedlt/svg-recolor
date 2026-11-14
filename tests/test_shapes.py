@@ -442,7 +442,24 @@ def test_knockout_keeps_the_outer_edge_as_an_outline(client):
     assert res.status_code == 200, res.text
     (_, d), = paths(res.text)
     disc, bar = 3.14159 * 60 * 60, 60 * 12
-    assert abs(_area(d) - (disc - bar)) < 0.03 * disc, (_area(d), disc - bar)
+    # A thin gap inside the ring (2 wide, the gap 1.2: about 440 square units) sets it apart.
+    gap = 2 * 3.14159 * 58 * 1.2
+    assert disc - bar - 2 * gap < _area(d) < disc - bar - gap / 2, (_area(d), disc - bar - gap)
     res = client.post("/api/recolor?mode=solid&color=000000&cut=000000", content=svg, headers=SVG_CT)
     (_, d2), = paths(res.text)
-    assert _area(d2) < _area(d) - 300, "cut takes the ring too"
+    assert _area(d2) < _area(d) - 100, "cut takes the ring too"
+
+
+def test_knockout_keeps_pupils_inside_cut_out_eyes(client):
+    # Bun's eyes: a white eye cut out of the fill, a black pupil in it. The pupil touches no fill:
+    # it is drawing on the hole, not a line on the fill, so knocking black out keeps it.
+    eye = '<circle cx="64" cy="40" r="10" fill="#ffffff"/><circle cx="64" cy="40" r="4" fill="#000000"/>'
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="60" fill="#000000"/>'
+           '<circle cx="64" cy="64" r="58" fill="#ffcfab"/>{}</svg>')
+    areas = []
+    for e in (eye, eye.split('<circle cx="64" cy="40" r="4"')[0]):
+        res = client.post("/api/recolor?mode=solid&color=000000&knockout=000000&cut=ffffff", content=svg.format(e), headers=SVG_CT)
+        assert res.status_code == 200, res.text
+        (_, d), = paths(res.text)
+        areas.append(_area(d))
+    assert areas[0] - areas[1] > 0.6 * 3.14159 * 16, areas  # the pupil (50 square units) is there

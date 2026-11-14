@@ -744,13 +744,45 @@
             // keeps its shape (Docker's outer ring).
             if (splitOutlines.size) {
                 const all = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
+                let filled = null;
+                const outside = () => {
+                    if (!filled) {
+                        const kids = all.children ? all.children : [all];
+                        filled = clean(unite(kids.map((k) => new scope.Path({ segments: k.segments, closed: true, insert: false }))));
+                    }
+                    return filled;
+                };
                 byColor = byColor.map(([c, p]) => {
                     if (!splitOutlines.has(c)) return [c, p];
-                    // A knocked-out color keeps only the outer half of its outline as ink; the inner
-                    // half becomes a hole, the thin gap between the ring and the fill (devicon's GCC).
-                    const edge = all.intersect(stroke(all, (knockEdge.has(c) ? 0.5 : 1.5) * splitOutlines.get(c)), { insert: false });
-                    return [c, clean(p.intersect(edge, { insert: false }))];
+                    // A knocked-out color's ring follows only the silhouette's outside: holes cut in
+                    // the drawing (Bun's white eyes) are not its edge, or their rims would stay.
+                    const base = knockEdge.has(c) ? outside() : all;
+                    const edge = all.intersect(stroke(base, 1.5 * splitOutlines.get(c)), { insert: false });
+                    let kept = clean(p.intersect(edge, { insert: false }));
+                    // Its pieces that touch none of the colors kept (Bun's pupils, inside eyes that
+                    // are cut out) are drawing on a hole, not lines on the fill: they stay.
+                    if (knockEdge.has(c)) {
+                        const others = byColor.filter(([o]) => !knock.has(o)).map(([, q]) => q);
+                        // (An outline's outer rim touches nothing either, but has the fill inside it.)
+                        const holds = (k, q) => (q.children ? q.children : [q]).some((x) => k.bounds.intersects(x.bounds) && x.interiorPoint && k.contains(x.interiorPoint) && q.contains(x.interiorPoint));
+                        // Nor along the outside (GCC's horn rims, around a horn that is cut out).
+                        const ext = new scope.Path.Rectangle({ rectangle: outside().bounds.expand(4 * eps), insert: false }).subtract(outside(), { insert: false });
+                        const kids = (p.children ? p.children : [p]).filter((k) => !touch(k, ext) && !others.some((q) => touch(k, q) || holds(k, q)));
+                        if (kids.length) {
+                            const islands = new scope.CompoundPath({ children: kids.map((k) => k.clone({ insert: false })), fillRule: p.fillRule, insert: false });
+                            kept = kept && !kept.isEmpty() ? clean(kept.unite(islands, { insert: false })) : islands;
+                        }
+                    }
+                    return [c, kept];
                 }).filter(([, p]) => p && !p.isEmpty());
+                // A knocked-out color's ring keeps its full width, and the fill next to it gives up
+                // a gap half as wide, so the ring stands apart (devicon's GCC egg).
+                const rings = byColor.filter(([c]) => knockEdge.has(c));
+                if (rings.length) {
+                    const w = Math.max(...rings.map(([c]) => splitOutlines.get(c)));
+                    const band = stroke(unite(rings.map(([, p]) => p.clone({ insert: false }))), 0.6 * w);
+                    byColor = byColor.map(([c, p]) => (knockEdge.has(c) ? [c, p] : [c, clean(p.subtract(band, { insert: false }))])).filter(([, p]) => p && !p.isEmpty());
+                }
             }
 
             // Lines, from the regions before gaps: a band inside the outer edge, plus (with
