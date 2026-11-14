@@ -76,6 +76,7 @@ class Extras:
     line_inner: bool = True  # lines also between colors
     line_plain: bool = False  # lines of the one-colour version (after holes, outline gaps, gaps)
     keep: tuple = ()  # colors that stay filled in the line version
+    knockout: tuple = ()  # colors cut out except along the drawing's outer edge (they stay its outline)
     gap_split: str = ""  # "top": the shape on top keeps its shape, the gap comes out of what's under it
     gaps: str = ""  # "auto": no gaps when the one-colour drawing already shows its parts through holes
     line_align: str = "inside"  # lines inside the edge, or "center": straddling it (a stroke turned to a shape)
@@ -91,7 +92,7 @@ class Extras:
 
     @property
     def geometry(self) -> bool:
-        return bool(self.cut or self.gap or self.line or self.merge or self.detail)
+        return bool(self.cut or self.gap or self.line or self.merge or self.detail or self.knockout)
 
     @property
     def active(self) -> bool:
@@ -138,10 +139,11 @@ def is_light(color: str) -> bool:
 
 def parse_extras(edit_list, cut=None, gap=None, line=None, lines=None, keep=None, unit=None,
                  canvas=None, place=None, fit=None, optimize=None, precision=None, holes=None, outlines=None,
-                 merge=None, detail=None, linealign=None, gaps=None, gapsplit=None) -> Extras:
+                 merge=None, detail=None, linealign=None, gaps=None, gapsplit=None, knockout=None) -> Extras:
     """Extras from request values (strings from query strings and forms, or JSON values)."""
     ex = Extras()
     ex.cut = tuple(engine._edit_key(c) for c in edit_list(cut))
+    ex.knockout = tuple(engine._edit_key(c) for c in edit_list(knockout))
     if holes not in (None, "", False):
         v = str(holes).strip().lower()
         if holes is not True and v not in ("light", "none"):
@@ -552,11 +554,12 @@ def recolor(svg: str, opts: engine.Options) -> engine.Result:
         hidden = tuple(opts.hide) + tuple(opts.remove) + cut + holes
         place = fit_place(engine.apply_edits(norm, remove=hidden), canvas, ex.fit, deadline)
     edited = engine.apply_edits(placed(norm, canvas, place), hide=opts.hide, remove=opts.remove)
-    if cut or holes or ex.outlines or ex.gap or ex.line or ex.merge or ex.detail:
+    if cut or holes or ex.outlines or ex.gap or ex.line or ex.merge or ex.detail or ex.knockout:
         geo = {"cut": list(cut), "holes": list(holes), "outlines": ex.outlines, "map": mapping, "gap": ex.gap, "line": ex.line,
                "lineInner": ex.line_inner, "linePlain": ex.line_plain, "keep": list(ex.keep), "unit": ex.unit, "flat": None,
                "merge": ex.merge, "detail": ex.detail, "lineAlign": ex.line_align, "gaps": ex.gaps or None,
-               "lightHoles": bool(ex.holes), "gapSplit": ex.gap_split or None}
+               "lightHoles": bool(ex.holes), "gapSplit": ex.gap_split or None,
+               "knockout": list(ex.knockout)}
         # Everything one color (like Solid)? Then gradients and transparency don't matter.
         gone = set(opts.hide) | set(opts.remove) | set(cut) | set(holes)
         outs = {mapping.get(c, c) for c in counts if c not in gone}

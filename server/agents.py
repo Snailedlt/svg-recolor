@@ -150,6 +150,8 @@ MCP_TOOLS = [
                          "description": "Make a line version (like devicon's line icons): only a band of this width along the edges is kept."},
                 "lines": {"type": "string", "enum": ["all", "outer", "plain"],
                           "description": "With line: 'all' (default) also between colors, 'outer' only the outline, 'plain' the outlines of the one-colour version (made first, with its holes and gaps)."},
+                "knockout": {"type": "array", "items": {"type": "string"},
+                             "description": "Original colors cut out like cut, except along the drawing's outer edge where they stay its outline (a light logo's dark outline stays a ring; its dark text and details become holes)."},
                 "gapsplit": {"type": "string", "enum": ["top", "smaller"],
                              "description": "With gap: 'top' keeps the shape drawn on top whole and cuts the gap out of what's under it (stacked shapes); 'smaller' (default) cuts it out of the smaller part."},
                 "gaps": {"type": "string", "enum": ["auto", "always"],

@@ -499,6 +499,20 @@
                     return false;
                 });
             }
+            // opts.knockout: colors cut out like `cut`, except along the drawing's outer edge, where
+            // they stay as its outline (GCC's black egg outline stays a ring; its black text and the
+            // bull's black lines are cut out), the way outline colors are treated below.
+            const knock = new Set((opts.knockout || []).map((c) => String(c).toLowerCase()));
+            const knockEdge = new Set();
+            if (knock.size) {
+                const avgWidth = (p) => { const kids = p.children ? p.children : [p]; const len = kids.reduce((t, k) => t + k.length, 0); return len > 0 ? (2 * Math.abs(p.area)) / len : 0; };
+                for (const [c, p] of byColor) {
+                    if (!knock.has(c)) continue;
+                    splitOutlines.set(c, Math.min(avgWidth(p), 0.02 * size));
+                    knockEdge.add(c);
+                    holed.push(c);
+                }
+            }
             // opts.outlines: an outline color (its visible part thin, at most 2% of the icon wide on
             // average, running between parts of other colors at least twice as wide) becomes a gap,
             // so a one-color version keeps the parts it outlined apart (Docker's dark outline).
@@ -732,7 +746,9 @@
                 const all = clean(unite(byColor.map(([, p]) => p.clone({ insert: false }))));
                 byColor = byColor.map(([c, p]) => {
                     if (!splitOutlines.has(c)) return [c, p];
-                    const edge = all.intersect(stroke(all, 1.5 * splitOutlines.get(c)), { insert: false });
+                    // A knocked-out color keeps only the outer half of its outline as ink; the inner
+                    // half becomes a hole, the thin gap between the ring and the fill (devicon's GCC).
+                    const edge = all.intersect(stroke(all, (knockEdge.has(c) ? 0.5 : 1.5) * splitOutlines.get(c)), { insert: false });
                     return [c, clean(p.intersect(edge, { insert: false }))];
                 }).filter(([, p]) => p && !p.isEmpty());
             }
@@ -1077,7 +1093,7 @@
                 worker = null;
                 compute(input, opts, opts.onProgress).then(resolve, reject); // a worker that can't start: do it here
             };
-            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain, merge: Number(opts.merge) || 0, detail: Number(opts.detail) || 0, lineAlign: opts.lineAlign || null, gaps: opts.gaps || null, lightHoles: !!opts.lightHoles, gapSplit: opts.gapSplit || null } });
+            worker.postMessage({ id, input, opts: { cut: opts.cut, map: opts.map, gap: opts.gap, line: opts.line, lineInner: opts.lineInner, keep: opts.keep, unit: opts.unit, flat: opts.flat || null, holes: opts.holes || [], outlines: !!opts.outlines, linePlain: !!opts.linePlain, merge: Number(opts.merge) || 0, detail: Number(opts.detail) || 0, lineAlign: opts.lineAlign || null, gaps: opts.gaps || null, lightHoles: !!opts.lightHoles, gapSplit: opts.gapSplit || null, knockout: opts.knockout || [] } });
         });
     }
 

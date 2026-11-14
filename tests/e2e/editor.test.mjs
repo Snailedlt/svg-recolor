@@ -1054,7 +1054,7 @@ test('variants: a light logo with dark line art gets the two dark-art variants',
     await page.locator('#variants-grid .variant.loading').first().waitFor({ state: 'detached', timeout: 60000 });
     assert.equal(await page.locator('#variants-grid .variant').count(), 10);
     await page.locator('#variants-grid .variant', { hasText: 'Plain, dark details cut out' }).click();
-    await page.waitForURL(/cut=000000/);
+    await page.waitForURL(/knockout=000000/);
     assert.match(page.url(), /color=000000/);
     assert.deepEqual(problems, []);
 });

@@ -431,3 +431,18 @@ def test_a_light_gradient_becomes_a_hole_with_light_holes(client):
     assert res.status_code == 200, res.text
     (_, d), = paths(res.text)
     assert abs(_area(d) - (120 * 120 - 60 * 20)) < 40, _area(d)
+
+
+def test_knockout_keeps_the_outer_edge_as_an_outline(client):
+    # A pale disc with a black outline ring and a black bar across the middle (like GCC's egg and
+    # text): knocked out, the bar becomes a hole and the ring stays (the drawing keeps its edge).
+    svg = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="60" fill="#000000"/>'
+           '<circle cx="64" cy="64" r="58" fill="#ffcfab"/><rect x="34" y="58" width="60" height="12" fill="#000000"/></svg>')
+    res = client.post("/api/recolor?mode=solid&color=000000&knockout=000000", content=svg, headers=SVG_CT)
+    assert res.status_code == 200, res.text
+    (_, d), = paths(res.text)
+    disc, bar = 3.14159 * 60 * 60, 60 * 12
+    assert abs(_area(d) - (disc - bar)) < 0.03 * disc, (_area(d), disc - bar)
+    res = client.post("/api/recolor?mode=solid&color=000000&cut=000000", content=svg, headers=SVG_CT)
+    (_, d2), = paths(res.text)
+    assert _area(d2) < _area(d) - 300, "cut takes the ring too"

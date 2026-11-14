@@ -58,6 +58,7 @@
         // | { op: 'hide' } (older links; shown as Invisible)
         edits: {},
         gap: 0, // gaps between original colors (units of a 128-unit icon); 0 = off
+        knockout: [], // colors cut out except along the outer edge (from a variant or a link)
         gapTop: false, // the shape on top keeps its shape; the gap comes out of what's under it
         gapsAuto: false, // gaps only where the holes don't already show the parts
         lineCenter: false, // lines centered on the edges (half outside) instead of inside them
@@ -290,6 +291,7 @@
         if (state.gap) q.set('gap', String(state.gap));
         if (state.gap && state.gapsAuto) q.set('gaps', 'auto');
         if (state.gap && state.gapTop) q.set('gapsplit', 'top');
+        if (state.knockout.length) q.set('knockout', state.knockout.join(','));
         if ((state.gap || state.line || state.detail) && state.unit === '%') q.set('unit', 'pct');
         if (state.holes) q.set('holes', 'light');
         if (state.outlines) q.set('outlines', 'gap');
@@ -795,7 +797,7 @@
         const out = await Geo.cutOut(edited, {
             flat: doc ? flatColor(doc, merged) : null,
             cut, holes, outlines: state.outlines, map: merged, gap: state.gap, unit: state.unit, onProgress,
-            merge: state.merge, detail: state.detail, lineAlign: state.lineCenter ? 'center' : null, gaps: state.gapsAuto ? 'auto' : null, gapSplit: state.gapTop ? 'top' : null, lightHoles: !!state.holes,
+            merge: state.merge, detail: state.detail, lineAlign: state.lineCenter ? 'center' : null, gaps: state.gapsAuto ? 'auto' : null, gapSplit: state.gapTop ? 'top' : null, knockout: state.knockout, lightHoles: !!state.holes,
             line: state.line, lineInner: state.lineInner, linePlain: state.linePlain, keep: [...state.keep],
         });
         const m = /<!--holes:([^>]*)-->/.exec(out);
@@ -1121,6 +1123,7 @@
         $('gaps-auto-toggle').checked = false;
         state.gapTop = false;
         $('gap-top-toggle').checked = false;
+        state.knockout = [];
         state.keep.clear();
         syncLine();
         syncAdjust(false);
@@ -1375,7 +1378,7 @@
         else if (doc === state.doc) place = state.place;
         const parts = editedSvg(doc, mapping, place);
         let svg = parts.svg;
-        if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line || state.merge || state.detail) svg = await cutOutSvg(parts.edited, parts.cut, parts.merged, null, doc, parts.holes);
+        if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line || state.merge || state.detail || state.knockout.length) svg = await cutOutSvg(parts.edited, parts.cut, parts.merged, null, doc, parts.holes);
         if (state.svgo) svg = await optimizeSvg(svg);
         return svg;
     }
@@ -1785,7 +1788,7 @@
             let svg = parts.svg;
             let geometryFailed = false;
             const info = { holed: parts.holes };
-            if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line || state.merge || state.detail) {
+            if (parts.cut.length || parts.holes.length || state.outlines || state.gap || state.line || state.merge || state.detail || state.knockout.length) {
                 const label = state.line ? 'Drawing lines… ' : state.gap ? 'Cutting gaps… ' : 'Cutting out… ';
                 setStatus('work', label.trim());
                 try {
@@ -2679,10 +2682,19 @@
             // Thin line work clearly darker than the light body goes too (Bun's hair); solid
             // parts stay (GCC's bull).
             const lines = shares.filter(([c, , w]) => !dark.includes(c) && w < 0.02 && lightnessOf(c) < lightnessOf(main) - 0.12).map(([c]) => c);
-            list.push({ name: 'Plain, dark details cut out', base: 'mode=solid', params: 'color=' + darkest + '&cut=' + dark.concat(lines).join(',') });
+            // The dark colors are knocked out (a dark outline around the logo stays a ring, as in
+            // devicon's GCC), thin darker line work is cut out, and white parts are holes (GCC's horns).
+            // Light colors other than the logo's own are cut out too (GCC's white horns); holes=light
+            // would also take the main color when it is light enough itself (Bun's cream body).
+            const isLight = (c) => { const x = [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16)); const lo = Math.min(...x), hi = Math.max(...x); return lo >= 0xe0 || (lo >= 0xc8 && hi - lo <= 48); };
+            const cuts = lines.concat(colors.filter((c) => c !== main && isLight(c) && lightnessOf(c) > lightnessOf(main)));
+            list.push({ name: 'Plain, dark details cut out', base: 'mode=solid', params: 'color=' + darkest + '&knockout=' + dark.join(',') + (cuts.length ? '&cut=' + cuts.join(',') : '') });
         }
         if (darkShare > 0 && darkShare < 0.4) {
-            list.push({ name: 'Line art: the dark parts only', base: 'mode=solid&color=auto', params: 'remove=' + colors.filter((c) => !dark.includes(c)).join(',') });
+            // In the line art's own dark color when the logo is light (devicon's GCC line is black);
+            // else in the logo's color (Grunt's is orange).
+            const lightLogo = main && lightnessOf(main) >= 0.6 && !dark.includes(main);
+            list.push({ name: 'Line art: the dark parts only', base: 'mode=solid&color=' + (lightLogo ? darkest : 'auto'), params: 'remove=' + colors.filter((c) => !dark.includes(c)).join(',') });
         }
         return list;
     }
@@ -3040,6 +3052,7 @@
         state.gapsAuto = q.get('gaps') === 'auto';
         $('gaps-auto-toggle').checked = state.gapsAuto;
         state.gapTop = q.get('gapsplit') === 'top';
+        state.knockout = (q.get('knockout') || '').split(',').map((v) => normalizeHex(v)).filter(Boolean).map((h) => h.slice(1).toLowerCase());
         $('gap-top-toggle').checked = state.gapTop;
         $('line-center-toggle').checked = state.lineCenter;
         state.keep.clear();
